@@ -1,0 +1,32 @@
+# Core Framework Dependencies
+/node_modules
+/vendor
+
+# System Environment Secret Keys (NEVER COMMIT THESE)
+.env
+.env.backup
+.env.production
+.env.staging
+auth.json
+storage/*.key
+
+# Frontend Build & Compilation Hot-Reload Artifacts
+/public/build
+/public/hot
+/public/storage
+
+# Framework Application Runtime Artifacts & Internal Caches
+.phpunit.result.cache
+.phpactor.json
+/storage/pail
+/storage/framework/cache/data/*
+/storage/framework/views/*.php
+/storage/framework/sessions/*
+
+# Developer Operating Systems & Local Text Editor Dumps
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.mcp.json
+*.log
