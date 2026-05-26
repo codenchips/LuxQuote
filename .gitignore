@@ -14,7 +14,7 @@ storage/*.key
 /public/build
 /public/hot
 /public/storage
-
+    
 # Framework Application Runtime Artifacts & Internal Caches
 .phpunit.result.cache
 .phpactor.json
