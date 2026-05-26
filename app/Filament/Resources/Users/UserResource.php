@@ -23,6 +23,8 @@ class UserResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUsers;
 
+    protected static ?int $navigationSort = 3;
+
     public static function canViewAny(): bool
     {
         return auth()->user()?->can('view-users') ?? false;
