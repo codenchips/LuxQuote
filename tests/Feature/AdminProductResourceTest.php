@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Filament\Resources\Products\Pages\ListProducts;
 use App\Models\Product;
 use App\Models\User;
-use App\Services\ProductImportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
@@ -47,7 +46,7 @@ class AdminProductResourceTest extends TestCase
 
     public function test_fetch_products_action_imports_and_shows_notification(): void
     {
-        $admin = User::factory()->create();
+        $admin = User::factory()->admin()->create();
 
         Http::fake([
             '*' => Http::response([

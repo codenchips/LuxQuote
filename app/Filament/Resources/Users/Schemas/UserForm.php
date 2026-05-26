@@ -2,7 +2,10 @@
 
 namespace App\Filament\Resources\Users\Schemas;
 
+use App\Enums\UserRole;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
 class UserForm
@@ -11,27 +14,42 @@ class UserForm
     {
         return $schema
             ->components([
-                TextInput::make('name')
-                    ->required()
-                    ->maxLength(255),
-                TextInput::make('email')
-                    ->label('Email address')
-                    ->email()
-                    ->unique(ignoreRecord: true)
-                    ->required()
-                    ->maxLength(255),
-                TextInput::make('password')
-                    ->password()
-                    ->confirmed()
-                    ->dehydrated(fn (?string $state): bool => filled($state))
-                    ->required(fn (string $context): bool => $context === 'create')
-                    ->helperText(fn (string $context): ?string => $context === 'edit' ? 'Leave blank to keep the current password.' : null)
-                    ->maxLength(255),
-                TextInput::make('password_confirmation')
-                    ->label('Confirm password')
-                    ->password()
-                    ->dehydrated(false)
-                    ->required(fn (string $context): bool => $context === 'create'),
+                Section::make('User Details')
+                    ->description('Basic account information and role assignment.')
+                    ->schema([
+                        TextInput::make('name')
+                            ->required()
+                            ->maxLength(255),
+                        TextInput::make('email')
+                            ->label('Email address')
+                            ->email()
+                            ->unique(ignoreRecord: true)
+                            ->required()
+                            ->maxLength(255),
+                        Select::make('role')
+                            ->label('Role')
+                            ->options([
+                                UserRole::Admin->value => 'Admin',
+                                UserRole::Users->value => 'User',
+                            ])
+                            ->required()
+                            ->default(UserRole::Users->value),
+                    ]),
+                Section::make('Password')
+                    ->description('Leave blank when editing to keep the current password.')
+                    ->schema([
+                        TextInput::make('password')
+                            ->password()
+                            ->confirmed()
+                            ->dehydrated(fn (?string $state): bool => filled($state))
+                            ->required(fn (string $context): bool => $context === 'create')
+                            ->maxLength(255),
+                        TextInput::make('password_confirmation')
+                            ->label('Confirm password')
+                            ->password()
+                            ->dehydrated(false)
+                            ->required(fn (string $context): bool => $context === 'create'),
+                    ]),
             ]);
     }
 }

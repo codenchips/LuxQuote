@@ -21,6 +21,7 @@ class ListProducts extends ListRecords
                 ->label('Fetch Products')
                 ->icon(Heroicon::OutlinedArrowDownTray)
                 ->color('primary')
+                ->visible(fn (): bool => auth()->user()?->can('import-products') ?? false)
                 ->requiresConfirmation()
                 ->modalHeading('Fetch Products from Server')
                 ->modalDescription('This will replace all existing product data with the latest from the external server. Continue?')

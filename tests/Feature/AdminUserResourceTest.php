@@ -18,7 +18,7 @@ class AdminUserResourceTest extends TestCase
 
     private function adminUser(): User
     {
-        return User::factory()->create();
+        return User::factory()->admin()->create();
     }
 
     public function test_admin_can_list_users(): void
