@@ -21,7 +21,7 @@
         <span>{!! $nameString !!} {{ $count === 1 ? 'is' : 'are' }} also viewing this project right now.</span>
         <button
             wire:click="heartbeat"
-            title="Refresh"
+            title="Refresh — updates may take up to a minute to appear"
             class="ml-auto shrink-0 rounded-md bg-blue-100 dark:bg-blue-800/40 px-3 py-1 text-xs font-medium hover:bg-blue-200 dark:hover:bg-blue-800/60 transition-colors flex items-center gap-1"
         >
             <x-heroicon-o-arrow-path class="w-3.5 h-3.5" wire:loading.class="animate-spin" wire:target="heartbeat" />

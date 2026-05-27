@@ -201,6 +201,7 @@ class ProjectsTable
                     ->tooltip('Delete / Archive'),
             ])
             ->defaultSort('created_at', 'desc')
+            ->poll('60s')
             ->modifyQueryUsing(fn (Builder $query) => $query
                 ->where('status', '!=', ProjectStatus::Archived->value)
                 ->with(['activeViewers'])
