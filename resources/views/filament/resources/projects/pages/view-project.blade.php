@@ -29,11 +29,19 @@
 
                 {{-- Area actions (stop accordion toggle) --}}
                 <div class="flex items-center gap-1" @click.stop>
+
+                    <button
+                        wire:click="addProduct({{ $area->id }})"
+                        class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
+                    >
+                        <x-heroicon-o-plus class="w-3 h-3" /> Product 
+                    </button>
+
                     <button
                         wire:click="addBlankLine({{ $area->id }})"
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
                     >
-                        <x-heroicon-o-plus class="w-3 h-3" /> Blank Row
+                        <x-heroicon-o-plus class="w-3 h-3" /> Blank 
                     </button>
                 </div>
 
@@ -174,4 +182,200 @@
         </div>
         @endforelse
     </div>
+
+    {{-- Product Picker Modal --}}
+    @if($productPickerOpen)
+    <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add Products"
+        class="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+    >
+        {{-- Backdrop --}}
+        <div
+            class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            wire:click="closeProductPicker"
+        ></div>
+
+        {{-- Modal panel --}}
+        <div class="relative z-10 w-full max-w-4xl flex flex-col bg-white dark:bg-gray-900 rounded-xl shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700" style="max-height: 85vh">
+
+            {{-- Header --}}
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                <h2 class="text-base font-semibold text-gray-900 dark:text-white">Add Products to Area</h2>
+                <button
+                    wire:click="closeProductPicker"
+                    class="rounded-lg p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                    <x-heroicon-o-x-mark class="w-5 h-5" />
+                </button>
+            </div>
+
+            {{-- Search & Filter bar --}}
+            <div class="flex gap-3 px-6 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                <div class="relative flex-1">
+                    <x-heroicon-o-magnifying-glass class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    <input
+                        wire:model.live.debounce.250ms="productSearch"
+                        type="search"
+                        placeholder="Search by name, SKU or description..."
+                        class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 pl-9 pr-3 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    />
+                </div>
+                <select
+                    wire:model.live="productTypeFilter"
+                    class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                >
+                    <option value="">All types</option>
+                    @foreach($this->productTypeOptions as $type)
+                    <option value="{{ $type }}">{{ $type }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            {{-- Column headers --}}
+            <div class="grid gap-3 px-6 py-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/40 border-b border-gray-100 dark:border-gray-800 shrink-0"
+                style="grid-template-columns: 32px 1fr 120px 80px 80px 70px">
+                <div></div>
+                <div>Product</div>
+                <div>SKU</div>
+                <div>Type</div>
+                <div class="text-center">Site</div>
+                <div class="text-center">Qty</div>
+            </div>
+
+            {{-- Product list --}}
+            <div class="flex-1 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800">
+                @forelse($this->productPickerProducts as $product)
+                @php $isSelected = isset($productSelections[$product->id]); @endphp
+                <div
+                    wire:key="picker-product-{{ $product->id }}"
+                    x-on:click="$wire.toggleProductSelection({{ $product->id }})"
+                    class="grid items-center gap-3 px-6 py-3 cursor-pointer select-none transition-colors
+                        {{ $isSelected
+                            ? 'bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 dark:hover:bg-primary-900/30'
+                            : 'hover:bg-gray-50 dark:hover:bg-gray-800/50' }}"
+                    style="grid-template-columns: 32px 1fr 120px 80px 80px 70px"
+                >
+                    {{-- Checkbox --}}
+                    <div class="flex items-center justify-center pointer-events-none">
+                        <div class="w-4 h-4 rounded border-2 flex items-center justify-center transition-colors
+                            {{ $isSelected
+                                ? 'bg-primary-600 border-primary-600'
+                                : 'border-gray-400 dark:border-gray-500 bg-white dark:bg-gray-800' }}">
+                            @if($isSelected)
+                            <x-heroicon-s-check class="w-2.5 h-2.5 text-white" />
+                            @endif
+                        </div>
+                    </div>
+
+                    {{-- Name + description --}}
+                    <div class="min-w-0">
+                        <div class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ $product->product_name }}</div>
+                        @if($product->description)
+                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ $product->description }}</div>
+                        @endif
+                    </div>
+
+                    {{-- SKU --}}
+                    <div class="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">{{ $product->sku }}</div>
+
+                    {{-- Type --}}
+                    <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ $product->type_name ?? '—' }}</div>
+
+                    {{-- Site badge --}}
+                    <div class="flex justify-center">
+                        @if($product->site)
+                        <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                            {{ $product->site }}
+                        </span>
+                        @else
+                        <span class="text-gray-400">—</span>
+                        @endif
+                    </div>
+
+                    {{-- Qty input (only when selected) --}}
+                    <div class="flex justify-center" x-on:click.stop>
+                        @if($isSelected)
+                        <input
+                            type="number"
+                            min="1"
+                            value="{{ $productSelections[$product->id]['qty'] }}"
+                            wire:change="setProductSelectionQty({{ $product->id }}, $event.target.value)"
+                            class="w-16 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm text-center text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        />
+                        @else
+                        <span class="text-gray-300 dark:text-gray-600 text-sm">—</span>
+                        @endif
+                    </div>
+                </div>
+                @empty
+                <div class="flex flex-col items-center justify-center py-16 text-sm text-gray-400 dark:text-gray-500">
+                    <x-heroicon-o-magnifying-glass class="w-8 h-8 mb-2 text-gray-300 dark:text-gray-600" />
+                    No products found{{ $productSearch || $productTypeFilter ? ' for your search' : '' }}.
+                </div>
+                @endforelse
+            </div>
+
+            {{-- Pagination --}}
+            @if($this->productPickerProducts->lastPage() > 1)
+            <div class="flex items-center justify-between px-6 py-2.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 shrink-0 text-sm text-gray-500 dark:text-gray-400">
+                <span>
+                    Page {{ $this->productPickerProducts->currentPage() }} of {{ $this->productPickerProducts->lastPage() }}
+                    &middot; {{ $this->productPickerProducts->total() }} products
+                </span>
+                <div class="flex items-center gap-1">
+                    <button
+                        wire:click="$set('productPage', {{ max(1, $productPage - 1) }})"
+                        @disabled($productPage <= 1)
+                        class="rounded-lg px-2.5 py-1 font-medium transition-colors
+                            {{ $productPage <= 1
+                                ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
+                                : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300' }}"
+                    >← Prev</button>
+                    <button
+                        wire:click="$set('productPage', {{ min($this->productPickerProducts->lastPage(), $productPage + 1) }})"
+                        @disabled(! $this->productPickerProducts->hasMorePages())
+                        class="rounded-lg px-2.5 py-1 font-medium transition-colors
+                            {{ ! $this->productPickerProducts->hasMorePages()
+                                ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
+                                : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300' }}"
+                    >Next →</button>
+                </div>
+            </div>
+            @endif
+
+            {{-- Footer --}}
+            <div class="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-b-xl shrink-0">
+                <span class="text-sm text-gray-500 dark:text-gray-400">
+                    @if(count($productSelections) > 0)
+                    <span class="font-medium text-primary-600 dark:text-primary-400">{{ count($productSelections) }} {{ Str::plural('product', count($productSelections)) }} selected</span>
+                    @else
+                    Click a row to select products
+                    @endif
+                </span>
+                <div class="flex items-center gap-3">
+                    <button
+                        wire:click="closeProductPicker"
+                        class="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        wire:click="addSelectedProducts"
+                        @disabled(count($productSelections) === 0)
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                            {{ count($productSelections) > 0
+                                ? 'bg-primary-600 hover:bg-primary-700 text-white'
+                                : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed' }}"
+                    >
+                        Add {{ count($productSelections) > 0 ? count($productSelections).' '.Str::plural('Product', count($productSelections)) : 'Products' }}
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    @endif
+
 </x-filament-panels::page>

@@ -4,15 +4,18 @@ namespace App\Filament\Resources\Projects\Pages;
 
 use App\Enums\ProjectLineType;
 use App\Filament\Resources\Projects\ProjectResource;
+use App\Models\Product;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
+use Livewire\Attributes\Computed;
 
 class ViewProject extends ViewRecord
 {
@@ -21,6 +24,21 @@ class ViewProject extends ViewRecord
     protected string $view = 'filament.resources.projects.pages.view-project';
 
     public string $newAreaName = '';
+
+    // ── Product picker state ─────────────────────────────────────────────────
+
+    public bool $productPickerOpen = false;
+
+    public ?int $productPickerAreaId = null;
+
+    public string $productSearch = '';
+
+    public string $productTypeFilter = '';
+
+    public int $productPage = 1;
+
+    /** @var array<int, array{qty: int}> */
+    public array $productSelections = [];
 
     public function getTitle(): string
     {
@@ -42,11 +60,11 @@ class ViewProject extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('back')
-                ->label('All Projects')
-                ->icon(Heroicon::OutlinedArrowLeft)
-                ->color('gray')
-                ->url(ProjectResource::getUrl('index')),
+            // Action::make('back')
+            //     ->label('All Projects')
+            //     ->icon(Heroicon::OutlinedArrowLeft)
+            //     ->color('gray')
+            //     ->url(ProjectResource::getUrl('index')),
 
             Action::make('manageAreas')
                 ->label('Areas')
@@ -97,6 +115,113 @@ class ViewProject extends ViewRecord
     }
 
     // ── Line management ───────────────────────────────────────────────────────
+
+    public function openProductPicker(int $areaId): void
+    {
+        $this->productPickerAreaId = $areaId;
+        $this->productSearch = '';
+        $this->productTypeFilter = '';
+        $this->productPage = 1;
+        $this->productSelections = [];
+        $this->productPickerOpen = true;
+    }
+
+    public function closeProductPicker(): void
+    {
+        $this->productPickerOpen = false;
+        $this->productPickerAreaId = null;
+        $this->productSelections = [];
+    }
+
+    public function updatedProductSearch(): void
+    {
+        $this->productPage = 1;
+    }
+
+    public function updatedProductTypeFilter(): void
+    {
+        $this->productPage = 1;
+    }
+
+    public function toggleProductSelection(int $productId): void
+    {
+        if (isset($this->productSelections[$productId])) {
+            unset($this->productSelections[$productId]);
+        } else {
+            $this->productSelections[$productId] = ['qty' => 1];
+        }
+    }
+
+    public function setProductSelectionQty(int $productId, int $qty): void
+    {
+        $this->productSelections[$productId] = ['qty' => max(1, $qty)];
+    }
+
+    public function addSelectedProducts(): void
+    {
+        if (! $this->productPickerAreaId || empty($this->productSelections)) {
+            return;
+        }
+
+        $area = ProjectArea::where('id', $this->productPickerAreaId)
+            ->where('project_id', $this->record->id)
+            ->firstOrFail();
+
+        $maxSort = $area->lines()->max('sort_order') ?? -1;
+
+        foreach ($this->productSelections as $productId => $selection) {
+            $product = Product::find($productId);
+
+            if (! $product) {
+                continue;
+            }
+
+            $maxSort++;
+
+            $area->lines()->create([
+                'code' => $product->sku,
+                'description' => $product->product_name,
+                'qty' => $selection['qty'],
+                'type' => ProjectLineType::Standard->value,
+                'sort_order' => $maxSort,
+            ]);
+        }
+
+        $this->closeProductPicker();
+    }
+
+    #[Computed]
+    public function productPickerProducts(): LengthAwarePaginator
+    {
+        return Product::query()
+            ->when(
+                $this->productSearch,
+                fn ($q) => $q->where(function ($q): void {
+                    $q->where('product_name', 'like', "%{$this->productSearch}%")
+                        ->orWhere('sku', 'like', "%{$this->productSearch}%")
+                        ->orWhere('description', 'like', "%{$this->productSearch}%");
+                })
+            )
+            ->when($this->productTypeFilter, fn ($q) => $q->where('type_name', $this->productTypeFilter))
+            ->orderBy('product_name')
+            ->paginate(15, ['*'], 'product_page', $this->productPage);
+    }
+
+    #[Computed]
+    public function productTypeOptions(): array
+    {
+        return Product::query()
+            ->whereNotNull('type_name')
+            ->distinct()
+            ->orderBy('type_name')
+            ->pluck('type_name')
+            ->toArray();
+    }
+
+    public function addProduct(int $areaId): void
+    {
+        $this->openProductPicker($areaId);
+    }
 
     public function addBlankLine(int $areaId): void
     {
