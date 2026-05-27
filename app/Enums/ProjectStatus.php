@@ -8,6 +8,7 @@ enum ProjectStatus: string
     case InProgress = 'in_progress';
     case Complete = 'complete';
     case Cancelled = 'cancelled';
+    case Archived = 'archived';
 
     public function label(): string
     {
@@ -16,6 +17,7 @@ enum ProjectStatus: string
             ProjectStatus::InProgress => 'In Progress',
             ProjectStatus::Complete => 'Complete',
             ProjectStatus::Cancelled => 'Cancelled',
+            ProjectStatus::Archived => 'Archived',
         };
     }
 }

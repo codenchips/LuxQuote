@@ -1,4 +1,5 @@
 <x-filament-panels::page>
+<div x-data="{ confirmDeleteLineId: null }">
     {{-- Areas accordion list --}}
     <div class="space-y-3">
         @forelse($this->getAreas() as $area)
@@ -62,9 +63,9 @@
                     <div>Code</div>
                     <div>Ref</div>
                     <div>Description</div>
-                    <div class="text-right">Qty</div>
+                    <div class="text-center">Qty</div>
                     <div>Type</div>
-                    <div class="text-right">Unit Price</div>
+                    <div class="text-center">Unit Price</div>
                     <div>Notes</div>
                     <div>Status</div>
                     <div></div>
@@ -157,7 +158,7 @@
                         <input
                             value="{{ $line->notes }}"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'notes', $el.value)"
-                            placeholder="Notes..."
+                            placeholder=""
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-500 dark:text-gray-400"
                         />
 
@@ -174,8 +175,7 @@
                                 <x-heroicon-o-document-duplicate class="w-4 h-4" />
                             </button>
                             <button
-                                wire:click="deleteLine({{ $line->id }})"
-                                wire:confirm="Delete this line?"
+                                @click.stop="confirmDeleteLineId = {{ $line->id }}"
                                 title="Delete row"
                                 class="rounded p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700"
                             >
@@ -413,4 +413,45 @@
     </div>
     @endif
 
+    {{-- Delete Line Confirmation Modal --}}
+    <div
+        x-show="confirmDeleteLineId !== null"
+        x-transition:enter="transition ease-out duration-150"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-100"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+        class="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        style="display: none"
+    >
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="confirmDeleteLineId = null"></div>
+        <div class="relative z-10 w-full max-w-sm bg-white dark:bg-gray-900 rounded-xl shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700 p-6">
+            <div class="flex items-start gap-4 mb-5">
+                <div class="flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30">
+                    <x-heroicon-o-trash class="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">Delete this line?</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">This action cannot be undone.</p>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3">
+                <button
+                    @click="confirmDeleteLineId = null"
+                    class="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                >
+                    Cancel
+                </button>
+                <button
+                    @click="$wire.deleteLine(confirmDeleteLineId); confirmDeleteLineId = null"
+                    class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors"
+                >
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+</div>
 </x-filament-panels::page>
