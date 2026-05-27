@@ -33,6 +33,8 @@ class ViewProject extends ViewRecord
 
     public string $productSearch = '';
 
+    public string $productSiteFilter = '';
+
     public string $productTypeFilter = '';
 
     public int $productPage = 1;
@@ -120,6 +122,7 @@ class ViewProject extends ViewRecord
     {
         $this->productPickerAreaId = $areaId;
         $this->productSearch = '';
+        $this->productSiteFilter = '';
         $this->productTypeFilter = '';
         $this->productPage = 1;
         $this->productSelections = [];
@@ -135,6 +138,12 @@ class ViewProject extends ViewRecord
 
     public function updatedProductSearch(): void
     {
+        $this->productPage = 1;
+    }
+
+    public function updatedProductSiteFilter(): void
+    {
+        $this->productTypeFilter = '';
         $this->productPage = 1;
     }
 
@@ -203,9 +212,21 @@ class ViewProject extends ViewRecord
                         ->orWhere('description', 'like', "%{$this->productSearch}%");
                 })
             )
+            ->when($this->productSiteFilter, fn ($q) => $q->where('site', $this->productSiteFilter))
             ->when($this->productTypeFilter, fn ($q) => $q->where('type_name', $this->productTypeFilter))
             ->orderBy('product_name')
             ->paginate(15, ['*'], 'product_page', $this->productPage);
+    }
+
+    #[Computed]
+    public function productSiteOptions(): array
+    {
+        return Product::query()
+            ->whereNotNull('site')
+            ->distinct()
+            ->orderBy('site')
+            ->pluck('site')
+            ->toArray();
     }
 
     #[Computed]
@@ -213,6 +234,7 @@ class ViewProject extends ViewRecord
     {
         return Product::query()
             ->whereNotNull('type_name')
+            ->when($this->productSiteFilter, fn ($q) => $q->where('site', $this->productSiteFilter))
             ->distinct()
             ->orderBy('type_name')
             ->pluck('type_name')

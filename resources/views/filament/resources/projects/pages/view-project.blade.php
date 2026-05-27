@@ -195,7 +195,7 @@
                         </button> or a <button
                             wire:click="addProduct({{ $area->id }})"
                             class="text-primary-500 hover:underline">
-                            Product
+                            product
                         </button>                                        
                     </div>
                     @endif
@@ -248,6 +248,15 @@
                         class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 pl-9 pr-3 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                     />
                 </div>
+                <select
+                    wire:model.live="productSiteFilter"
+                    class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                >
+                    <option value="">All sites</option>
+                    @foreach($this->productSiteOptions as $site)
+                    <option value="{{ $site }}">{{ $site }}</option>
+                    @endforeach
+                </select>
                 <select
                     wire:model.live="productTypeFilter"
                     class="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
@@ -338,7 +347,7 @@
                 @empty
                 <div class="flex flex-col items-center justify-center py-16 text-sm text-gray-400 dark:text-gray-500">
                     <x-heroicon-o-magnifying-glass class="w-8 h-8 mb-2 text-gray-300 dark:text-gray-600" />
-                    No products found{{ $productSearch || $productTypeFilter ? ' for your search' : '' }}.
+                    No products found{{ $productSearch || $productSiteFilter || $productTypeFilter ? ' for your search' : '' }}.
                 </div>
                 @endforelse
             </div>

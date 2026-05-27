@@ -3,9 +3,13 @@
 namespace App\Filament\Resources\Products\Tables;
 
 use App\Models\Product;
+use Filament\Forms\Components\Select;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class ProductsTable
 {
@@ -108,24 +112,50 @@ class ProductsTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                SelectFilter::make('site')
-                    ->label('Site')
-                    ->options(fn (): array => Product::query()
-                        ->distinct()
-                        ->orderBy('site')
-                        ->pluck('site', 'site')
-                        ->filter()
-                        ->toArray()
-                    ),
-                SelectFilter::make('type_name')
-                    ->label('Type')
-                    ->options(fn (): array => Product::query()
-                        ->distinct()
-                        ->orderBy('type_name')
-                        ->pluck('type_name', 'type_name')
-                        ->filter()
-                        ->toArray()
-                    ),
+                Filter::make('site_type')
+                    ->form([
+                        Select::make('site')
+                            ->label('Site')
+                            ->placeholder('All sites')
+                            ->options(fn (): array => Product::query()
+                                ->whereNotNull('site')
+                                ->distinct()
+                                ->orderBy('site')
+                                ->pluck('site', 'site')
+                                ->toArray()
+                            )
+                            ->live()
+                            ->afterStateUpdated(fn (Set $set) => $set('type_name', null)),
+
+                        Select::make('type_name')
+                            ->label('Type')
+                            ->placeholder('All types')
+                            ->options(fn (Get $get): array => Product::query()
+                                ->whereNotNull('type_name')
+                                ->when($get('site'), fn (Builder $q, string $site) => $q->where('site', $site))
+                                ->distinct()
+                                ->orderBy('type_name')
+                                ->pluck('type_name', 'type_name')
+                                ->toArray()
+                            ),
+                    ])
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when($data['site'] ?? null, fn (Builder $q, string $v) => $q->where('site', $v))
+                        ->when($data['type_name'] ?? null, fn (Builder $q, string $v) => $q->where('type_name', $v))
+                    )
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+
+                        if ($data['site'] ?? null) {
+                            $indicators[] = 'Site: '.$data['site'];
+                        }
+
+                        if ($data['type_name'] ?? null) {
+                            $indicators[] = 'Type: '.$data['type_name'];
+                        }
+
+                        return $indicators;
+                    }),
             ])
             ->recordActions([])
             ->toolbarActions([])
