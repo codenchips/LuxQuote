@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['project_id', 'name', 'sort_order'])]
+#[Fillable(['project_id', 'project_revision_id', 'name', 'sort_order'])]
 class ProjectArea extends Model
 {
     use HasFactory;
@@ -16,6 +16,11 @@ class ProjectArea extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function revision(): BelongsTo
+    {
+        return $this->belongsTo(ProjectRevision::class, 'project_revision_id');
     }
 
     public function lines(): HasMany

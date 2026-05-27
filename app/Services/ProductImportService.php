@@ -45,7 +45,7 @@ class ProductImportService
             return $record;
         }, $rows);
 
-        Product::query()->truncate();
+        Product::query()->delete();
 
         foreach (array_chunk($records, 500) as $chunk) {
             Product::insert($chunk);

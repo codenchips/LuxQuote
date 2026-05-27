@@ -8,6 +8,7 @@ use App\Filament\Resources\Projects\Schemas\ProjectForm;
 use App\Models\Product;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
+use App\Models\ProjectRevision;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
@@ -28,6 +29,12 @@ class ViewProject extends ViewRecord
 
     public string $newAreaName = '';
 
+    // ── Revision state ───────────────────────────────────────────────────────
+
+    public ?int $viewingRevisionId = null;
+
+    public bool $revisionsModalOpen = false;
+
     // ── Product picker state ─────────────────────────────────────────────────
 
     public bool $productPickerOpen = false;
@@ -45,6 +52,13 @@ class ViewProject extends ViewRecord
     /** @var array<int, array{qty: int}> */
     public array $productSelections = [];
 
+    public function mount(int|string $record): void
+    {
+        parent::mount($record);
+
+        $this->viewingRevisionId = $this->record->active_revision_id;
+    }
+
     public function getTitle(): string
     {
         return $this->record->name;
@@ -56,8 +70,14 @@ class ViewProject extends ViewRecord
             $this->record->customer_name,
             $this->record->contractor,
             $this->record->site_location,
-            $this->record->revision ? 'Rev '.$this->record->revision : null,
         ]);
+
+        if ($this->viewingRevisionId) {
+            $revNum = ProjectRevision::find($this->viewingRevisionId)?->revision_number;
+            if ($revNum) {
+                $parts[] = 'Rev '.$revNum;
+            }
+        }
 
         return new HtmlString(implode(' &middot; ', $parts));
     }
@@ -73,17 +93,13 @@ class ViewProject extends ViewRecord
                 ->icon('heroicon-o-pencil')
                 ->color('gray')
                 ->tooltip('Edit project details')
-                ->after(fn () => $this->refreshTitle()),
+                ->after(fn () => $this->record->refresh()),
 
             Action::make('manageRevisions')
                 ->label('Revisions')
                 ->icon('heroicon-o-clock')
                 ->color('gray')
-                ->modalHeading('Manage Revisions')
-                ->modalDescription('Revision management is coming soon.')
-                ->modalContent(fn (): View => view('filament.resources.projects.pages.revisions-modal-content', ['project' => $this->record]))
-                ->modalSubmitAction(false)
-                ->modalCancelActionLabel('Close'),
+                ->action(fn () => $this->revisionsModalOpen = true),
 
             Action::make('manageAreas')
                 ->label('Areas')
@@ -100,18 +116,74 @@ class ViewProject extends ViewRecord
         ];
     }
 
-    protected function refreshTitle(): void
-    {
-        $this->record->refresh();
-    }
-
     public function getAreas(): Collection
     {
-        return $this->record
-            ->areas()
+        return ProjectArea::where('project_revision_id', $this->viewingRevisionId)
             ->with(['lines' => fn ($q) => $q->orderBy('sort_order')])
             ->orderBy('sort_order')
             ->get();
+    }
+
+    // ── Revision management ───────────────────────────────────────────────────
+
+    #[Computed]
+    public function projectRevisions(): Collection
+    {
+        return $this->record->revisions()->with('creator')->get();
+    }
+
+    public function setActiveRevision(int $revisionId): void
+    {
+        $revision = ProjectRevision::where('project_id', $this->record->id)
+            ->findOrFail($revisionId);
+
+        $this->record->update([
+            'active_revision_id' => $revision->id,
+            'revision' => $revision->revision_number,
+        ]);
+
+        $this->record->refresh();
+        $this->viewingRevisionId = $revision->id;
+        $this->revisionsModalOpen = false;
+    }
+
+    public function createNewRevision(): void
+    {
+        $sourceRevision = ProjectRevision::where('project_id', $this->record->id)
+            ->findOrFail($this->viewingRevisionId);
+
+        $newRevisionNumber = $this->record->revisions()->max('revision_number') + 1;
+
+        $newRevision = ProjectRevision::create([
+            'project_id' => $this->record->id,
+            'revision_number' => $newRevisionNumber,
+            'created_by' => auth()->id(),
+        ]);
+
+        foreach ($sourceRevision->areas()->with('lines')->get() as $area) {
+            $newArea = ProjectArea::create([
+                'project_id' => $this->record->id,
+                'project_revision_id' => $newRevision->id,
+                'name' => $area->name,
+                'sort_order' => $area->sort_order,
+            ]);
+
+            foreach ($area->lines as $line) {
+                $newArea->lines()->create($line->only([
+                    'product_id', 'code', 'ref', 'description', 'qty',
+                    'type', 'unit_price', 'notes', 'status', 'sort_order',
+                ]));
+            }
+        }
+
+        $this->record->update([
+            'active_revision_id' => $newRevision->id,
+            'revision' => $newRevisionNumber,
+        ]);
+
+        $this->record->refresh();
+        $this->viewingRevisionId = $newRevision->id;
+        $this->revisionsModalOpen = false;
     }
 
     // ── Area management ──────────────────────────────────────────────────────
@@ -120,9 +192,11 @@ class ViewProject extends ViewRecord
     {
         $this->validate(['newAreaName' => 'required|string|min:1|max:255']);
 
-        $maxSort = $this->record->areas()->max('sort_order') ?? -1;
+        $maxSort = ProjectArea::where('project_revision_id', $this->viewingRevisionId)->max('sort_order') ?? -1;
 
-        $this->record->areas()->create([
+        ProjectArea::create([
+            'project_id' => $this->record->id,
+            'project_revision_id' => $this->viewingRevisionId,
             'name' => trim($this->newAreaName),
             'sort_order' => $maxSort + 1,
         ]);
@@ -133,7 +207,7 @@ class ViewProject extends ViewRecord
     public function removeArea(int $areaId): void
     {
         ProjectArea::where('id', $areaId)
-            ->where('project_id', $this->record->id)
+            ->where('project_revision_id', $this->viewingRevisionId)
             ->firstOrFail()
             ->delete();
     }
@@ -195,7 +269,7 @@ class ViewProject extends ViewRecord
         }
 
         $area = ProjectArea::where('id', $this->productPickerAreaId)
-            ->where('project_id', $this->record->id)
+            ->where('project_revision_id', $this->viewingRevisionId)
             ->firstOrFail();
 
         $maxSort = $area->lines()->max('sort_order') ?? -1;
@@ -271,7 +345,7 @@ class ViewProject extends ViewRecord
     public function addBlankLine(int $areaId): void
     {
         $area = ProjectArea::where('id', $areaId)
-            ->where('project_id', $this->record->id)
+            ->where('project_revision_id', $this->viewingRevisionId)
             ->firstOrFail();
 
         $maxSort = $area->lines()->max('sort_order') ?? -1;

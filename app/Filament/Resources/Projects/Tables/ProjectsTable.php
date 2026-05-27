@@ -6,6 +6,8 @@ use App\Enums\ProjectStatus;
 use App\Enums\ProjectVisibility;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\Project;
+use App\Models\ProjectArea;
+use App\Models\ProjectRevision;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
@@ -99,11 +101,31 @@ class ProjectsTable
 
                         $attributes['name'] = $record->name.' - Copy';
                         $attributes['reference_number'] = null;
+                        $attributes['revision'] = 1;
 
+                        // withoutEvents prevents the booted hook from auto-creating a revision+area
                         $copy = Project::withoutEvents(fn (): Project => Project::create($attributes));
 
-                        foreach ($record->areas()->with('lines')->get() as $area) {
-                            $newArea = $copy->areas()->create([
+                        // Manually create the initial revision for the copied project
+                        $newRevision = ProjectRevision::create([
+                            'project_id' => $copy->id,
+                            'revision_number' => 1,
+                            'created_by' => auth()->id(),
+                        ]);
+
+                        // Copy areas + lines from the source project's active revision
+                        $sourceRevisionId = $record->active_revision_id;
+                        $sourceAreas = $sourceRevisionId
+                            ? ProjectArea::where('project_revision_id', $sourceRevisionId)
+                                ->with('lines')
+                                ->orderBy('sort_order')
+                                ->get()
+                            : collect();
+
+                        foreach ($sourceAreas as $area) {
+                            $newArea = ProjectArea::create([
+                                'project_id' => $copy->id,
+                                'project_revision_id' => $newRevision->id,
                                 'name' => $area->name,
                                 'sort_order' => $area->sort_order,
                             ]);
@@ -115,6 +137,9 @@ class ProjectsTable
                                 ]));
                             }
                         }
+
+                        // Set the active revision on the copied project
+                        $copy->updateQuietly(['active_revision_id' => $newRevision->id]);
                     }),
 
                 EditAction::make()

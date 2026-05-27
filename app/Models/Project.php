@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'department',
     'date',
     'revision',
+    'active_revision_id',
     'visibility',
     'status',
     'branch_name',
@@ -51,6 +52,17 @@ class Project extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(ProjectRevision::class)->orderBy('revision_number');
+    }
+
+    public function activeRevision(): BelongsTo
+    {
+        return $this->belongsTo(ProjectRevision::class, 'active_revision_id');
+    }
+
+    /** @deprecated Use areas through a specific revision instead */
     public function areas(): HasMany
     {
         return $this->hasMany(ProjectArea::class)->orderBy('sort_order');
@@ -59,7 +71,20 @@ class Project extends Model
     protected static function booted(): void
     {
         static::created(function (Project $project): void {
-            $project->areas()->create(['name' => 'Ground Floor', 'sort_order' => 0]);
+            $revision = ProjectRevision::create([
+                'project_id' => $project->id,
+                'revision_number' => 1,
+                'created_by' => $project->user_id,
+            ]);
+
+            ProjectArea::create([
+                'project_id' => $project->id,
+                'project_revision_id' => $revision->id,
+                'name' => 'Ground Floor',
+                'sort_order' => 0,
+            ]);
+
+            $project->updateQuietly(['active_revision_id' => $revision->id]);
         });
     }
 }

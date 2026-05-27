@@ -1,5 +1,19 @@
 <x-filament-panels::page>
 <div x-data="{ confirmDeleteLineId: null }">
+
+    {{-- Viewing old revision banner --}}
+    @php $activeRevisionId = $this->record->active_revision_id; @endphp
+    @if($viewingRevisionId && $viewingRevisionId !== $activeRevisionId)
+    <div class="mb-4 flex items-center gap-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+        <x-heroicon-o-exclamation-triangle class="w-4 h-4 shrink-0" />
+        <span>You are viewing a historical revision. Changes made here will not affect the active revision.</span>
+        <button
+            wire:click="setActiveRevision({{ $activeRevisionId }})"
+            class="ml-auto shrink-0 rounded-md bg-amber-100 dark:bg-amber-800/40 px-3 py-1 text-xs font-medium hover:bg-amber-200 dark:hover:bg-amber-800/60 transition-colors"
+        >Switch to active</button>
+    </div>
+    @endif
+
     {{-- Areas accordion list --}}
     <div class="space-y-3">
         @forelse($this->getAreas() as $area)
@@ -409,6 +423,84 @@
                 </div>
             </div>
 
+        </div>
+    </div>
+    @endif
+
+    {{-- Revisions Modal --}}
+    @if($revisionsModalOpen)
+    <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Manage Revisions"
+        class="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+    >
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" wire:click="$set('revisionsModalOpen', false)"></div>
+
+        <div class="relative z-10 w-full max-w-xl bg-white dark:bg-gray-900 rounded-xl shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700 flex flex-col" style="max-height: 80vh">
+            {{-- Header --}}
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                <h2 class="text-base font-semibold text-gray-900 dark:text-white">Revisions</h2>
+                <button
+                    wire:click="$set('revisionsModalOpen', false)"
+                    class="rounded-lg p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                    <x-heroicon-o-x-mark class="w-5 h-5" />
+                </button>
+            </div>
+
+            {{-- Revision list --}}
+            <div class="flex-1 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800">
+                @foreach($this->projectRevisions as $revision)
+                @php
+                    $isActive   = $revision->id === $this->record->active_revision_id;
+                    $isViewing  = $revision->id === $viewingRevisionId;
+                @endphp
+                <div class="flex items-center gap-4 px-6 py-4 {{ $isViewing ? 'bg-primary-50 dark:bg-primary-900/10' : '' }}">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-semibold text-gray-900 dark:text-white">Rev {{ $revision->revision_number }}</span>
+                            @if($isActive)
+                            <span class="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/30 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">Active</span>
+                            @endif
+                            @if($isViewing && !$isActive)
+                            <span class="inline-flex items-center rounded-full bg-primary-100 dark:bg-primary-900/30 px-2 py-0.5 text-xs font-medium text-primary-700 dark:text-primary-400">Viewing</span>
+                            @endif
+                        </div>
+                        <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                            Created by {{ $revision->creator?->name ?? $revision->creator?->email ?? 'Unknown' }}
+                            &middot; {{ $revision->created_at->format('d M Y, H:i') }}
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        @if(!$isViewing)
+                        <button
+                            wire:click="setActiveRevision({{ $revision->id }})"
+                            class="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                        >
+                            View{{ !$isActive ? ' and Set Active' : '' }}
+                        </button>
+                        @endif
+                    </div>
+                </div>
+                @endforeach
+            </div>
+
+            {{-- Footer --}}
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 shrink-0">
+                <button
+                    wire:click="createNewRevision"
+                    wire:loading.attr="disabled"
+                    class="w-full flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                >
+                    <x-heroicon-o-plus class="w-4 h-4" />
+                    <span wire:loading.remove wire:target="createNewRevision">Create New Revision</span>
+                    <span wire:loading wire:target="createNewRevision">Creating...</span>
+                </button>
+                <p class="mt-2 text-center text-xs text-gray-400 dark:text-gray-500">
+                    Copies all areas and lines from the current revision into a new one.
+                </p>
+            </div>
         </div>
     </div>
     @endif
