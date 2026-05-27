@@ -31,6 +31,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'quote_notes',
     'internal_notes',
     'general_notes',
+    'last_edited_at',
 ])]
 class Project extends Model
 {
@@ -40,6 +41,7 @@ class Project extends Model
     protected function casts(): array
     {
         return [
+            'last_edited_at' => 'datetime',
             'visibility' => ProjectVisibility::class,
             'status' => ProjectStatus::class,
             'date' => 'date',

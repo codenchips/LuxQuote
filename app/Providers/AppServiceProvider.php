@@ -3,7 +3,13 @@
 namespace App\Providers;
 
 use App\Enums\UserRole;
+use App\Models\Project;
+use App\Models\ProjectArea;
+use App\Models\ProjectLine;
 use App\Models\User;
+use App\Observers\ProjectAreaObserver;
+use App\Observers\ProjectLineObserver;
+use App\Observers\ProjectObserver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -25,6 +31,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Project::observe(ProjectObserver::class);
+        ProjectArea::observe(ProjectAreaObserver::class);
+        ProjectLine::observe(ProjectLineObserver::class);
+
         RateLimiter::for('login', function (Request $request) {
             return Limit::perMinute(5)->by($request->ip());
         });

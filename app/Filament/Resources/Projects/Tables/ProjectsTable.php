@@ -85,6 +85,13 @@ class ProjectsTable
                         ProjectVisibility::Private => 'warning',
                     })
                     ->sortable(),
+
+                TextColumn::make('last_edited_at')
+                    ->label('Last Edited')
+                    ->since()
+                    ->sortable()
+                    ->placeholder('Never')
+                    ->tooltip(fn ($record): ?string => $record->last_edited_at?->format('d M Y, H:i')),
             ])
             ->actions([
                 Action::make('duplicate')
