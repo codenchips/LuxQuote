@@ -27,7 +27,7 @@ class ProjectLineObserver
         $project = $area->project;
 
         if ($project && $area->project_revision_id === $project->active_revision_id) {
-            $project->updateQuietly(['last_edited_at' => now()]);
+            $project->updateQuietly(['last_edited_at' => now(), 'last_edited_by' => auth()->id()]);
         }
     }
 }

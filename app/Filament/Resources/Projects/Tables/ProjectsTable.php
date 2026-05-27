@@ -91,7 +91,10 @@ class ProjectsTable
                     ->since()
                     ->sortable()
                     ->placeholder('Never')
-                    ->tooltip(fn ($record): ?string => $record->last_edited_at?->format('d M Y, H:i')),
+                    ->tooltip(fn ($record): ?string => $record->last_edited_at
+                        ? $record->last_edited_at->format('d M Y, H:i').($record->lastEditor ? ' by '.$record->lastEditor->name : '')
+                        : null
+                    ),
 
                 TextColumn::make('active_viewers')
                     ->label('')
@@ -204,7 +207,7 @@ class ProjectsTable
             ->poll('60s')
             ->modifyQueryUsing(fn (Builder $query) => $query
                 ->where('status', '!=', ProjectStatus::Archived->value)
-                ->with(['activeViewers'])
+                ->with(['activeViewers', 'lastEditor'])
             );
     }
 }

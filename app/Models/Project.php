@@ -33,6 +33,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
     'internal_notes',
     'general_notes',
     'last_edited_at',
+    'last_edited_by',
 ])]
 class Project extends Model
 {
@@ -53,6 +54,11 @@ class Project extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function lastEditor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'last_edited_by');
     }
 
     public function revisions(): HasMany

@@ -10,6 +10,7 @@ class ProjectObserver
     /** Fields that do not constitute a meaningful user edit. */
     private const META_KEYS = [
         'last_edited_at',
+        'last_edited_by',
         'active_revision_id',
         'updated_at',
         'created_at',
@@ -21,6 +22,7 @@ class ProjectObserver
 
         if (! empty($meaningful)) {
             $project->last_edited_at = Carbon::now();
+            $project->last_edited_by = auth()->id();
         }
     }
 }
