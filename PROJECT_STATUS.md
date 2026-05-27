@@ -46,9 +46,20 @@ projects
   site_location, owner_email, created_by_email, department
   date, revision, visibility (open|private), status (draft|in_progress|complete|cancelled)
   branch_name, cover_percentage, quote_notes, internal_notes, general_notes
+  active_revision_id (FK → project_revisions, nullOnDelete)
+  last_edited_at (nullable timestamp)
+  last_edited_by (FK → users, nullable, nullOnDelete)
+
+project_revisions
+  id, project_id (FK), revision_number, created_by (FK → users)
+  unique(project_id, revision_number)
+
+project_presences
+  project_id (FK), user_id (FK), last_seen_at
+  (no timestamps — composite PK implied by upsert)
 
 project_areas
-  id, project_id (FK), name, sort_order
+  id, project_id (FK), project_revision_id (FK → project_revisions), name, sort_order
 
 project_lines
   id, project_area_id (FK), code, description, qty, type (standard|temp)
@@ -56,8 +67,12 @@ project_lines
 ```
 
 **Key relationships:**
-- `Project` → `hasMany` → `ProjectArea` → `hasMany` → `ProjectLine`
-- A new Project auto-creates a "Ground Floor" area on creation (model boot hook)
+- `Project` → `hasMany` → `ProjectRevision` → `hasMany` → `ProjectArea` → `hasMany` → `ProjectLine`
+- `Project::activeRevision()` — BelongsTo the currently active revision
+- `Project::activeViewers()` — HasManyThrough User via ProjectPresence (last 90 seconds, excludes self)
+- `Project::lastEditor()` — BelongsTo User via `last_edited_by`
+- `ProjectRevision::creator()` — BelongsTo User via `created_by`
+- A new Project auto-creates revision #1 on creation (model boot hook) and a default area
 - `ProjectArea` has computed accessors: `line_total_qty` and `line_total` (qty × unit_price sum)
 - `ProjectLine.code` stores the product SKU; `ProjectLine.description` stores the product name — there is **no `product_id` FK** on project lines
 
@@ -96,6 +111,8 @@ This is the most complex page. It is a custom `ViewRecord` Livewire component wi
 ### Layout
 - Page heading = project name; subheading = customer · contractor · site · revision
 - Header action: **Areas** button → opens a Filament modal to manage area names
+- **Concurrent editors banner** (blue): shown when other users have the project open (within 90 s); lists their names; has a Refresh button
+- **Viewing old revision banner** (amber): shown when the user is browsing a non-active revision
 - Body: accordion list of `ProjectArea` cards, each collapsible
 
 ### Per-area card
@@ -108,13 +125,32 @@ Each line is a sortable row (Alpine `x-sort`) with inline-editable fields:
 
 Lines can be dragged between areas; the `sortLine(lineId, position, targetAreaId)` method handles cross-area moves within a DB transaction.
 
+### Revision Management
+
+A **Revisions** header button opens a modal listing all revisions. From there users can:
+- **View** any revision (sets `$viewingRevisionId`; the page re-queries areas/lines for that revision)
+- **Set Active** — updates `projects.active_revision_id`; amber banner disappears
+- **Create New Revision** — copies all areas and lines from the currently viewed revision into a new `ProjectRevision`
+
+All area/line operations (add, edit, delete, sort) are scoped to `$viewingRevisionId`, not the active revision.
+
+### Concurrent Editing Detection
+
+The outer `<div>` has `wire:poll.30s="heartbeat"`. On each poll (and on `mount`):
+- `heartbeat()` upserts a `ProjectPresence` row (`project_id`, `user_id`, `last_seen_at = now()`)
+- Purges presence rows older than 90 seconds
+- `#[Computed] concurrentEditors()` returns other users whose `last_seen_at` is within 90 s
+
 ### Livewire methods on `ViewProject`
 
 | Method | What it does |
 |---|---|
-| `getAreas()` | Returns `Collection<ProjectArea>` with lines eager-loaded, ordered by sort_order |
-| `addArea()` | Validates `newAreaName`, creates area |
-| `removeArea(areaId)` | Deletes area (cascades to lines) |
+| `heartbeat()` | Upserts presence, purges stale, refreshes computed |
+| `setActiveRevision(revisionId)` | Updates `projects.active_revision_id` |
+| `createNewRevision()` | Copies areas+lines from `$viewingRevisionId` into new revision |
+| `getAreas()` | Returns areas for `$viewingRevisionId` with lines eager-loaded |
+| `addArea()` | Validates `newAreaName`, creates area under `$viewingRevisionId` |
+| `removeArea(areaId)` | Deletes area (cascades to lines); checks area belongs to current revision |
 | `addProduct(areaId)` | Alias → calls `openProductPicker(areaId)` |
 | `addBlankLine(areaId)` | Creates an empty Standard line |
 | `updateLineField(lineId, field, value)` | Inline edit — allowlist: `code, description, qty, unit_price, notes` |
@@ -131,7 +167,9 @@ Lines can be dragged between areas; the `sortLine(lineId, position, targetAreaId
 
 | Property | What it returns |
 |---|---|
-| `productPickerProducts` | Paginated products (15/page) filtered by `$productSearch` (name/SKU/description) and `$productTypeFilter` |
+| `concurrentEditors` | Other users with presence within 90 s |
+| `projectRevisions` | All revisions for this project with creator eager-loaded |
+| `productPickerProducts` | Paginated products (15/page) filtered by search + type |
 | `productTypeOptions` | Distinct non-null `type_name` values for the filter dropdown |
 
 ---
@@ -165,7 +203,7 @@ $productSelections (array<int, array{qty: int}>)  — keyed by product_id
 
 - Data source: external API `POST https://tcms.tamlite.co.uk/api/product_data`
 - Import handled by `App\Services\ProductImportService`
-- Import **truncates** the products table then bulk-inserts in chunks of 500
+- Import **deletes** all existing products then bulk-inserts in chunks of 500 (DELETE used over TRUNCATE to respect FK constraints)
 - `site` values seen in factory: `xcite`, `tamlite`, `luxena`
 - No create/edit UI — read-only in Filament, imported via Artisan or tests
 
@@ -187,12 +225,32 @@ $productSelections (array<int, array{qty: int}>)  — keyed by product_id
 
 ---
 
+## Projects List Table
+
+- Excludes archived projects
+- Columns: reference, name, customer, owner email, department, date, revision (badge), status (badge), visibility (badge), **Last Edited** (relative time, tooltip shows full datetime + editor name), **presence icon** (users icon with tooltip listing who's actively viewing)
+- Auto-refreshes every 60 s via `->poll('60s')` (Livewire morphdom diff — no visible flicker)
+
+---
+
+## Last Edited Tracking
+
+Three model observers automatically update `projects.last_edited_at` and `projects.last_edited_by`:
+
+| Observer | Trigger |
+|---|---|
+| `ProjectObserver` | Any meaningful change to the `projects` row (skips `last_edited_at`, `last_edited_by`, `active_revision_id`, timestamps) |
+| `ProjectAreaObserver` | Area saved or deleted — only if the area belongs to the **active revision** |
+| `ProjectLineObserver` | Line saved or deleted — only if its area belongs to the **active revision** |
+
+---
+
 ## Known Gaps / Next Steps (as of 27 May 2026)
 
 - [ ] `ProjectLine.status` column exists but is a placeholder (`–`) in the UI — no logic yet
 - [ ] No `product_id` FK on `project_lines` — products are referenced only by copied SKU/name
 - [ ] No unit price on `Product` model — lines require manual price entry after adding
-- [ ] No tests for the Projects resource or ViewProject interactions
+- [ ] No tests for the Projects resource or ViewProject interactions (revision management, presence, product picker, area/line management)
 - [ ] No Artisan command yet to trigger `ProductImportService` (needs `make:command`)
 - [ ] `cover_percentage` / `branch_name` fields exist on Project but are not surfaced in the form yet
 - [ ] Project totals (across all areas) not shown at the page level

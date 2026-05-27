@@ -82,3 +82,4 @@ vendor/bin/sail artisan test --compact --filter=testName
 | List routes | `vendor/bin/sail artisan route:list --except-vendor` |
 | Fix code style | `vendor/bin/sail bin pint --dirty` |
 | Tinker | `vendor/bin/sail artisan tinker` |
+
