@@ -11,6 +11,7 @@ use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Assets\Css;
+use Filament\Support\Enums\Width;
 use Filament\Widgets\AccountWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -30,6 +31,8 @@ class AdminPanelProvider extends PanelProvider
             ->path('')
             ->login()
             ->defaultThemeMode(ThemeMode::Dark)
+            //->sidebarWidth('14rem')
+            ->maxContentWidth(Width::Full)
             ->assets([
                 Css::make('app-styles', Vite::asset('resources/css/app.css')),
             ])

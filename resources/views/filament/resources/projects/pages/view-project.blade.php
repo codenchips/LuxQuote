@@ -187,13 +187,16 @@
 
                     @if($area->lines->isEmpty())
                     <div class="px-8 py-6 text-center text-sm text-gray-400 dark:text-gray-500">
-                        No items in this area.
+                        No items in this area. Add a
                         <button
                             wire:click="addBlankLine({{ $area->id }})"
-                            class="ml-1 text-primary-500 hover:underline"
-                        >
-                            Add a blank row
-                        </button>
+                            class="text-primary-500 hover:underline">
+                            blank row
+                        </button> or a <button
+                            wire:click="addProduct({{ $area->id }})"
+                            class="text-primary-500 hover:underline">
+                            Product
+                        </button>                                        
                     </div>
                     @endif
                 </div>
