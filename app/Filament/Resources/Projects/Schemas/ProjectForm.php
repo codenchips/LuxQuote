@@ -71,9 +71,9 @@ class ProjectForm
                 TextInput::make('revision')
                     ->label('Revision Number')
                     ->numeric()
-                    ->integer()
                     ->default(1)
-                    ->minValue(1),
+                    ->readOnly()
+                    ->helperText('Managed via the Revisions action on the project page.'),
 
                 ToggleButtons::make('visibility')
                     ->label('Project Visibility')

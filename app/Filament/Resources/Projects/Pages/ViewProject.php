@@ -4,11 +4,14 @@ namespace App\Filament\Resources\Projects\Pages;
 
 use App\Enums\ProjectLineType;
 use App\Filament\Resources\Projects\ProjectResource;
+use App\Filament\Resources\Projects\Schemas\ProjectForm;
 use App\Models\Product;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use Filament\Actions\Action;
+use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\View\View;
@@ -62,11 +65,25 @@ class ViewProject extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            // Action::make('back')
-            //     ->label('All Projects')
-            //     ->icon(Heroicon::OutlinedArrowLeft)
-            //     ->color('gray')
-            //     ->url(ProjectResource::getUrl('index')),
+            EditAction::make('editProject')
+                ->record($this->record)
+                ->form(fn (Schema $schema): Schema => ProjectForm::configure($schema))
+                ->slideOver()
+                ->label('Details')
+                ->icon('heroicon-o-pencil')
+                ->color('gray')
+                ->tooltip('Edit project details')
+                ->after(fn () => $this->refreshTitle()),
+
+            Action::make('manageRevisions')
+                ->label('Revisions')
+                ->icon('heroicon-o-clock')
+                ->color('gray')
+                ->modalHeading('Manage Revisions')
+                ->modalDescription('Revision management is coming soon.')
+                ->modalContent(fn (): View => view('filament.resources.projects.pages.revisions-modal-content', ['project' => $this->record]))
+                ->modalSubmitAction(false)
+                ->modalCancelActionLabel('Close'),
 
             Action::make('manageAreas')
                 ->label('Areas')
@@ -81,6 +98,11 @@ class ViewProject extends ViewRecord
                 ->modalSubmitAction(false)
                 ->modalCancelActionLabel('Close'),
         ];
+    }
+
+    protected function refreshTitle(): void
+    {
+        $this->record->refresh();
     }
 
     public function getAreas(): Collection
