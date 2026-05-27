@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['project_area_id', 'code', 'description', 'qty', 'type', 'unit_price', 'notes', 'status', 'sort_order'])]
+#[Fillable(['project_area_id', 'product_id', 'code', 'ref', 'description', 'qty', 'type', 'unit_price', 'notes', 'status', 'sort_order'])]
 class ProjectLine extends Model
 {
     use HasFactory;
@@ -25,5 +25,10 @@ class ProjectLine extends Model
     public function area(): BelongsTo
     {
         return $this->belongsTo(ProjectArea::class, 'project_area_id');
+    }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
     }
 }

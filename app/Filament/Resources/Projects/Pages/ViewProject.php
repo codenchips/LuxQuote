@@ -179,6 +179,7 @@ class ViewProject extends ViewRecord
             $maxSort++;
 
             $area->lines()->create([
+                'product_id' => $product->id,
                 'code' => $product->sku,
                 'description' => $product->product_name,
                 'qty' => $selection['qty'],
@@ -234,22 +235,56 @@ class ViewProject extends ViewRecord
         $area->lines()->create([
             'description' => '',
             'qty' => 1,
-            'type' => ProjectLineType::Standard->value,
+            'type' => ProjectLineType::Custom->value,
             'sort_order' => $maxSort + 1,
         ]);
     }
 
     public function updateLineField(int $lineId, string $field, mixed $value): void
     {
-        $allowed = ['code', 'description', 'qty', 'unit_price', 'notes'];
+        $allowed = ['code', 'ref', 'description', 'qty', 'unit_price', 'notes'];
 
         if (! in_array($field, $allowed, true)) {
             return;
         }
 
-        ProjectLine::whereHas('area', fn ($q) => $q->where('project_id', $this->record->id))
-            ->findOrFail($lineId)
-            ->update([$field => $value !== '' ? $value : null]);
+        $line = ProjectLine::whereHas('area', fn ($q) => $q->where('project_id', $this->record->id))
+            ->findOrFail($lineId);
+
+        if ($field === 'ref') {
+            $value = ($value !== '' && $value !== null)
+                ? strtoupper(substr((string) $value, 0, 6))
+                : null;
+
+            $line->update(['ref' => $value]);
+
+            return;
+        }
+
+        $line->update([$field => $value !== '' ? $value : null]);
+
+        if (in_array($field, ['code', 'description'], true) && $line->product_id !== null) {
+            $line->refresh();
+            $this->recalculateLineType($line);
+        }
+    }
+
+    private function recalculateLineType(ProjectLine $line): void
+    {
+        $product = Product::find($line->product_id);
+
+        if ($product === null) {
+            return;
+        }
+
+        $unchanged = $line->code === $product->sku
+            && $line->description === $product->product_name;
+
+        $newType = $unchanged ? ProjectLineType::Standard : ProjectLineType::Modified;
+
+        if ($line->type !== $newType) {
+            $line->update(['type' => $newType->value]);
+        }
     }
 
     public function duplicateLine(int $lineId): void

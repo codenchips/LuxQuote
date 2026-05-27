@@ -56,10 +56,11 @@
                 {{-- Column headers --}}
                 <div
                     class="grid items-center gap-2 px-4 py-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/40"
-                    style="grid-template-columns: 20px 110px 1fr 60px 90px 95px 1fr 70px 60px"
+                    style="grid-template-columns: 20px 110px 65px 1fr 60px 90px 95px 1fr 70px 60px"
                 >
                     <div></div>
                     <div>Code</div>
+                    <div>Ref</div>
                     <div>Description</div>
                     <div class="text-right">Qty</div>
                     <div>Type</div>
@@ -79,8 +80,12 @@
                     <div
                         wire:key="line-{{ $line->id }}"
                         x-sort:item="{{ $line->id }}"
-                        class="grid items-center gap-2 px-4 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 {{ $line->type === \App\Enums\ProjectLineType::Temp ? 'bg-amber-50/60 dark:bg-amber-900/10' : '' }}"
-                        style="grid-template-columns: 20px 110px 1fr 60px 90px 95px 1fr 70px 60px"
+                        class="grid items-center gap-2 px-4 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 {{ match($line->type) {
+                            \App\Enums\ProjectLineType::Modified => 'bg-amber-50/60 dark:bg-amber-900/10',
+                            \App\Enums\ProjectLineType::Custom   => 'bg-blue-50/60 dark:bg-blue-900/10',
+                            default => '',
+                        } }}"
+                        style="grid-template-columns: 20px 110px 65px 1fr 60px 90px 95px 1fr 70px 60px"
                     >
                         {{-- Drag handle --}}
                         <div
@@ -95,7 +100,21 @@
                             value="{{ $line->code }}"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'code', $el.value)"
                             placeholder="–"
-                            class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm font-mono hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white {{ $line->type === \App\Enums\ProjectLineType::Temp ? 'text-amber-600 dark:text-amber-400' : '' }}"
+                            class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm font-mono hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white {{ match($line->type) {
+                                \App\Enums\ProjectLineType::Modified => 'text-amber-600 dark:text-amber-400',
+                                \App\Enums\ProjectLineType::Custom   => 'text-blue-600 dark:text-blue-400',
+                                default => '',
+                            } }}"
+                        />
+
+                        {{-- Ref --}}
+                        <input
+                            value="{{ $line->ref }}"
+                            maxlength="6"
+                            placeholder="–"
+                            x-on:blur="$wire.updateLineField({{ $line->id }}, 'ref', $el.value.toUpperCase().slice(0, 6))"
+                            x-on:input="$el.value = $el.value.toUpperCase().slice(0, 6)"
+                            class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm font-mono uppercase hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
                         />
 
                         {{-- Description --}}
@@ -116,7 +135,11 @@
                         />
 
                         {{-- Type badge --}}
-                        <span class="inline-flex items-center justify-center rounded px-2 py-0.5 text-xs font-semibold {{ $line->type === \App\Enums\ProjectLineType::Temp ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' }}">
+                        <span class="inline-flex items-center justify-center rounded px-2 py-0.5 text-xs font-semibold {{ match($line->type) {
+                            \App\Enums\ProjectLineType::Modified => 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400',
+                            \App\Enums\ProjectLineType::Custom   => 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-400',
+                            default                              => 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+                        } }}">
                             {{ $line->type->label() }}
                         </span>
 
