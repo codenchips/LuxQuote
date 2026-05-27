@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 #[Fillable([
     'user_id',
@@ -68,6 +69,25 @@ class Project extends Model
     public function areas(): HasMany
     {
         return $this->hasMany(ProjectArea::class)->orderBy('sort_order');
+    }
+
+    /**
+     * Users currently viewing this project (presence within the last 90 seconds),
+     * excluding the authenticated user.
+     *
+     * @return HasManyThrough<User, ProjectPresence>
+     */
+    public function activeViewers(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            User::class,
+            ProjectPresence::class,
+            'project_id',
+            'id',
+            'id',
+            'user_id',
+        )->where('project_presences.last_seen_at', '>=', now()->subSeconds(90))
+            ->where('project_presences.user_id', '!=', auth()->id() ?? 0);
     }
 
     protected static function booted(): void

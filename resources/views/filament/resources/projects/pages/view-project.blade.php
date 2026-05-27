@@ -1,5 +1,34 @@
 <x-filament-panels::page>
-<div x-data="{ confirmDeleteLineId: null }">
+<div x-data="{ confirmDeleteLineId: null }" wire:poll.30s="heartbeat">
+
+    {{-- Concurrent editors banner --}}
+    @if($this->concurrentEditors->isNotEmpty())
+    @php
+        $editorNames = $this->concurrentEditors->map(fn($u) => $u->name ?? $u->email);
+        $count = $editorNames->count();
+        if ($count === 1) {
+            $nameString = '<strong>'.$editorNames->first().'</strong>';
+        } elseif ($count === 2) {
+            $nameString = '<strong>'.$editorNames->first().'</strong> and <strong>'.$editorNames->last().'</strong>';
+        } else {
+            $listed = $editorNames->take(2)->map(fn($n) => '<strong>'.$n.'</strong>')->implode(', ');
+            $remaining = $count - 2;
+            $nameString = $listed.' and '.$remaining.' other'.($remaining > 1 ? 's' : '');
+        }
+    @endphp
+    <div class="mb-4 flex items-center gap-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-4 py-3 text-sm text-blue-800 dark:text-blue-300">
+        <x-heroicon-o-users class="w-4 h-4 shrink-0" />
+        <span>{!! $nameString !!} {{ $count === 1 ? 'is' : 'are' }} also viewing this project right now.</span>
+        <button
+            wire:click="heartbeat"
+            title="Refresh"
+            class="ml-auto shrink-0 rounded-md bg-blue-100 dark:bg-blue-800/40 px-3 py-1 text-xs font-medium hover:bg-blue-200 dark:hover:bg-blue-800/60 transition-colors flex items-center gap-1"
+        >
+            <x-heroicon-o-arrow-path class="w-3.5 h-3.5" wire:loading.class="animate-spin" wire:target="heartbeat" />
+            Refresh
+        </button>
+    </div>
+    @endif
 
     {{-- Viewing old revision banner --}}
     @php $activeRevisionId = $this->record->active_revision_id; @endphp

@@ -8,6 +8,7 @@ use App\Filament\Resources\Projects\Schemas\ProjectForm;
 use App\Models\Product;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
+use App\Models\ProjectPresence;
 use App\Models\ProjectRevision;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
@@ -57,6 +58,38 @@ class ViewProject extends ViewRecord
         parent::mount($record);
 
         $this->viewingRevisionId = $this->record->active_revision_id;
+        $this->heartbeat();
+    }
+
+    // ── Concurrent-editing presence ───────────────────────────────────────────
+
+    public function heartbeat(): void
+    {
+        ProjectPresence::upsert(
+            [[
+                'project_id' => $this->record->id,
+                'user_id' => auth()->id(),
+                'last_seen_at' => now(),
+            ]],
+            ['project_id', 'user_id'],
+            ['last_seen_at'],
+        );
+
+        // Purge stale presences globally (older than 90 seconds)
+        ProjectPresence::where('last_seen_at', '<', now()->subSeconds(90))->delete();
+    }
+
+    #[Computed]
+    public function concurrentEditors(): Collection
+    {
+        return ProjectPresence::where('project_id', $this->record->id)
+            ->where('user_id', '!=', auth()->id())
+            ->where('last_seen_at', '>=', now()->subSeconds(90))
+            ->with('user')
+            ->get()
+            ->map(fn (ProjectPresence $p) => $p->user)
+            ->filter()
+            ->values();
     }
 
     public function getTitle(): string

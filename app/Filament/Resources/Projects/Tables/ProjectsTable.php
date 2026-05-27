@@ -92,6 +92,30 @@ class ProjectsTable
                     ->sortable()
                     ->placeholder('Never')
                     ->tooltip(fn ($record): ?string => $record->last_edited_at?->format('d M Y, H:i')),
+
+                TextColumn::make('active_viewers')
+                    ->label('')
+                    ->getStateUsing(function (Project $record): ?string {
+                        $viewers = $record->activeViewers;
+                        if ($viewers->isEmpty()) {
+                            return null;
+                        }
+                        $names = $viewers->map(fn ($u) => $u->name ?? $u->email);
+                        $count = $names->count();
+                        if ($count === 1) {
+                            return $names->first().' is viewing this project';
+                        }
+                        if ($count === 2) {
+                            return $names->first().' and '.$names->last().' are viewing this project';
+                        }
+                        $listed = $names->take(2)->implode(', ');
+
+                        return $listed.' and '.($count - 2).' other'.($count > 3 ? 's' : '').' are viewing this project';
+                    })
+                    ->icon(fn (?string $state): string => $state ? 'heroicon-o-users' : '')
+                    ->color('info')
+                    ->formatStateUsing(fn (): string => '')
+                    ->tooltip(fn (?string $state): ?string => $state),
             ])
             ->actions([
                 Action::make('duplicate')
@@ -177,6 +201,9 @@ class ProjectsTable
                     ->tooltip('Delete / Archive'),
             ])
             ->defaultSort('created_at', 'desc')
-            ->modifyQueryUsing(fn (Builder $query) => $query->where('status', '!=', ProjectStatus::Archived->value));
+            ->modifyQueryUsing(fn (Builder $query) => $query
+                ->where('status', '!=', ProjectStatus::Archived->value)
+                ->with(['activeViewers'])
+            );
     }
 }
