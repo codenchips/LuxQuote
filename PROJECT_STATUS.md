@@ -1,6 +1,6 @@
 # Company App — Project Status
 
-_Last updated: 27 May 2026_
+_Last updated: 28 May 2026_
 
 ---
 
@@ -245,7 +245,65 @@ Three model observers automatically update `projects.last_edited_at` and `projec
 
 ---
 
-## Known Gaps / Next Steps (as of 27 May 2026)
+## Salesforce Integration (added 28 May 2026)
+
+### Status: Foundation working — investigation phase complete
+
+Authentication with Salesforce is working via the **OAuth2 Client Credentials grant** (no user credentials required). The Connected App's Consumer Key and Secret are used to fetch a short-lived Bearer token, which authorises REST API queries.
+
+### Environment variables required (`.env`)
+
+```dotenv
+SALESFORCE_API_KEY=           # Consumer Key from the Connected App
+SALESFORCE_CONSUMER_SECRET=   # Consumer Secret
+SALESFORCE_BASE_URL=          # e.g. https://your-org.my.salesforce.com
+```
+
+> `config('services.salesforce.client_id')` maps to `SALESFORCE_API_KEY`.
+
+### Files
+
+| File | Role |
+|---|---|
+| `app/Services/SalesforceService.php` | Auth + data methods |
+| `app/Console/Commands/InterrogateSalesforce.php` | Terminal investigation command |
+| `config/services.php` | `salesforce` key: `client_id`, `client_secret`, `url` |
+| `app/Providers/AppServiceProvider.php` | Singleton binding |
+
+### Service methods
+
+| Method | What it does |
+|---|---|
+| `getAccessToken(): ?string` | Private — POSTs to `{host}/services/oauth2/token` as form data with client credentials grant; returns Bearer token or null on failure |
+| `fetchProjects(): array` | Authenticates, queries `SELECT Id, Name, StageName, CloseDate FROM Opportunity LIMIT 25` via SOQL v65.0; returns `['success', 'records']` or `['success', 'status', 'errors']` |
+| `fetchAllOpportunityFields(int $limit): array` | Authenticates, calls `sobjects/Opportunity/describe` to get every field name, runs a dynamic SELECT with all fields via SOQL v60.0 |
+
+### Running the interrogator
+
+```bash
+vendor/bin/sail artisan salesforce:interrogate
+```
+
+Currently calls `fetchAllOpportunityFields(25)` — prints all available field keys from the first record, then renders up to 25 rows as a terminal table. Switch to `fetchProjects()` for the fixed 4-column query.
+
+### Cleanup needed before building further
+
+- [ ] **Remove debug code** from `getAccessToken()` — two lines left in: `logger(...)` and `dd(...)` — these will break any non-CLI usage
+- [ ] **Remove `getAccessTokenPayload()`** — unused duplicate method, delete it
+- [ ] **Unify API version** — `fetchProjects()` uses `v65.0`, `fetchAllOpportunityFields()` uses `v60.0`; align to `v65.0` or make it an env var
+- [ ] **Decide the canonical method** — `fetchProjects()` (fixed columns) vs `fetchAllOpportunityFields()` (dynamic describe)
+
+### Salesforce next steps
+
+- [ ] Clean up the service (above items)
+- [ ] Map Salesforce Opportunity fields to our local `Project` model columns
+- [ ] Build an import/sync flow: pull Opportunities and create/update local `Project` records
+- [ ] Cache the Bearer token for its ~1 hour lifetime instead of fetching fresh on every call
+- [ ] Write feature tests using `Http::fake()` covering auth success, auth failure, and query failure
+
+---
+
+## Known Gaps / Next Steps (as of 28 May 2026)
 
 - [ ] `ProjectLine.status` column exists but is a placeholder (`–`) in the UI — no logic yet
 - [ ] No `product_id` FK on `project_lines` — products are referenced only by copied SKU/name
@@ -255,3 +313,18 @@ Three model observers automatically update `projects.last_edited_at` and `projec
 - [ ] `cover_percentage` / `branch_name` fields exist on Project but are not surfaced in the form yet
 - [ ] Project totals (across all areas) not shown at the page level
 - [ ] No PDF / export functionality yet
+- [ ] Salesforce service cleanup (see Salesforce section above)
+- [ ] Salesforce → Project import/sync flow not yet built
+
+---
+
+## Features completed — 28 May 2026
+
+- **Activity log completeness**: All 8 `ProjectLine` fields tracked (`code`, `ref`, `description`, `qty`, `unit_price`, `notes`, `type`, `status`)
+- **History noise reduction**: Adding a product row (blank → fill fields) collapses into a single history entry instead of 7 separate ones — uses a 5-minute creation window merge keyed on `line_id` in the `product.added` payload
+- **Area events in history**: Area creation (`area.created`) and deletion (`area.deleted`) are both logged; deletion captures the full line list before the DB cascade removes them (uses `deleting()` not `deleted()`)
+- **Area delete dialog**: Replaced browser `window.confirm()` with the same styled Alpine.js modal used for line deletion — stores `confirmDeleteAreaId` + `confirmDeleteAreaName` in `x-data`
+- **User profile page**: Full-panel profile page (not auth-style) accessible from the user menu — fields: name, password, area code, job role. `isSimple: false` on `->profile()` gives full sidebar layout
+- **JobRole enum** (`app/Enums/JobRole.php`): `SalesEngineer`, `TradeSalesEngineer`, `Technical`, `ProductDesign` — easy to extend with more cases
+- **Display names in UI**: Project owner column and history "Who" column now show the user's display name instead of their email address
+- **Salesforce integration foundation**: OAuth2 client credentials auth working; `InterrogateSalesforce` command printing live Opportunity records from Salesforce to the terminal

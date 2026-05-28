@@ -23,7 +23,8 @@ class InterrogateSalesforce extends Command
     {
         $this->info('Contacting Salesforce API...');
 
-        $response = $this->salesforce->fetchProjects();
+        // $response = $this->salesforce->fetchProjects();
+        $response = $this->salesforce->fetchAllOpportunityFields(25);
 
         // 1. Handle API/Permission Failures explicitly
         if (isset($response['success']) && ! $response['success']) {
