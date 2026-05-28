@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'salesforce' => [
+        'client_id' => env('SALESFORCE_API_KEY'),
+        'client_secret' => env('SALESFORCE_CONSUMER_SECRET'),
+        'url' => env('SALESFORCE_BASE_URL'),
+    ],
+
 ];

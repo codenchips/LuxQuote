@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Observers\ProjectAreaObserver;
 use App\Observers\ProjectLineObserver;
 use App\Observers\ProjectObserver;
+use App\Services\SalesforceService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -23,7 +24,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(SalesforceService::class);
     }
 
     /**

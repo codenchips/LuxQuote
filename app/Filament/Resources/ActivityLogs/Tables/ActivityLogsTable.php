@@ -30,6 +30,25 @@ class ActivityLogsTable
                         $payload = $record->payload ?? [];
 
                         return match ($record->action_type) {
+                            'area.created' => 'Created area <strong>'.e((string) ($payload['area'] ?? '?')).'</strong>',
+
+                            'area.deleted' => (function () use ($payload): string {
+                                $name = e((string) ($payload['area'] ?? '?'));
+                                $lines = $payload['lines'] ?? [];
+                                if (empty($lines)) {
+                                    return "Deleted area <strong>{$name}</strong> (no items)";
+                                }
+                                $count = count($lines);
+                                $items = implode(', ', array_map(function (array $line): string {
+                                    $code = e((string) ($line['code'] ?? ''));
+                                    $desc = e((string) ($line['description'] ?? ''));
+
+                                    return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
+                                }, $lines));
+
+                                return "Deleted area <strong>{$name}</strong> — {$count} item".($count !== 1 ? 's' : '')." removed: {$items}";
+                            })(),
+
                             'project.created' => 'Created the project structure',
 
                             'project.updated' => (function () use ($payload): string {
@@ -130,6 +149,8 @@ class ActivityLogsTable
                 SelectFilter::make('action_type')
                     ->label('Action')
                     ->options([
+                        'area.created' => 'Area Created',
+                        'area.deleted' => 'Area Deleted',
                         'project.created' => 'Project Created',
                         'project.updated' => 'Project Updated',
                         'project.deleted' => 'Project Deleted',
