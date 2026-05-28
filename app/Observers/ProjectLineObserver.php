@@ -10,6 +10,9 @@ class ProjectLineObserver
     /** Stash pending update payloads between updating() and updated(). */
     private static array $pendingPayloads = [];
 
+    /** Minutes after line creation during which field edits are folded into the product.added entry. */
+    private const CREATION_WINDOW_MINUTES = 5;
+
     public function created(ProjectLine $line): void
     {
         $area = $line->area;
@@ -28,6 +31,7 @@ class ProjectLineObserver
             'user_email_snapshot' => auth()->user()?->email ?? '',
             'project_name_snapshot' => $project->name,
             'payload' => [
+                'line_id' => $line->id,
                 'code' => $line->code,
                 'description' => $line->description,
                 'qty' => $line->qty,
@@ -58,9 +62,29 @@ class ProjectLineObserver
     {
         $payload = self::$pendingPayloads[$line->id] ?? null;
 
-        if ($payload) {
-            $project = $line->area?->project;
+        if (! $payload) {
+            return;
+        }
 
+        $project = $line->area?->project;
+
+        // If the line was created very recently, fold field edits into the original
+        // product.added entry so the history shows one clean "Added..." record instead
+        // of a blank addition followed by individual per-field update entries.
+        $recentAddedLog = ActivityLog::where('project_id', $project?->id)
+            ->where('action_type', 'product.added')
+            ->where('created_at', '>=', now()->subMinutes(self::CREATION_WINDOW_MINUTES))
+            ->where('payload->line_id', $line->id)
+            ->latest('created_at')
+            ->first();
+
+        if ($recentAddedLog) {
+            $updatedPayload = $recentAddedLog->payload ?? [];
+            foreach ($payload['changes'] as $field => $change) {
+                $updatedPayload[$field] = $change['new'];
+            }
+            $recentAddedLog->update(['payload' => $updatedPayload]);
+        } else {
             ActivityLog::create([
                 'user_id' => auth()->id(),
                 'project_id' => $project?->id,
@@ -69,8 +93,9 @@ class ProjectLineObserver
                 'project_name_snapshot' => $project?->name ?? '',
                 'payload' => $payload,
             ]);
-            unset(self::$pendingPayloads[$line->id]);
         }
+
+        unset(self::$pendingPayloads[$line->id]);
     }
 
     public function saved(ProjectLine $line): void

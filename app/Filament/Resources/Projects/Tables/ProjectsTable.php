@@ -38,7 +38,7 @@ class ProjectsTable
                     ->searchable()
                     ->sortable(),
 
-                TextColumn::make('owner_email')
+                TextColumn::make('user.name')
                     ->label('Owner')
                     ->placeholder('–')
                     ->searchable(),

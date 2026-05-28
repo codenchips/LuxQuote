@@ -13,10 +13,10 @@ class ActivityLogsTable
     {
         return $table
             ->columns([
-                TextColumn::make('user_email_snapshot')
+                TextColumn::make('user.name')
                     ->label('Who')
-                    ->searchable()
-                    ->sortable(),
+                    ->placeholder(fn (ActivityLog $record): string => $record->user_email_snapshot)
+                    ->searchable(),
 
                 TextColumn::make('project_name_snapshot')
                     ->label('Project')
@@ -58,7 +58,19 @@ class ActivityLogsTable
 
                             'revision.created' => 'Created a new snapshot: <strong>Revision #'.e((string) ($payload['revision_number'] ?? '?')).'</strong>',
 
-                            'product.added' => 'Added <strong>'.e((string) ($payload['qty'] ?? '?')).'x '.e((string) ($payload['description'] ?? '')).'</strong> ('.e((string) ($payload['code'] ?? '')).') to the schedule',
+                            'product.added' => (function () use ($payload): string {
+                                $qty = e((string) ($payload['qty'] ?? '1'));
+                                $description = e((string) ($payload['description'] ?? ''));
+                                $code = e((string) ($payload['code'] ?? ''));
+                                $ref = isset($payload['ref']) ? ' | Ref: '.e((string) $payload['ref']) : '';
+                                $price = isset($payload['unit_price']) ? ' | £'.e(number_format((float) $payload['unit_price'], 2)) : '';
+                                $notes = isset($payload['notes']) && $payload['notes'] !== '' ? ' | '.e((string) $payload['notes']) : '';
+
+                                $detail = trim("{$code}{$ref}{$price}{$notes}", ' |');
+                                $label = $description !== '' ? "<strong>{$qty}x {$description}</strong>" : "<strong>{$qty}x</strong>";
+
+                                return 'Added '.$label.($detail !== '' ? " ({$detail})" : '').' to the schedule';
+                            })(),
 
                             'line.updated' => (function () use ($payload): string {
                                 $code = e((string) ($payload['code'] ?? '?'));
