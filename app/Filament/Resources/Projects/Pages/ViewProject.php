@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Projects\Pages;
 use App\Enums\ProjectLineType;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Filament\Resources\Projects\Schemas\ProjectForm;
+use App\Models\ActivityLog;
 use App\Models\Product;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
@@ -191,6 +192,15 @@ class ViewProject extends ViewRecord
             'project_id' => $this->record->id,
             'revision_number' => $newRevisionNumber,
             'created_by' => auth()->id(),
+        ]);
+
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'project_id' => $this->record->id,
+            'action_type' => 'revision.created',
+            'user_email_snapshot' => auth()->user()?->email ?? '',
+            'project_name_snapshot' => $this->record->name,
+            'payload' => ['revision_number' => $newRevisionNumber],
         ]);
 
         foreach ($sourceRevision->areas()->with('lines')->get() as $area) {

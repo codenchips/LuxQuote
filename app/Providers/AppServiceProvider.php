@@ -45,5 +45,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('create-users', fn (User $user) => $user->role === UserRole::Admin);
         Gate::define('edit-users', fn (User $user) => $user->role === UserRole::Admin);
         Gate::define('delete-users', fn (User $user) => $user->role === UserRole::Admin);
+        Gate::define('view-activity-logs', fn (User $user) => $user->role === UserRole::Admin);
     }
 }

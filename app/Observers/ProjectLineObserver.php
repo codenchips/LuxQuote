@@ -2,10 +2,77 @@
 
 namespace App\Observers;
 
+use App\Models\ActivityLog;
 use App\Models\ProjectLine;
 
 class ProjectLineObserver
 {
+    /** Stash pending update payloads between updating() and updated(). */
+    private static array $pendingPayloads = [];
+
+    public function created(ProjectLine $line): void
+    {
+        $area = $line->area;
+        $project = $area?->project;
+
+        // Skip logging for lines copied during revision cloning — they are not new user decisions.
+        // Only log when a line is added directly to the active revision.
+        if (! $project || $area->project_revision_id !== $project->active_revision_id) {
+            return;
+        }
+
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'project_id' => $project->id,
+            'action_type' => 'product.added',
+            'user_email_snapshot' => auth()->user()?->email ?? '',
+            'project_name_snapshot' => $project->name,
+            'payload' => [
+                'code' => $line->code,
+                'description' => $line->description,
+                'qty' => $line->qty,
+            ],
+        ]);
+    }
+
+    public function updating(ProjectLine $line): void
+    {
+        $trackedFields = ['code', 'ref', 'description', 'qty', 'unit_price', 'notes', 'type', 'status'];
+
+        $changes = [];
+        foreach ($trackedFields as $field) {
+            if ($line->isDirty($field)) {
+                $changes[$field] = ['old' => $line->getOriginal($field), 'new' => $line->$field];
+            }
+        }
+
+        if (! empty($changes)) {
+            self::$pendingPayloads[$line->id] = [
+                'code' => $line->getOriginal('code') ?? $line->code,
+                'changes' => $changes,
+            ];
+        }
+    }
+
+    public function updated(ProjectLine $line): void
+    {
+        $payload = self::$pendingPayloads[$line->id] ?? null;
+
+        if ($payload) {
+            $project = $line->area?->project;
+
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'project_id' => $project?->id,
+                'action_type' => 'line.updated',
+                'user_email_snapshot' => auth()->user()?->email ?? '',
+                'project_name_snapshot' => $project?->name ?? '',
+                'payload' => $payload,
+            ]);
+            unset(self::$pendingPayloads[$line->id]);
+        }
+    }
+
     public function saved(ProjectLine $line): void
     {
         $this->touchProject($line);
