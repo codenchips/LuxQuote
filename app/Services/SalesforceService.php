@@ -2,20 +2,28 @@
 
 namespace App\Services;
 
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class SalesforceService
 {
+    private const API_VERSION = 'v65.0';
+
     /**
-     * Obtain a Bearer token via the OAuth2 Client Credentials grant.
+     * Authenticate via OAuth2 Client Credentials and return the token + instance URL.
+     *
+     * @return array{token: string, instanceUrl: string}|null
      */
-    private function getAccessToken(): ?string
+    private function authenticate(): ?array
     {
+        $baseUrl = rtrim((string) config('services.salesforce.url', ''), '/');
 
-        $baseUrl = config('services.salesforce.url', '');
+        if (str_contains($baseUrl, '/services/data/')) {
+            $baseUrl = explode('/services/data/', $baseUrl)[0];
+        }
 
-        $parsed = parse_url((string) $baseUrl);
+        $parsed = parse_url($baseUrl);
         $tokenUrl = sprintf(
             '%s://%s/services/oauth2/token',
             $parsed['scheme'] ?? 'https',
@@ -28,12 +36,8 @@ class SalesforceService
             'client_secret' => config('services.salesforce.client_secret'),
         ]);
 
-        // ADD THESE TWO TEMPORARY DIAGNOSTIC LINES HERE:
-        logger('Salesforce Auth Status: '.$response->status());
-        dd($response->json());
-
         if ($response->failed()) {
-            Log::error('Salesforce getAccessToken failed', [
+            Log::error('Salesforce authentication failed', [
                 'status' => $response->status(),
                 'body' => $response->body(),
             ]);
@@ -41,144 +45,157 @@ class SalesforceService
             return null;
         }
 
-        return $response->json('access_token');
-    }
-
-    private function getAccessTokenPayload(): ?array
-    {
-        $response = Http::asForm()->post('https://test.salesforce.com/services/oauth2/token', [
-            'grant_type' => 'client_credentials',
-            'client_id' => config('services.salesforce.client_id'),
-            'client_secret' => config('services.salesforce.client_secret'),
-        ]);
-
-        if ($response->successful()) {
-            return $response->json();
-        }
-
-        return null;
+        return [
+            'token' => $response->json('access_token'),
+            'instanceUrl' => rtrim((string) $response->json('instance_url'), '/'),
+        ];
     }
 
     /**
-     * Fetch Opportunity records from the Salesforce REST API.
+     * Run a SOQL query and return the decoded JSON response.
      *
-     * @return array<int, array<string, mixed>>
+     * @param  array{token: string, instanceUrl: string}  $auth
+     * @return array<string, mixed>|null
+     */
+    private function soqlQuery(array $auth, string $soql): ?array
+    {
+        $response = Http::withToken($auth['token'])
+            ->acceptJson()
+            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/query/', [
+                'q' => $soql,
+            ]);
+
+        if ($response->failed()) {
+            Log::error('Salesforce SOQL query failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'soql' => $soql,
+            ]);
+
+            return null;
+        }
+
+        return $response->json();
+    }
+
+    /**
+     * Escape a value for safe inclusion in a SOQL LIKE clause.
+     */
+    private function soqlEscape(string $value): string
+    {
+        return str_replace(['\\', "'", '%', '_'], ['\\\\', "\\'", '\\%', '\\_'], $value);
+    }
+
+    /**
+     * Paginated, searchable, sortable list of Opportunity records.
+     *
+     * @param  string[]  $fields  SOQL field names to SELECT
+     */
+    public function getOpportunities(
+        int $page = 1,
+        int $perPage = 25,
+        ?string $search = null,
+        ?string $sortColumn = null,
+        ?string $sortDirection = null,
+        array $fields = ['Id', 'Name', 'StageName', 'CloseDate', 'Amount'],
+    ): LengthAwarePaginator {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return new LengthAwarePaginator([], 0, $perPage, $page);
+        }
+
+        $where = filled($search)
+            ? " WHERE Name LIKE '%".$this->soqlEscape($search)."%'"
+            : '';
+
+        // Allowlisted sort columns to prevent SOQL injection
+        $allowedColumns = ['Name', 'StageName', 'CreatedDate', 'Amount', 'Project_Reference_Number__c', 'Owner.Name'];
+        $orderBy = in_array($sortColumn, $allowedColumns, true)
+            ? " ORDER BY {$sortColumn} ".(strtoupper($sortDirection ?? '') === 'DESC' ? 'DESC' : 'ASC')
+            : ' ORDER BY CreatedDate DESC';
+
+        $totalResult = $this->soqlQuery($auth, "SELECT COUNT() FROM Opportunity{$where}");
+        $total = $totalResult['totalSize'] ?? 0;
+
+        $offset = ($page - 1) * $perPage;
+        $selectFields = implode(', ', $fields);
+        $records = [];
+
+        if ($total > 0) {
+            $data = $this->soqlQuery(
+                $auth,
+                "SELECT {$selectFields} FROM Opportunity{$where}{$orderBy} LIMIT {$perPage} OFFSET {$offset}",
+            );
+            $records = $data['records'] ?? [];
+        }
+
+        return new LengthAwarePaginator($records, $total, $perPage, $page);
+    }
+
+    /**
+     * Fetch Opportunity records for the Artisan interrogator command.
+     *
+     * @return array{success: bool, records?: array<int, mixed>, status?: int, errors?: mixed}
      */
     public function fetchProjects(): array
     {
-        // 1. Get base domain
-        $baseUrl = rtrim(config('services.salesforce.url'), '/');
-        if (str_contains($baseUrl, '/services/data/')) {
-            $baseUrl = explode('/services/data/', $baseUrl)[0];
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return ['success' => false, 'status' => 0, 'errors' => ['Authentication failed']];
         }
 
-        // 2. Authenticate
-        $authResponse = Http::asForm()->post("{$baseUrl}/services/oauth2/token", [
-            'grant_type' => 'client_credentials',
-            'client_id' => config('services.salesforce.client_id'),
-            'client_secret' => config('services.salesforce.client_secret'),
-        ]);
+        $result = $this->soqlQuery(
+            $auth,
+            'SELECT Id, Name, StageName, CloseDate FROM Opportunity LIMIT 25',
+        );
 
-        $authData = $authResponse->json();
-        $token = $authData['access_token'];
-        $instanceUrl = rtrim($authData['instance_url'], '/');
-
-        // 3. Make the query to the Opportunity table
-        $query = 'SELECT Id, Name, StageName, CloseDate FROM Opportunity LIMIT 25';
-
-        // Temporarily query the User table to prove data visibility
-        // $query = "SELECT Id, Name, Email FROM User LIMIT 5";
-
-        $dataResponse = Http::withToken($token)
-            ->acceptJson()
-            ->get("{$instanceUrl}/services/data/v65.0/query/", [
-                'q' => $query,
-            ]);
-
-        if ($dataResponse->successful()) {
-            return [
-                'success' => true,
-                'records' => $dataResponse->json()['records'] ?? [],
-            ];
+        if ($result === null) {
+            return ['success' => false, 'status' => 0, 'errors' => ['Query failed']];
         }
 
-        // Capture the exact breakdown from Salesforce instead of hiding it
-        return [
-            'success' => false,
-            'status' => $dataResponse->status(),
-            'errors' => $dataResponse->json(),
-        ];
+        return ['success' => true, 'records' => $result['records'] ?? []];
     }
 
     /**
-     * Dynamically fetch all available fields for Opportunity records.
+     * Describe the Opportunity object and fetch all fields dynamically.
+     *
+     * @return array{success: bool, records?: array<int, mixed>, status?: int, errors?: mixed}
      */
     public function fetchAllOpportunityFields(int $limit = 25): array
     {
-        // 1. Get base domain and authenticate
-        $baseUrl = rtrim(config('services.salesforce.url'), '/');
-        if (str_contains($baseUrl, '/services/data/')) {
-            $baseUrl = explode('/services/data/', $baseUrl)[0];
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return ['success' => false, 'status' => 0, 'errors' => ['Authentication failed']];
         }
 
-        $authResponse = Http::asForm()->post("{$baseUrl}/services/oauth2/token", [
-            'grant_type' => 'client_credentials',
-            'client_id' => config('services.salesforce.client_id'),
-            'client_secret' => config('services.salesforce.client_secret'),
-        ]);
-
-        if ($authResponse->failed()) {
-            logger()->error('SF Auth failed during field discovery.');
-
-            return [];
-        }
-
-        $authData = $authResponse->json();
-        $token = $authData['access_token'];
-        $instanceUrl = rtrim($authData['instance_url'], '/');
-
-        // 2. Describe the object to find every single existing field name
-        $describeResponse = Http::withToken($token)
+        $describe = Http::withToken($auth['token'])
             ->acceptJson()
-            ->get("{$instanceUrl}/services/data/v60.0/sobjects/Opportunity/describe");
+            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Opportunity/describe');
 
-        if ($describeResponse->failed()) {
-            logger()->error('Failed to retrieve Opportunity object metadata description.');
+        if ($describe->failed()) {
+            Log::error('Salesforce describe failed', ['status' => $describe->status()]);
 
-            return [];
+            return ['success' => false, 'status' => $describe->status(), 'errors' => $describe->json()];
         }
 
-        $metadata = $describeResponse->json();
-
-        // Extract just the technical 'name' property from the field definitions
-        $fieldNames = array_column($metadata['fields'] ?? [], 'name');
+        $fieldNames = array_column($describe->json()['fields'] ?? [], 'name');
 
         if (empty($fieldNames)) {
-            return [];
+            return ['success' => false, 'status' => 0, 'errors' => ['No fields returned from describe']];
         }
 
-        // 3. Construct a clean, comma-separated SOQL query string
-        $commaSeparatedFields = implode(', ', $fieldNames);
-        $query = "SELECT {$commaSeparatedFields} FROM Opportunity LIMIT {$limit}";
+        $result = $this->soqlQuery(
+            $auth,
+            'SELECT '.implode(', ', $fieldNames)." FROM Opportunity LIMIT {$limit}",
+        );
 
-        // 4. Run the dynamic query
-        $dataResponse = Http::withToken($token)
-            ->acceptJson()
-            ->get("{$instanceUrl}/services/data/v60.0/query/", [
-                'q' => $query,
-            ]);
-
-        if ($dataResponse->successful()) {
-            return [
-                'success' => true,
-                'records' => $dataResponse->json()['records'] ?? [],
-            ];
+        if ($result === null) {
+            return ['success' => false, 'status' => 0, 'errors' => ['Query failed']];
         }
 
-        return [
-            'success' => false,
-            'status' => $dataResponse->status(),
-            'errors' => $dataResponse->json(),
-        ];
+        return ['success' => true, 'records' => $result['records'] ?? []];
     }
 }

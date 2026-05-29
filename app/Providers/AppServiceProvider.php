@@ -47,5 +47,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('edit-users', fn (User $user) => $user->role === UserRole::Admin);
         Gate::define('delete-users', fn (User $user) => $user->role === UserRole::Admin);
         Gate::define('view-activity-logs', fn (User $user) => $user->role === UserRole::Admin);
+        Gate::define('view-salesforce', fn (User $user) => $user->role === UserRole::Admin);
     }
 }
