@@ -134,6 +134,62 @@ class SalesforceService
     }
 
     /**
+     * Search Opportunities by name for typeahead Select.
+     *
+     * @return array<string, string> Keyed by Opportunity ID, value is display label.
+     */
+    public function searchOpportunities(string $query, int $limit = 10): array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return [];
+        }
+
+        $escaped = $this->soqlEscape($query);
+        $result = $this->soqlQuery(
+            $auth,
+            "SELECT Id, Name, Project_Reference_Number__c FROM Opportunity WHERE Name LIKE '%{$escaped}%' ORDER BY Name ASC LIMIT {$limit}",
+        );
+
+        $options = [];
+
+        foreach ($result['records'] ?? [] as $record) {
+            $label = $record['Name'];
+
+            if (! empty($record['Project_Reference_Number__c'])) {
+                $label .= ' ('.$record['Project_Reference_Number__c'].')';
+            }
+
+            $options[$record['Id']] = $label;
+        }
+
+        return $options;
+    }
+
+    /**
+     * Fetch a single Opportunity by Salesforce ID.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function getOpportunityById(string $id): ?array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return null;
+        }
+
+        $escaped = $this->soqlEscape($id);
+        $result = $this->soqlQuery(
+            $auth,
+            "SELECT Id, Name, Project_Reference_Number__c, Owner.Name, Owner.Email, Account.Name FROM Opportunity WHERE Id = '{$escaped}' LIMIT 1",
+        );
+
+        return ($result['records'] ?? [])[0] ?? null;
+    }
+
+    /**
      * Fetch Opportunity records for the Artisan interrogator command.
      *
      * @return array{success: bool, records?: array<int, mixed>, status?: int, errors?: mixed}

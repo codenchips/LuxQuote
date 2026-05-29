@@ -21,6 +21,14 @@ class ListProjects extends ListRecords
                 ->mutateFormDataUsing(function (array $data): array {
                     $data['user_id'] = auth()->id();
 
+                    if (! empty($data['salesforce_project']) && ! empty($data['salesforce_pending_data'])) {
+                        $sfData = json_decode((string) $data['salesforce_pending_data'], true);
+
+                        if (is_array($sfData) && ! empty($sfData['Name'])) {
+                            $data['name'] = $sfData['Name'];
+                        }
+                    }
+
                     return $data;
                 })
                 ->successRedirectUrl(fn (Project $record): string => ProjectResource::getUrl('view', ['record' => $record])),

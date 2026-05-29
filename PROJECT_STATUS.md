@@ -1,6 +1,6 @@
 # Company App — Project Status
 
-_Last updated: 28 May 2026_
+_Last updated: 29 May 2026_
 
 ---
 
@@ -245,11 +245,11 @@ Three model observers automatically update `projects.last_edited_at` and `projec
 
 ---
 
-## Salesforce Integration (added 28 May 2026)
+## Salesforce Integration (updated 29 May 2026)
 
-### Status: Foundation working — investigation phase complete
+### Status: Salesforce Opportunities page live; project import UX built
 
-Authentication with Salesforce is working via the **OAuth2 Client Credentials grant** (no user credentials required). The Connected App's Consumer Key and Secret are used to fetch a short-lived Bearer token, which authorises REST API queries.
+Authentication uses **OAuth2 Client Credentials**. The service is bound as a singleton in `AppServiceProvider`. Gate `view-salesforce` restricts the Salesforce page to Admin users only.
 
 ### Environment variables required (`.env`)
 
@@ -259,51 +259,65 @@ SALESFORCE_CONSUMER_SECRET=   # Consumer Secret
 SALESFORCE_BASE_URL=          # e.g. https://your-org.my.salesforce.com
 ```
 
-> `config('services.salesforce.client_id')` maps to `SALESFORCE_API_KEY`.
-
 ### Files
 
 | File | Role |
 |---|---|
-| `app/Services/SalesforceService.php` | Auth + data methods |
-| `app/Console/Commands/InterrogateSalesforce.php` | Terminal investigation command |
+| `app/Services/SalesforceService.php` | Auth + data methods (singleton) |
+| `app/Filament/Pages/Salesforce.php` | Admin-only Filament page showing Opportunities table |
+| `resources/views/filament/pages/salesforce.blade.php` | Blade template for the page |
 | `config/services.php` | `salesforce` key: `client_id`, `client_secret`, `url` |
-| `app/Providers/AppServiceProvider.php` | Singleton binding |
+| `app/Providers/AppServiceProvider.php` | Singleton binding + gate definition |
 
 ### Service methods
 
 | Method | What it does |
 |---|---|
-| `getAccessToken(): ?string` | Private — POSTs to `{host}/services/oauth2/token` as form data with client credentials grant; returns Bearer token or null on failure |
-| `fetchProjects(): array` | Authenticates, queries `SELECT Id, Name, StageName, CloseDate FROM Opportunity LIMIT 25` via SOQL v65.0; returns `['success', 'records']` or `['success', 'status', 'errors']` |
-| `fetchAllOpportunityFields(int $limit): array` | Authenticates, calls `sobjects/Opportunity/describe` to get every field name, runs a dynamic SELECT with all fields via SOQL v60.0 |
+| `getAccessToken(): ?string` | Private — POSTs to `{host}/services/oauth2/token`; returns Bearer token or null |
+| `fetchOpportunities(int $page, int $perPage, ?string $sortColumn, ?string $sortDirection): array` | SOQL v65.0 query with pagination and sort; returns `['data', 'total']`. Falls back to `ORDER BY CreatedDate DESC` when `$sortColumn` is null (Filament passes null on first load for external `->records()` tables) |
+| `searchOpportunities(string $query, int $limit = 10): array` | Typeahead — `WHERE Name LIKE '%…%' ORDER BY Name ASC`; returns `[Id => 'Name (Reference)']` for Select options |
+| `getOpportunityById(string $id): ?array` | Fetches a single Opportunity by Id; returns `[Id, Name, Project_Reference_Number__c, Owner.Name, Owner.Email, Account.Name]` or null |
 
-### Running the interrogator
+### Salesforce Opportunities page
 
-```bash
-vendor/bin/sail artisan salesforce:interrogate
-```
+- Admin-only page at `/salesforce` (navigation icon: cloud, group: Salesforce)
+- Displays a Filament `->records()` external-data table of Opportunities
+- Columns: Name, Reference Number, Stage, Account, Owner, Close Date, Created Date
+- Default sort: **Created Date descending** (both `->defaultSort()` on the table and the service fallback)
+- Searchable, sortable, paginated (15 per page)
 
-Currently calls `fetchAllOpportunityFields(25)` — prints all available field keys from the first record, then renders up to 25 rows as a terminal table. Switch to `fetchProjects()` for the fixed 4-column query.
+### "Salesforce Project" toggle on the New Project form
 
-### Cleanup needed before building further
+When creating a project, a **Salesforce Project** toggle is available:
 
-- [ ] **Remove debug code** from `getAccessToken()` — two lines left in: `logger(...)` and `dd(...)` — these will break any non-CLI usage
-- [ ] **Remove `getAccessTokenPayload()`** — unused duplicate method, delete it
-- [ ] **Unify API version** — `fetchProjects()` uses `v65.0`, `fetchAllOpportunityFields()` uses `v60.0`; align to `v65.0` or make it an env var
-- [ ] **Decide the canonical method** — `fetchProjects()` (fixed columns) vs `fetchAllOpportunityFields()` (dynamic describe)
+- **Toggle OFF** (default): normal free-text project creation
+- **Toggle ON**: hides the `name` field and shows a live Salesforce search Select
+  - Typeahead searches Opportunity names in real time via `searchOpportunities()`
+  - Selecting an Opportunity stores its data as JSON in a hidden `salesforce_pending_data` field
+  - A **Confirm & Populate Form** button appears — clicking it populates `reference_number`, `customer_name`, and `owner_email` from the Opportunity data
+  - All other form fields become read-only while SF mode is on
+  - `name` is extracted from the Opportunity JSON in `mutateFormDataUsing` (because the `name` TextInput is hidden and therefore not dehydrated by Filament)
+  - `salesforce_project = true` is saved to the DB via the `projects.salesforce_project` column
 
-### Salesforce next steps
+### `salesforce_project` DB flag (added 29 May 2026)
 
-- [ ] Clean up the service (above items)
-- [ ] Map Salesforce Opportunity fields to our local `Project` model columns
-- [ ] Build an import/sync flow: pull Opportunities and create/update local `Project` records
-- [ ] Cache the Bearer token for its ~1 hour lifetime instead of fetching fresh on every call
-- [ ] Write feature tests using `Http::fake()` covering auth success, auth failure, and query failure
+- Migration: `2026_05_29_094932_add_salesforce_project_to_projects_table` — boolean, default false
+- `Project` model: added to `#[Fillable]` and cast as `'boolean'`
+
+### Edit-mode locking for Salesforce projects
+
+When **editing** a project where `salesforce_project = true`:
+
+- The Salesforce toggle is **disabled** (locked ON — cannot be switched off)
+- The Salesforce search Select and Confirm button are **hidden** (create-only)
+- The project `name` field is **visible but read-only** (so users can see it)
+- All other form fields are **read-only** (enforced by the existing `->readOnly()` condition that checks `salesforce_project === true` from the loaded record)
+
+These edit-mode rules apply everywhere the `ProjectForm` is used: the list page slide-over and the ViewProject "Details" button.
 
 ---
 
-## Known Gaps / Next Steps (as of 28 May 2026)
+## Known Gaps / Next Steps (as of 29 May 2026)
 
 - [ ] `ProjectLine.status` column exists but is a placeholder (`–`) in the UI — no logic yet
 - [ ] No `product_id` FK on `project_lines` — products are referenced only by copied SKU/name
@@ -313,8 +327,19 @@ Currently calls `fetchAllOpportunityFields(25)` — prints all available field k
 - [ ] `cover_percentage` / `branch_name` fields exist on Project but are not surfaced in the form yet
 - [ ] Project totals (across all areas) not shown at the page level
 - [ ] No PDF / export functionality yet
-- [ ] Salesforce service cleanup (see Salesforce section above)
-- [ ] Salesforce → Project import/sync flow not yet built
+- [ ] Bearer token for Salesforce is fetched fresh on every call — should be cached for its ~1 hour lifetime
+- [ ] No tests covering the Salesforce service (`Http::fake()` for auth success, auth failure, query failure)
+- [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
+
+---
+
+## Features completed — 29 May 2026
+
+- **Salesforce Opportunities page**: Admin-only page listing all Salesforce Opportunities in a sortable, searchable, paginated Filament table. Default sort is Created Date descending (fixed via service-level fallback — Filament passes `null` for `$sortColumn` on first load with external `->records()` tables).
+- **"Salesforce Project" toggle on New Project form**: Toggle switches the creation form into SF mode — hides the free-text name field, shows a live Salesforce typeahead Select, and a Confirm button that pre-populates `reference_number`, `customer_name`, and `owner_email` from the selected Opportunity. All other fields are locked read-only while in SF mode.
+- **`name` dehydration fix**: Filament excludes `->hidden()` fields from form state. Fixed by storing the selected Opportunity as JSON in a `Hidden::make('salesforce_pending_data')` field (which IS dehydrated) and extracting `name` from it in `mutateFormDataUsing`.
+- **`salesforce_project` DB flag**: New boolean column (`default false`) on `projects`. Saved to DB when creating via the toggle. `Project` model updated with fillable entry and boolean cast.
+- **Edit-mode locking for Salesforce projects**: Toggle is disabled (locked ON), search Select and Confirm button are hidden, all form fields are read-only. Name field remains visible (read-only) so the user can see the project name. Applies across both the list-page slide-over and the ViewProject Details edit action.
 
 ---
 

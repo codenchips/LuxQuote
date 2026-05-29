@@ -34,6 +34,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
     'general_notes',
     'last_edited_at',
     'last_edited_by',
+    'salesforce_project',
 ])]
 class Project extends Model
 {
@@ -48,6 +49,7 @@ class Project extends Model
             'status' => ProjectStatus::class,
             'date' => 'date',
             'cover_percentage' => 'decimal:2',
+            'salesforce_project' => 'boolean',
         ];
     }
 
