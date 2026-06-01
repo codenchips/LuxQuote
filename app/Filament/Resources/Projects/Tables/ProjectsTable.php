@@ -11,7 +11,11 @@ use App\Models\ProjectRevision;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -21,6 +25,12 @@ class ProjectsTable
     {
         return $table
             ->columns([
+                IconColumn::make('salesforce_project')
+                    ->label('')
+                    ->icon(fn (bool $state): string => $state ? 'heroicon-o-cloud' : 'heroicon-o-folder')
+                    ->color(fn (bool $state): string => $state ? 'info' : 'gray')
+                    ->tooltip(fn (bool $state): string => $state ? 'Salesforce project' : 'Standard project'),
+
                 TextColumn::make('reference_number')
                     ->label('Reference')
                     ->placeholder('–')
@@ -31,17 +41,22 @@ class ProjectsTable
                     ->label('Project Name')
                     ->searchable()
                     ->sortable()
+                    ->formatStateUsing(fn (string $state): string => mb_strlen($state) > 40 ? mb_substr($state, 0, 40).'...' : $state)
+                    ->tooltip(fn ($record): ?string => mb_strlen($record->name) > 40 ? $record->name : null)
                     ->url(fn ($record) => ProjectResource::getUrl('view', ['record' => $record])),
 
                 TextColumn::make('customer_name')
                     ->label('Customer')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->formatStateUsing(fn (?string $state): string => $state && mb_strlen($state) > 30 ? mb_substr($state, 0, 30).'...' : (string) $state)
+                    ->tooltip(fn ($record): ?string => $record->customer_name && mb_strlen($record->customer_name) > 30 ? $record->customer_name : null),
 
                 TextColumn::make('user.name')
                     ->label('Owner')
                     ->placeholder('–')
-                    ->searchable(),
+                    ->searchable()
+                    ->tooltip(fn ($record): ?string => $record->user?->email),
 
                 TextColumn::make('department')
                     ->label('Dept.')
@@ -119,6 +134,26 @@ class ProjectsTable
                     ->color('info')
                     ->formatStateUsing(fn (): string => '')
                     ->tooltip(fn (?string $state): ?string => $state),
+            ])
+            ->filters([
+                TernaryFilter::make('salesforce_project')
+                    ->label('Project Type')
+                    ->trueLabel('Salesforce')
+                    ->falseLabel('Standard'),
+
+                SelectFilter::make('status')
+                    ->label('Status')
+                    ->options(fn (): array => collect(ProjectStatus::cases())
+                        ->mapWithKeys(fn (ProjectStatus $status): array => [$status->value => $status->label()])
+                        ->all()
+                    )
+                    ->multiple(),
+
+                // Filter::make('hide_archived')
+                //     ->label('Hide archived')
+                //     ->toggle()
+                //     ->default(true)                    
+                //     ->query(fn (Builder $query): Builder => $query->where('status', '!=', ProjectStatus::Archived->value)),
             ])
             ->actions([
                 Action::make('duplicate')
@@ -206,7 +241,6 @@ class ProjectsTable
             ->defaultSort('created_at', 'desc')
             ->poll('60s')
             ->modifyQueryUsing(fn (Builder $query) => $query
-                ->where('status', '!=', ProjectStatus::Archived->value)
                 ->with(['activeViewers', 'lastEditor'])
             );
     }

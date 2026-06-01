@@ -177,3 +177,68 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - To filter on a particular test name: `vendor/bin/sail artisan test --compact --filter=testName` (recommended after making a change to a related file).
 
 </laravel-boost-guidelines>
+
+---
+
+# Project: Company App
+
+An **internal quoting and project management tool** for a lighting company (Tamlite / Xcite brands). Users create Projects, organise them into Areas (rooms/floors), and build a line-item schedule of lighting products per area. The product catalogue is synced from an external API. The full data model is documented in [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+The Filament admin panel is served at the **root path** (`/`). Default theme is **dark mode**.
+
+## Composer Scripts
+
+| Script | Purpose |
+|---|---|
+| `vendor/bin/sail composer run dev` | Start server + queue + logs + Vite concurrently |
+| `vendor/bin/sail composer run test` | Clear config cache then run full test suite |
+
+## Filament Resource Structure
+
+Each Resource follows this subdirectory layout:
+
+```
+app/Filament/Resources/{Name}/
+├── {Name}Resource.php          # Resource definition + getEloquentQuery() for auth
+├── Pages/
+│   ├── List{Name}.php
+│   └── View{Name}.php / Create{Name}.php / Edit{Name}.php
+├── Schemas/
+│   └── {Name}Form.php          # Form schema extracted into dedicated class
+└── Tables/
+    └── {Name}sTable.php        # Table schema extracted into dedicated class
+```
+
+Authorization is enforced via `getEloquentQuery()` with role checks, not Gates/Policies.
+
+## Filament 5 — Critical Namespace Rules
+
+- **All actions** are under `Filament\Actions\` — e.g. `Filament\Actions\Action`, `Filament\Actions\EditAction`. `Filament\Tables\Actions\*` does **not** exist in Filament 5.
+- **Form utilities** `Get` and `Set` are at `Filament\Schemas\Components\Utilities\Get` / `Set`.
+
+## Model Conventions
+
+- Use the `#[Fillable([...])]` attribute (not the `$fillable` property).
+- Define casts in the `protected function casts(): array` method.
+- Enum values are stored as their `.value` string in the database.
+- `ProjectLine.code` stores the product SKU; `ProjectLine.description` stores the product name — there is **no `product_id` FK** on project lines.
+- `ProjectArea` has computed accessors `line_total_qty` and `line_total` (sum of qty × unit_price).
+
+## Observer Notes
+
+- `ProjectObserver` skips `META_KEYS = ['last_edited_at', 'last_edited_by', 'active_revision_id', 'updated_at', 'created_at']` when deciding whether a change is meaningful.
+- Area/line observers call `updateQuietly()` on the parent project to avoid triggering the `ProjectObserver` recursively.
+
+## Test Conventions
+
+- Test files live in `tests/Feature/` named `Admin{Resource}ResourceTest.php`.
+- All feature tests use `RefreshDatabase` and test Filament pages via `Livewire::test(PageClass::class)`.
+- Test methods follow `test_{action}_{entity}()` naming (e.g. `test_admin_can_list_products`).
+- Factory states are used heavily — check for existing states before setting attributes manually (e.g. `User::factory()->admin()->create()`).
+
+## Known Pitfalls
+
+- **MySQL + FK constraints**: `TRUNCATE` fails on tables referenced by FK constraints. Use `Model::query()->delete()` instead (see `ProductImportService`).
+- **`updateQuietly()` bypasses observers**: changes made this way won't be visible inside observer callbacks.
+- **Revision scoping**: All area and line queries in `ViewProject` must be scoped to `viewingRevisionId`, not just the project's `active_revision_id`.
+
