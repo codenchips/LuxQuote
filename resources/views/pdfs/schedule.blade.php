@@ -1,433 +1,411 @@
-@extends('pdfs.layouts.master')
+{{--
+    Tamlite Lighting Schedule PDF
+    Standalone template — does not extend master.
+    Position:fixed header + footer repeat on every printed page via headless Chrome.
+--}}
+@php
+    $logoPath  = public_path('images/tamlite-logo.png');
+    $logoSrc   = file_exists($logoPath)
+        ? 'data:image/png;base64,' . base64_encode(file_get_contents($logoPath))
+        : null;
 
-@section('title', 'Lighting Schedule — ' . ($project->reference_number ?? $project->name))
+    $grandQty   = $areas->sum(fn ($a) => $a->lines->sum('qty'));
+    $grandItems = $areas->sum(fn ($a) => $a->lines->count());
 
-{{-- ── Column widths (A4 portrait, 180 mm content width) ──────────────────
-     #      Code    Ref    Description  Qty    W      lm     Unit£  Total£ Notes
-     5mm    24mm    16mm   52mm         9mm    12mm   12mm   18mm   18mm   14mm
-     = 180 mm total
-──────────────────────────────────────────────────────────────────────────── --}}
+    // Build a set of SKUs that actually exist in the products table,
+    // so custom/edited codes never get a datasheet link.
+    $allCodes    = $areas->flatMap->lines->pluck('code')->filter()->unique()->values();
+    $existingSkus = \App\Models\Product::whereIn('sku', $allCodes)->pluck('sku')->flip();
 
-@section('styles')
-/* ── Typography ───────────────────────────────────────────────────────── */
-h1, h2, h3 { font-weight: 700; }
+    $pdfTimestamp = now()->timestamp;
+@endphp
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Lighting Schedule &mdash; {{ $project->reference_number ?? $project->name }}</title>
+    <style>
+        /* ── Page & reset ───────────────────────────────────────────────── */
+        @page          { size: A4 portrait; margin: 12mm 0 20mm; }
+        @page :first   { margin-top: 0; }
 
-/* ── Document header ──────────────────────────────────────────────────── */
-.doc-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 6mm;
-    padding-bottom: 4mm;
-    border-bottom: 2pt solid #192542;
-    gap: 8mm;
-}
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-.doc-header-brand {
-    flex: 0 0 auto;
-}
+        html, body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 9pt;
+            color: #1a1a1a;
+            background: #fff;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
 
-.brand-name {
-    display: block;
-    font-size: 20pt;
-    font-weight: 800;
-    color: #192542;
-    letter-spacing: -0.5pt;
-    line-height: 1;
-}
+        a { color: inherit; text-decoration: none; }
 
-.brand-tagline {
-    display: block;
-    font-size: 8pt;
-    font-weight: 400;
-    color: #6b7280;
-    letter-spacing: 1pt;
-    text-transform: uppercase;
-    margin-top: 1mm;
-}
+        /* ── Page header (first page only — not fixed, flows normally) ──── */
+        .page-header {
+            background: #fff;
+        }
 
-.doc-header-meta {
-    flex: 1 1 auto;
-    display: flex;
-    justify-content: flex-end;
-}
+        .page-header-inner {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 8mm 14mm 4mm;
+            gap: 10mm;
+        }
 
-.meta-grid {
-    display: grid;
-    grid-template-columns: auto auto;
-    column-gap: 4mm;
-    row-gap: 0.8mm;
-    font-size: 7.5pt;
-}
+        /* Left: logo + address */
+        .header-brand {
+            display: flex;
+            flex-direction: column;
+            gap: 2.5mm;
+        }
 
-.meta-label {
-    color: #6b7280;
-    font-weight: 600;
-    white-space: nowrap;
-    text-align: right;
-}
+        .header-logo {
+            height: 13mm;
+            width: auto;
+            align-self: flex-start;
+            flex-shrink: 0;
+        }
 
-.meta-value {
-    color: #111827;
-    font-weight: 400;
-}
+        .header-address {
+            font-size: 7.5pt;
+            color: #555;
+            line-height: 1.55;
+        }
 
-.meta-value.emphasis {
-    font-weight: 700;
-    color: #192542;
-}
+        .header-address strong {
+            font-size: 8pt;
+            color: #1a1a1a;
+        }
 
-/* ── Area block ───────────────────────────────────────────────────────── */
-.area-block {
-    margin-bottom: 5mm;
-    page-break-inside: avoid;
-}
+        /* Right: doc title + ref meta */
+        .header-meta {
+            text-align: right;
+            flex-shrink: 0;
+        }
 
-.area-header {
-    background-color: #192542;
-    color: #ffffff;
-    padding: 2mm 3mm;
-    font-size: 8.5pt;
-    font-weight: 700;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
+        .doc-title {
+            font-size: 13pt;
+            font-weight: 700;
+            color: #192542;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin-bottom: 2.5mm;
+        }
 
-.area-header-meta {
-    font-size: 7pt;
-    font-weight: 400;
-    opacity: 0.8;
-}
+        .ref-lines {
+            font-size: 8pt;
+            line-height: 1.9;
+            text-align: right;
+        }
 
-/* ── Schedule table ───────────────────────────────────────────────────── */
-.schedule-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 7.5pt;
-}
+        .ref-label {
+            color: #666;
+        }
 
-.schedule-table thead tr {
-    background-color: #e8ecf2;
-    color: #192542;
-}
+        .ref-val {
+            font-weight: 700;
+            color: #192542;
+        }
 
-.schedule-table th {
-    padding: 1.5mm 2mm;
-    font-weight: 700;
-    font-size: 7pt;
-    text-transform: uppercase;
-    letter-spacing: 0.3pt;
-    border-bottom: 1pt solid #192542;
-    white-space: nowrap;
-}
+        /* Separator rule */
+        .header-rule {
+            height: 0;
+            border-bottom: 1.5pt solid #192542;
+            margin: 0 14mm;
+        }
 
-.schedule-table td {
-    padding: 1.5mm 2mm;
-    vertical-align: top;
-    border-bottom: 0.5pt solid #e5e7eb;
-    color: #111827;
-}
+        /* ── Fixed page footer (repeats every page) ─────────────────────── */
+        /* Footer is rendered via Puppeteer native footer — see controller */
 
-/* Row shading */
-.schedule-table tbody tr:nth-child(even) td {
-    background-color: #f9fafb;
-}
+        /* ── Main content (padded to clear fixed header + footer) ────────── */
+        .content-wrap {
+            padding: 4mm 14mm 5mm;
+        }
 
-/* Modified / Custom line type highlight */
-.row-modified td { border-left: 2pt solid #f59e0b; }
-.row-custom    td { border-left: 2pt solid #8b5cf6; }
+        /* ── Project info box ────────────────────────────────────────────── */
+        .project-box {
+            border: 0.75pt solid #d0d5dd;
+            border-radius: 1.5mm;
+            background: #f9fafb;
+            padding: 4mm 5mm;
+            margin-bottom: 6mm;
+        }
 
-/* Subtotal row */
-.schedule-table tfoot tr td {
-    background-color: #e8ecf2;
-    font-weight: 700;
-    color: #192542;
-    border-top: 1pt solid #192542;
-    border-bottom: none;
-    padding: 1.5mm 2mm;
-}
+        .project-name {
+            font-size: 12pt;
+            font-weight: 700;
+            color: #192542;
+            margin-bottom: 2mm;
+        }
 
-/* ── Column widths ────────────────────────────────────────────────────── */
-.col-num   { width: 2.8%;  text-align: right; color: #9ca3af; }
-.col-code  { width: 13.3%; }
-.col-ref   { width: 8.9%;  }
-.col-desc  { width: 28.9%; }
-.col-qty   { width: 5%;    text-align: right; }
-.col-watt  { width: 6.7%;  text-align: right; }
-.col-lm    { width: 6.7%;  text-align: right; }
-.col-price { width: 10%;   text-align: right; }
-.col-total { width: 10%;   text-align: right; font-weight: 600; }
-.col-notes { width: 7.8%;  color: #4b5563; font-style: italic; }
+        .project-meta-row {
+            font-size: 8.5pt;
+            color: #333;
+            margin-bottom: 1mm;
+            line-height: 1.5;
+        }
 
-th.col-qty, th.col-watt, th.col-lm, th.col-price, th.col-total {
-    text-align: right;
-}
+        .project-meta-row:last-child { margin-bottom: 0; }
 
-/* Muted placeholder for empty/null values */
-.muted { color: #d1d5db; }
+        .meta-lbl { color: #666; }
 
-/* ── Grand total strip ────────────────────────────────────────────────── */
-.grand-total {
-    margin-top: 4mm;
-    display: flex;
-    justify-content: flex-end;
-}
+        .meta-sep { margin: 0 2.5mm; color: #bbb; }
 
-.grand-total-box {
-    border: 1.5pt solid #192542;
-    border-radius: 1mm;
-    overflow: hidden;
-    min-width: 70mm;
-}
+        /* ── Section heading ─────────────────────────────────────────────── */
+        .section-heading {
+            font-size: 10.5pt;
+            font-weight: 700;
+            color: #192542;
+            border-bottom: 1pt solid #192542;
+            padding-bottom: 1.5mm;
+            margin-bottom: 5mm;
+        }
 
-.grand-total-box table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 8pt;
-}
+        /* ── Area block ──────────────────────────────────────────────────── */
+        .area-block {
+            margin-bottom: 7mm;
+        }
 
-.grand-total-box td {
-    padding: 1.5mm 3mm;
-    border-bottom: 0.5pt solid #e5e7eb;
-}
+        /* Area name row inside <thead> — repeats on every continuation page */
+        .area-header-cell {
+            background: #f5f7fa;
+            border-left: 3pt solid #192542;
+            padding: 0;
+        }
 
-.grand-total-box td:last-child {
-    text-align: right;
-    font-weight: 700;
-    color: #192542;
-}
+        .area-header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: 1.5mm 2mm 1.5mm 3mm;
+        }
 
-.grand-total-box tr:last-child td { border-bottom: none; }
+        .area-name {
+            font-size: 9.5pt;
+            font-weight: 700;
+            color: #192542;
+        }
 
-.grand-total-box .gt-heading {
-    background-color: #192542;
-    color: #fff;
-    font-weight: 700;
-    font-size: 8pt;
-    padding: 2mm 3mm;
-}
+        .area-summary {
+            font-size: 7.5pt;
+            color: #777;
+        }
 
-/* ── Notes / quote section ────────────────────────────────────────────── */
-.doc-notes {
-    margin-top: 6mm;
-    padding: 3mm;
-    border: 0.5pt solid #e5e7eb;
-    border-radius: 1mm;
-    font-size: 7.5pt;
-    color: #374151;
-    page-break-inside: avoid;
-}
+        /* ── Line table ──────────────────────────────────────────────────── */
+        .line-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 8.5pt;
+        }
 
-.doc-notes h3 {
-    font-size: 7.5pt;
-    font-weight: 700;
-    color: #192542;
-    margin-bottom: 2mm;
-    text-transform: uppercase;
-    letter-spacing: 0.3pt;
-}
-@endsection
+        .line-table thead tr:last-child {
+            border-bottom: 1pt solid #192542;
+        }
 
-@section('footer-left')
-    {{ $project->name }}
-    @if($project->reference_number) · Ref {{ $project->reference_number }}@endif
-    · Schedule R{{ $revision->revision_number }}
-    · {{ now()->format('d M Y') }}
-@endsection
+        .line-table th {
+            text-align: left;
+            font-size: 7.5pt;
+            font-weight: 700;
+            color: #192542;
+            padding: 1.5mm 2mm;
+            white-space: nowrap;
+        }
 
-@section('content')
+        .line-table td {
+            padding: 3mm 2mm 2mm;
+            vertical-align: top;
+            border-bottom: 0.5pt solid #e8eaed;
+            line-height: 1.4;
+        }
 
-{{-- ── Document header ─────────────────────────────────────────────────── --}}
-<div class="doc-header">
-    <div class="doc-header-brand">
-        <span class="brand-name">Tamlite</span>
-        <span class="brand-tagline">Lighting Schedule</span>
-    </div>
+        .line-table tr:last-child td { border-bottom: none; }
 
-    <div class="doc-header-meta">
-        <div class="meta-grid">
-            <span class="meta-label">Project</span>
-            <span class="meta-value emphasis">{{ $project->name }}</span>
+        .line-table tr { break-inside: avoid; }
 
-            @if($project->reference_number)
-            <span class="meta-label">Reference</span>
-            <span class="meta-value">{{ $project->reference_number }}</span>
+        /* Column widths */
+        .col-code { width: 12%; font-size: 8pt; white-space: nowrap; }
+        .col-desc { width: 52%; }
+        .col-qty  { width: 7%;  text-align: center; }
+        .col-note { width: 21%; font-size: 8pt; color: #555; }
+        .col-ds   { width: 8%;  text-align: center; }
+
+        th.col-qty { text-align: center; }
+
+        .ds-link {
+            color: #1a56db;
+            text-decoration: underline;
+            font-size: 8pt;
+            white-space: nowrap;
+        }
+
+        /* Line type left-border rules */
+        .row-modified td:first-child { border-left: 2pt solid #d97706; }
+        .row-custom    td:first-child { border-left: 2pt solid #7c3aed; }
+
+        /* ── Notes section ───────────────────────────────────────────────── */
+        .doc-notes {
+            margin-top: 6mm;
+            padding: 3mm 4mm;
+            border: 0.5pt solid #e5e7eb;
+            border-radius: 1mm;
+            font-size: 8pt;
+            color: #374151;
+            break-inside: avoid;
+        }
+
+        .doc-notes h3 {
+            font-size: 8pt;
+            font-weight: 700;
+            color: #192542;
+            margin-bottom: 1.5mm;
+            text-transform: uppercase;
+            letter-spacing: 0.3pt;
+        }
+    </style>
+</head>
+<body>
+
+{{-- ── Page header (first page only) ─────────────────────────────────────── --}}
+<div class="page-header">
+    <div class="page-header-inner">
+
+        {{-- Left: logo + company address --}}
+        <div class="header-brand">
+            @if($logoSrc)
+                <img src="{{ $logoSrc }}" class="header-logo" alt="Tamlite">
             @endif
-
-            @if($project->customer_name)
-            <span class="meta-label">Customer</span>
-            <span class="meta-value">{{ $project->customer_name }}</span>
-            @endif
-
-            @if($project->contractor)
-            <span class="meta-label">Contractor</span>
-            <span class="meta-value">{{ $project->contractor }}</span>
-            @endif
-
-            @if($project->site_location)
-            <span class="meta-label">Site</span>
-            <span class="meta-value">{{ $project->site_location }}</span>
-            @endif
-
-            <span class="meta-label">Revision</span>
-            <span class="meta-value">R{{ $revision->revision_number }}</span>
-
-            <span class="meta-label">Date</span>
-            <span class="meta-value">
-                {{ $project->date?->format('d M Y') ?? now()->format('d M Y') }}
-            </span>
-
-            @if($project->user)
-            <span class="meta-label">Prepared by</span>
-            <span class="meta-value">{{ $project->user->name }}</span>
-            @endif
+            <div class="header-address">
+                <strong>Tamlite Lighting</strong><br>
+                Park Farm Industrial Estate, Pipers Road,<br>
+                Redditch, Worcestershire, B98 0HU<br>
+                01527 526730<br>
+                sales@tamlite.co.uk &nbsp;&middot;&nbsp; www.tamlite.co.uk
+            </div>
         </div>
+
+        {{-- Right: document title + reference meta --}}
+        <div class="header-meta">
+            <div class="doc-title">Lighting Schedule</div>
+            <div class="ref-lines">
+                <div><span class="ref-label">Ref: </span><span class="ref-val">{{ $project->reference_number ?? '-' }}</span></div>
+                <div><span class="ref-label">Rev: </span><span class="ref-val">R{{ $revision->revision_number }}</span></div>
+                <div><span class="ref-label">Date: </span><span class="ref-val">{{ $project->date?->format('d M Y') ?? '-' }}</span></div>
+                <div><span class="ref-label">Generated: </span><span class="ref-val">{{ now()->format('d M Y H:i') }}</span></div>
+            </div>
+        </div>
+
     </div>
+    <div class="header-rule"></div>
 </div>
 
-{{-- ── Areas ────────────────────────────────────────────────────────────── --}}
-@foreach ($areas as $area)
-    @if($area->lines->isNotEmpty())
-    <div class="area-block">
-        <div class="area-header">
-            <span>{{ $loop->iteration }}. {{ $area->name }}</span>
-            <span class="area-header-meta">
-                {{ $area->lines->count() }} line{{ $area->lines->count() === 1 ? '' : 's' }}
-                &nbsp;·&nbsp;
-                Total qty: {{ $area->line_total_qty }}
-            </span>
-        </div>
+{{-- ── Repeating page footer: rendered via Puppeteer native footer (see controller) ── --}}
 
-        <table class="schedule-table">
-            <thead>
-                <tr>
-                    <th class="col-num">#</th>
-                    <th class="col-code">Code</th>
-                    <th class="col-ref">Ref</th>
-                    <th class="col-desc">Description</th>
-                    <th class="col-qty">Qty</th>
-                    <th class="col-watt">W</th>
-                    <th class="col-lm">lm</th>
-                    <th class="col-price">Unit £</th>
-                    <th class="col-total">Total £</th>
-                    <th class="col-notes">Notes</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach ($area->lines as $line)
+{{-- ── Main content ────────────────────────────────────────────────────────── --}}
+<div class="content-wrap">
+
+    {{-- Project info box --}}
+    <div class="project-box">
+        <div class="project-name">{{ $project->name }}</div>
+        <div class="project-meta-row">
+            <span class="meta-lbl">Customer:</span> {{ $project->customer_name ?? '-' }}
+            <span class="meta-sep">&middot;</span>
+            <span class="meta-lbl">Contractor:</span> {{ $project->contractor ?? '-' }}
+        </div>
+        <div class="project-meta-row">
+            <span class="meta-lbl">Location:</span> {{ $project->site_location ?? '-' }}
+        </div>
+        <div class="project-meta-row">
+            <span class="meta-lbl">Revision:</span> R{{ $revision->revision_number }}
+            <span class="meta-sep">&middot;</span>
+            <span class="meta-lbl">Prepared by:</span> {{ $project->user?->name ?? '-' }}
+        </div>
+    </div>
+
+    <h2 class="section-heading">Schedule by Area</h2>
+
+    @foreach ($areas as $area)
+        @if($area->lines->isNotEmpty())
+        @php $areaQty = $area->lines->sum('qty'); @endphp
+        <div class="area-block">
+
+            <table class="line-table">
+                <thead>
+                    <tr>
+                        <td colspan="6" class="area-header-cell">
+                            <div class="area-header-content">
+                                <span class="area-name">{{ $area->name }}</span>
+                                <span class="area-summary">
+                                    {{ $area->lines->count() }} {{ Str::plural('item', $area->lines->count()) }}
+                                    &nbsp;&middot;&nbsp;
+                                    qty {{ number_format($areaQty) }}
+                                </span>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th class="col-code">Code</th>
+                        <th class="col-code">Ref</th>
+                        <th class="col-desc">Description</th>
+                        <th class="col-qty">Qty</th>
+                        <th class="col-note">Notes</th>
+                        <th class="col-ds">Datasheet</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($area->lines as $line)
                     @php
-                        $lineTotal = ($line->qty ?? 0) * (float) ($line->unit_price ?? 0);
-                        $typeClass = match($line->type) {
-                            \App\Enums\ProjectLineType::Modified => 'row-modified',
-                            \App\Enums\ProjectLineType::Custom   => 'row-custom',
-                            default                              => '',
+                        $rowClass = match(true) {
+                            $line->type === \App\Enums\ProjectLineType::Modified => 'row-modified',
+                            $line->type === \App\Enums\ProjectLineType::Custom   => 'row-custom',
+                            default => '',
                         };
                     @endphp
-                    <tr class="{{ $typeClass }}">
-                        <td class="col-num muted">{{ $loop->iteration }}</td>
+                    <tr class="{{ $rowClass }}">
                         <td class="col-code">{{ $line->code ?? '' }}</td>
-                        <td class="col-ref">{{ $line->ref ?? '' }}</td>
+                        <td class="col-code">{{ $line->ref ?? '' }}</td>
                         <td class="col-desc">{{ $line->description ?? '' }}</td>
                         <td class="col-qty">{{ $line->qty ?? '' }}</td>
-                        <td class="col-watt">
-                            @if($line->product?->luminaire_wattage_w)
-                                {{ $line->product->luminaire_wattage_w }}
-                            @else
-                                <span class="muted">—</span>
+                        <td class="col-note">{{ $line->notes ?? '' }}</td>
+                        <td class="col-ds">
+                            @if($line->code && isset($existingSkus[$line->code]))
+                                @php
+                                    $sku   = $line->code;
+                                    $base  = str_starts_with($sku, 'XC')
+                                        ? 'https://xciteledlighting.co.uk/data-sheet/' . urlencode($sku)
+                                        : 'https://tamlite.co.uk/data-sheet/' . urlencode($sku);
+                                    $dsUrl = $base . '?t=' . $pdfTimestamp . '&source=luxquote';
+                                @endphp
+                                <a href="{{ $dsUrl }}" target="_blank" class="ds-link">Datasheet</a>
                             @endif
                         </td>
-                        <td class="col-lm">
-                            @if($line->product?->lumens_lm)
-                                {{ $line->product->lumens_lm }}
-                            @else
-                                <span class="muted">—</span>
-                            @endif
-                        </td>
-                        <td class="col-price">
-                            @if($line->unit_price)
-                                £{{ number_format((float) $line->unit_price, 2) }}
-                            @else
-                                <span class="muted">—</span>
-                            @endif
-                        </td>
-                        <td class="col-total">
-                            @if($line->unit_price)
-                                £{{ number_format($lineTotal, 2) }}
-                            @else
-                                <span class="muted">—</span>
-                            @endif
-                        </td>
-                        <td class="col-notes">{{ $line->notes ?? '' }}</td>
                     </tr>
-                @endforeach
-            </tbody>
-            <tfoot>
-                <tr>
-                    <td colspan="4" style="text-align:right;">Area subtotal</td>
-                    <td class="col-qty">{{ $area->line_total_qty }}</td>
-                    <td class="col-watt"></td>
-                    <td class="col-lm"></td>
-                    <td class="col-price"></td>
-                    <td class="col-total">
-                        @if($area->line_total > 0)
-                            £{{ number_format($area->line_total, 2) }}
-                        @else
-                            <span class="muted">—</span>
-                        @endif
-                    </td>
-                    <td></td>
-                </tr>
-            </tfoot>
-        </table>
+                    @endforeach
+                </tbody>
+            </table>
+
+        </div>
+        @endif
+    @endforeach
+
+    {{-- Quote / general notes --}}
+    @if($project->quote_notes || $project->general_notes)
+    <div class="doc-notes">
+        @if($project->quote_notes)
+            <h3>Quote Notes</h3>
+            <p>{{ $project->quote_notes }}</p>
+            @if($project->general_notes)<br>@endif
+        @endif
+        @if($project->general_notes)
+            <h3>General Notes</h3>
+            <p>{{ $project->general_notes }}</p>
+        @endif
     </div>
     @endif
-@endforeach
 
-{{-- ── Grand total ──────────────────────────────────────────────────────── --}}
-@php
-    $grandQty   = $areas->sum('line_total_qty');
-    $grandTotal = $areas->sum('line_total');
-@endphp
-<div class="grand-total">
-    <div class="grand-total-box">
-        <div class="gt-heading">Project Total</div>
-        <table>
-            <tr>
-                <td>Total line items</td>
-                <td>{{ $areas->sum(fn ($a) => $a->lines->count()) }}</td>
-            </tr>
-            <tr>
-                <td>Total qty</td>
-                <td>{{ $grandQty }}</td>
-            </tr>
-            <tr>
-                <td>Total value</td>
-                <td>
-                    @if($grandTotal > 0)
-                        £{{ number_format($grandTotal, 2) }}
-                    @else
-                        —
-                    @endif
-                </td>
-            </tr>
-        </table>
-    </div>
 </div>
 
-{{-- ── Quote / general notes ────────────────────────────────────────────── --}}
-@if($project->quote_notes || $project->general_notes)
-<div class="doc-notes">
-    @if($project->quote_notes)
-        <h3>Quote Notes</h3>
-        <p>{{ $project->quote_notes }}</p>
-        @if($project->general_notes)<br>@endif
-    @endif
-    @if($project->general_notes)
-        <h3>General Notes</h3>
-        <p>{{ $project->general_notes }}</p>
-    @endif
-</div>
-@endif
-
-@endsection
+</body>
+</html>
