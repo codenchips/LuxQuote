@@ -1,6 +1,6 @@
 # Company App — Project Status
 
-_Last updated: 29 May 2026_
+_Last updated: 2 June 2026_
 
 ---
 
@@ -31,7 +31,10 @@ All commands must be prefixed with `vendor/bin/sail`. Default theme is **dark mo
 
 ```
 users
-  id, name, email, password, role (admin|users)
+  id, name, email, password
+  app_authentication_secret (text, nullable — encrypted TOTP secret)
+  app_authentication_recovery_codes (text, nullable — encrypted JSON array of recovery codes)
+  role (admin|users)
 
 products
   id, site, product_name, sku, description, type_name
@@ -330,6 +333,15 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [ ] Bearer token for Salesforce is fetched fresh on every call — should be cached for its ~1 hour lifetime
 - [ ] No tests covering the Salesforce service (`Http::fake()` for auth success, auth failure, query failure)
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
+
+---
+
+## Features completed — 2 June 2026
+
+- **Native TOTP two-factor authentication**: Filament 5's built-in MFA support enabled — no external plugins. Users can set up and manage 2FA (QR code + recovery codes) directly from their profile page. On next login, users who have 2FA enabled are challenged before access is granted.
+- **2FA columns on `users` table**: Migration `2026_06_02_074020_add_two_factor_authentication_to_users_table` adds `app_authentication_secret` (encrypted TOTP secret) and `app_authentication_recovery_codes` (encrypted JSON array). Both columns are encrypted at rest via Laravel's built-in encryption and are hidden from model serialization.
+- **User model updated**: Implements `HasAppAuthentication` + `HasAppAuthenticationRecovery` interfaces with `InteractsWithAppAuthentication` + `InteractsWithAppAuthenticationRecovery` traits (Filament built-ins). No additional fillable entries needed — traits bypass mass-assignment via direct property assignment.
+- **Panel Provider updated**: `->multiFactorAuthentication([AppAuthentication::make()->recoverable()])` registered. 2FA is opt-in by default; add `isRequired: true` to force all users to set it up. MFA challenge screen inherits the panel dark-mode theme automatically.
 
 ---
 

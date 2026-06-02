@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\Auth\EditProfile;
+use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Enums\ThemeMode;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -32,6 +33,10 @@ class AdminPanelProvider extends PanelProvider
             ->path('')
             ->login()
             ->profile(EditProfile::class, isSimple: false)
+            ->multiFactorAuthentication([
+                AppAuthentication::make()
+                    ->recoverable(),
+            ])
             ->defaultThemeMode(ThemeMode::Dark)
             // ->sidebarWidth('14rem')
             ->maxContentWidth(Width::Full)
