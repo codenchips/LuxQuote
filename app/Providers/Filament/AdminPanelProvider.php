@@ -38,7 +38,7 @@ class AdminPanelProvider extends PanelProvider
                     ->recoverable(),
             ])
             ->defaultThemeMode(ThemeMode::Dark)
-            // ->sidebarWidth('14rem')
+            ->sidebarWidth('13rem')
             ->maxContentWidth(Width::Full)
             ->assets([
                 Css::make('app-styles', Vite::asset('resources/css/app.css')),

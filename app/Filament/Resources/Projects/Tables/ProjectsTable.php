@@ -10,7 +10,6 @@ use App\Models\ProjectArea;
 use App\Models\ProjectRevision;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
-use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
@@ -29,13 +28,15 @@ class ProjectsTable
                     ->label('')
                     ->icon(fn (bool $state): string => $state ? 'heroicon-o-cloud' : 'heroicon-o-folder')
                     ->color(fn (bool $state): string => $state ? 'info' : 'gray')
-                    ->tooltip(fn (bool $state): string => $state ? 'Salesforce project' : 'Standard project'),
+                    ->tooltip(fn (bool $state): string => $state ? 'Salesforce project' : 'Standard project')
+                    ->width('2.5rem'),
 
                 TextColumn::make('reference_number')
                     ->label('Reference')
                     ->placeholder('–')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->width('6.5rem'),
 
                 TextColumn::make('name')
                     ->label('Project Name')
@@ -50,7 +51,8 @@ class ProjectsTable
                     ->searchable()
                     ->sortable()
                     ->formatStateUsing(fn (?string $state): string => $state && mb_strlen($state) > 30 ? mb_substr($state, 0, 30).'...' : (string) $state)
-                    ->tooltip(fn ($record): ?string => $record->customer_name && mb_strlen($record->customer_name) > 30 ? $record->customer_name : null),
+                    ->tooltip(fn ($record): ?string => $record->customer_name && mb_strlen($record->customer_name) > 30 ? $record->customer_name : null)
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('user.name')
                     ->label('Owner')
@@ -58,21 +60,18 @@ class ProjectsTable
                     ->searchable()
                     ->tooltip(fn ($record): ?string => $record->user?->email),
 
-                TextColumn::make('department')
-                    ->label('Dept.')
-                    ->placeholder('–')
-                    ->sortable(),
-
                 TextColumn::make('date')
                     ->label('Date')
                     ->date('d M Y')
-                    ->sortable(),
+                    ->sortable()
+                    ->width('7.5rem'),
 
                 TextColumn::make('revision')
                     ->label('Rev')
                     ->formatStateUsing(fn (int $state): string => 'R'.$state)
                     ->badge()
-                    ->color('gray'),
+                    ->color('gray')
+                    ->width('3.5rem'),
 
                 TextColumn::make('status')
                     ->label('Status')
@@ -85,7 +84,8 @@ class ProjectsTable
                         ProjectStatus::Cancelled => 'danger',
                         ProjectStatus::Archived => 'gray',
                     })
-                    ->sortable(),
+                    ->sortable()
+                    ->width('5.5rem'),
 
                 TextColumn::make('visibility')
                     ->label('Visibility')
@@ -99,7 +99,8 @@ class ProjectsTable
                         ProjectVisibility::Open => 'success',
                         ProjectVisibility::Private => 'warning',
                     })
-                    ->sortable(),
+                    ->sortable()
+                    ->width('6.5rem'),
 
                 TextColumn::make('last_edited_at')
                     ->label('Last Edited')
@@ -109,7 +110,8 @@ class ProjectsTable
                     ->tooltip(fn ($record): ?string => $record->last_edited_at
                         ? $record->last_edited_at->format('d M Y, H:i').($record->lastEditor ? ' by '.$record->lastEditor->name : '')
                         : null
-                    ),
+                    )
+                    ->width('9rem'),
 
                 TextColumn::make('active_viewers')
                     ->label('')
@@ -133,7 +135,8 @@ class ProjectsTable
                     ->icon(fn (?string $state): string => $state ? 'heroicon-o-users' : '')
                     ->color('info')
                     ->formatStateUsing(fn (): string => '')
-                    ->tooltip(fn (?string $state): ?string => $state),
+                    ->tooltip(fn (?string $state): ?string => $state)
+                    ->width('2rem'),
             ])
             ->filters([
                 TernaryFilter::make('salesforce_project')
@@ -152,7 +155,7 @@ class ProjectsTable
                 // Filter::make('hide_archived')
                 //     ->label('Hide archived')
                 //     ->toggle()
-                //     ->default(true)                    
+                //     ->default(true)
                 //     ->query(fn (Builder $query): Builder => $query->where('status', '!=', ProjectStatus::Archived->value)),
             ])
             ->actions([
@@ -210,12 +213,6 @@ class ProjectsTable
                         // Set the active revision on the copied project
                         $copy->updateQuietly(['active_revision_id' => $newRevision->id]);
                     }),
-
-                EditAction::make()
-                    ->slideOver()
-                    ->icon('heroicon-o-pencil')
-                    ->iconButton()
-                    ->tooltip('Edit project'),
 
                 ActionGroup::make([
                     Action::make('archive')
