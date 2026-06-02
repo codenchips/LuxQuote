@@ -147,6 +147,16 @@ class ViewProject extends ViewRecord
                 ))
                 ->modalSubmitAction(false)
                 ->modalCancelActionLabel('Close'),
+
+            Action::make('downloadSchedule')
+                ->label('Schedule PDF')
+                ->icon('heroicon-o-document-arrow-down')
+                ->color('primary')
+                ->url(fn (): string => route('projects.pdf.schedule', [
+                    'project' => $this->record,
+                    'revision' => $this->viewingRevisionId,
+                ]))
+                ->openUrlInNewTab(),
         ];
     }
 

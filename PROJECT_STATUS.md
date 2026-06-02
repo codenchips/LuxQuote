@@ -329,7 +329,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [ ] No Artisan command yet to trigger `ProductImportService` (needs `make:command`)
 - [ ] `cover_percentage` / `branch_name` fields exist on Project but are not surfaced in the form yet
 - [ ] Project totals (across all areas) not shown at the page level
-- [ ] No PDF / export functionality yet
+- [x] ~~No PDF / export functionality yet~~ — **Schedule PDF implemented (see Features completed — 2 June 2026)**
 - [ ] Bearer token for Salesforce is fetched fresh on every call — should be cached for its ~1 hour lifetime
 - [ ] No tests covering the Salesforce service (`Http::fake()` for auth success, auth failure, query failure)
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
@@ -338,10 +338,61 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Features completed — 2 June 2026
 
+- **Schedule PDF generation**: A printable A4 lighting schedule can now be downloaded for any project revision via a **Schedule PDF** button in the ViewProject header. The PDF is generated server-side using `spatie/laravel-pdf` (Browsershot / headless Chrome) with `->noSandbox()` for Docker compatibility. Output includes a branded Tamlite header, project meta grid, per-area line tables (code, ref, description, qty, wattage, lumens, unit price, total, notes), area subtotals, a grand total box, and a quote/general notes block. Modified and Custom lines are visually distinguished with coloured left-side rules. The PDF filename follows the pattern `schedule-{reference}-R{revision}.pdf`. Non-admin users are auth-scoped (Open projects or their own only). Full implementation details in the [PDF Generation](#pdf-generation) section below.
+
 - **Native TOTP two-factor authentication**: Filament 5's built-in MFA support enabled — no external plugins. Users can set up and manage 2FA (QR code + recovery codes) directly from their profile page. On next login, users who have 2FA enabled are challenged before access is granted.
 - **2FA columns on `users` table**: Migration `2026_06_02_074020_add_two_factor_authentication_to_users_table` adds `app_authentication_secret` (encrypted TOTP secret) and `app_authentication_recovery_codes` (encrypted JSON array). Both columns are encrypted at rest via Laravel's built-in encryption and are hidden from model serialization.
 - **User model updated**: Implements `HasAppAuthentication` + `HasAppAuthenticationRecovery` interfaces with `InteractsWithAppAuthentication` + `InteractsWithAppAuthenticationRecovery` traits (Filament built-ins). No additional fillable entries needed — traits bypass mass-assignment via direct property assignment.
 - **Panel Provider updated**: `->multiFactorAuthentication([AppAuthentication::make()->recoverable()])` registered. 2FA is opt-in by default; add `isRequired: true` to force all users to set it up. MFA challenge screen inherits the panel dark-mode theme automatically.
+
+---
+
+---
+
+## PDF Generation
+
+### Engine
+
+- Package: `spatie/laravel-pdf ^2.11` + `spatie/browsershot` (Puppeteer / headless Chrome)
+- **`->noSandbox()` is required** for all PDF generation inside Docker/Sail containers
+- `.env` values: `LARAVEL_PDF_NODE_BINARY=/usr/bin/node`, `LARAVEL_PDF_NPM_BINARY=/usr/bin/npm`
+- All PDF Blade views use **inline `<style>` only** — no external CSS, no Vite/Tailwind CDN dependency
+- CSS `-webkit-print-color-adjust: exact` ensures background colours render in headless Chrome
+
+### Files
+
+| File | Role |
+|---|---|
+| `resources/views/pdfs/layouts/master.blade.php` | Base A4 layout: `@page` margins, sticky footer with CSS page counter, `@yield` slots |
+| `resources/views/pdfs/schedule.blade.php` | Schedule document: header, per-area tables, subtotals, grand total, notes |
+| `app/Http/Controllers/ProjectPdfController.php` | Auth + revision resolution + PDF streaming |
+| `routes/web.php` | `GET /projects/{project}/pdf/schedule` (auth middleware) → `projects.pdf.schedule` |
+
+### Schedule document layout (A4 portrait)
+
+10-column table; content width 180 mm:
+
+| Col | Width | Source |
+|---|---|---|
+| `#` | 2.8% | Loop index |
+| Code | 13.3% | `ProjectLine.code` (SKU) |
+| Ref | 8.9% | `ProjectLine.ref` |
+| Description | 28.9% | `ProjectLine.description` |
+| Qty | 5% | `ProjectLine.qty` |
+| W | 6.7% | `line->product?->luminaire_wattage_w` (string — shown as-is) |
+| lm | 6.7% | `line->product?->lumens_lm` (string — shown as-is) |
+| Unit £ | 10% | `ProjectLine.unit_price` |
+| Total £ | 10% | `qty × unit_price` |
+| Notes | 7.8% | `ProjectLine.notes` |
+
+> **Note:** `luminaire_wattage_w` and `lumens_lm` are freeform strings in the product catalogue (e.g. `"12W/16W/20W"`, `"550 to 900"`). They are rendered as-is, not passed through `number_format()`.
+
+### Auth / access rules
+
+- Route is behind `auth` middleware
+- Non-admins may only download PDFs for **Open** projects or projects they own
+- A `?revision=X` query parameter selects any revision; defaults to `active_revision_id`
+- The ViewProject **Schedule PDF** button automatically passes the currently-viewed `$viewingRevisionId`
 
 ---
 
