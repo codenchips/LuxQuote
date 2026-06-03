@@ -226,10 +226,11 @@
         .line-table tr { break-inside: avoid; }
 
         /* Column widths */
-        .col-code { width: 12%; font-size: 8pt; white-space: nowrap; }
-        .col-desc { width: 52%; }
-        .col-qty  { width: 7%;  text-align: center; }
-        .col-note { width: 21%; font-size: 8pt; color: #555; }
+        .col-code { width: 12%; font-size: 8pt; white-space: nowrap; }        
+        .col-ref  { width: 4%; }
+        .col-desc { width: 36%; }
+        .col-qty  { width: 6%;  text-align: center; }
+        .col-note { width: 32%; font-size: 8pt; color: #555; }
         .col-ds   { width: 8%;  text-align: center; }
 
         th.col-qty { text-align: center; }
@@ -347,7 +348,7 @@
                     </tr>
                     <tr>
                         <th class="col-code">Code</th>
-                        <th class="col-code">Ref</th>
+                        <th class="col-ref">Ref</th>
                         <th class="col-desc">Description</th>
                         <th class="col-qty">Qty</th>
                         <th class="col-note">Notes</th>

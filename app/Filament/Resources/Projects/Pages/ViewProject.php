@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Projects\Pages;
 
 use App\Enums\ProjectLineType;
+use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Filament\Resources\Projects\Schemas\ProjectForm;
 use App\Models\ActivityLog;
@@ -25,6 +26,8 @@ use Livewire\Attributes\Computed;
 
 class ViewProject extends ViewRecord
 {
+    use HasProjectSubNav;
+
     protected static string $resource = ProjectResource::class;
 
     protected string $view = 'filament.resources.projects.pages.view-project';

@@ -19,6 +19,7 @@ services:
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
         volumes:
             - '.:/var/www/html'
+            - 'sail-puppeteer:/home/sail/.cache/puppeteer'
         networks:
             - sail
         depends_on:
@@ -110,4 +111,6 @@ volumes:
     sail-redis:
         driver: local
     sail-meilisearch:
+        driver: local
+    sail-puppeteer:
         driver: local
