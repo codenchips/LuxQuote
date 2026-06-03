@@ -221,7 +221,7 @@ Authorization is enforced via `getEloquentQuery()` with role checks, not Gates/P
 - Use the `#[Fillable([...])]` attribute (not the `$fillable` property).
 - Define casts in the `protected function casts(): array` method.
 - Enum values are stored as their `.value` string in the database.
-- `ProjectLine.code` stores the product SKU; `ProjectLine.description` stores the product name — there is **no `product_id` FK** on project lines.
+- `ProjectLine.product_id` is nullable origin tracking for product-backed lines; `code` stores the copied product SKU and `description` stores the copied product name used for display/PDF output.
 - `ProjectArea` has computed accessors `line_total_qty` and `line_total` (sum of qty × unit_price).
 
 ## Observer Notes
@@ -241,4 +241,4 @@ Authorization is enforced via `getEloquentQuery()` with role checks, not Gates/P
 - **MySQL + FK constraints**: `TRUNCATE` fails on tables referenced by FK constraints. Use `Model::query()->delete()` instead (see `ProductImportService`).
 - **`updateQuietly()` bypasses observers**: changes made this way won't be visible inside observer callbacks.
 - **Revision scoping**: All area and line queries in `ViewProject` must be scoped to `viewingRevisionId`, not just the project's `active_revision_id`.
-
+- **Line ownership**: Mutating line actions must verify the line belongs to both the current project and `viewingRevisionId`; cross-project or cross-revision IDs from Livewire requests must fail.

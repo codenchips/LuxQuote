@@ -1,6 +1,6 @@
 # Company App — Project Status
 
-_Last updated: 2 June 2026_
+_Last updated: 3 June 2026_
 
 ---
 
@@ -47,7 +47,7 @@ products
 projects
   id, user_id (FK), name, reference_number, customer_name, contractor
   site_location, owner_email, created_by_email, department
-  date, revision, visibility (open|private), status (draft|in_progress|complete|cancelled)
+  date, revision, visibility (open|private), status (draft|in_progress|complete|cancelled|archived)
   branch_name, cover_percentage, quote_notes, internal_notes, general_notes
   active_revision_id (FK → project_revisions, nullOnDelete)
   last_edited_at (nullable timestamp)
@@ -65,8 +65,14 @@ project_areas
   id, project_id (FK), project_revision_id (FK → project_revisions), name, sort_order
 
 project_lines
-  id, project_area_id (FK), code, description, qty, type (standard|temp)
+  id, project_area_id (FK), product_id (nullable FK → products, nullOnDelete)
+  code, ref, description, qty, type (standard|modified|custom)
   unit_price, notes, status, sort_order
+
+activity_logs
+  id, user_id (nullable FK), project_id (nullable FK), action_type
+  user_email_snapshot, project_name_snapshot, revision_number (nullable)
+  payload (JSON, nullable), created_at
 ```
 
 **Key relationships:**
@@ -77,7 +83,8 @@ project_lines
 - `ProjectRevision::creator()` — BelongsTo User via `created_by`
 - A new Project auto-creates revision #1 on creation (model boot hook) and a default area
 - `ProjectArea` has computed accessors: `line_total_qty` and `line_total` (qty × unit_price sum)
-- `ProjectLine.code` stores the product SKU; `ProjectLine.description` stores the product name — there is **no `product_id` FK** on project lines
+- `ProjectLine.product_id` is nullable origin tracking for product-backed lines; `code` stores the copied SKU and `description` stores the copied product name used for display/PDF output
+- `ActivityLog.revision_number` snapshots the project revision number at the time of the event; older rows may be null
 
 ---
 
@@ -86,9 +93,9 @@ project_lines
 | Enum | Values |
 |---|---|
 | `UserRole` | `Admin`, `Users` |
-| `ProjectStatus` | `Draft`, `InProgress`, `Complete`, `Cancelled` |
+| `ProjectStatus` | `Draft`, `InProgress`, `Complete`, `Cancelled`, `Archived` |
 | `ProjectVisibility` | `Open`, `Private` |
-| `ProjectLineType` | `Standard`, `Temp` (amber highlight in UI) |
+| `ProjectLineType` | `Standard`, `Modified`, `Custom` |
 
 ---
 
@@ -100,6 +107,8 @@ project_lines
 | `/projects` | `ProjectResource` | List + custom View page |
 | `/projects/{id}` | `ViewProject` (custom) | Main working page — see below |
 | `/users` | `UserResource` | Admin-only create/edit/list |
+| `/activity-logs` | `ActivityLogResource` | Admin-only history table |
+| `/salesforce` | `Salesforce` page | Admin-only Salesforce Opportunities table |
 
 **Project visibility scoping** — `ProjectResource::getEloquentQuery()` restricts non-admin users to projects where `visibility = open` OR `user_id = auth user`.
 
@@ -115,7 +124,6 @@ This is the most complex page. It is a custom `ViewRecord` Livewire component wi
 - Page heading = project name; subheading = customer · contractor · site · revision
 - Header action: **Areas** button → opens a Filament modal to manage area names
 - **Concurrent editors banner** (blue): shown when other users have the project open (within 90 s); lists their names; has a Refresh button
-- **Viewing old revision banner** (amber): shown when the user is browsing a non-active revision
 - Body: accordion list of `ProjectArea` cards, each collapsible
 
 ### Per-area card
@@ -124,18 +132,17 @@ Each area header shows the area name, line count, total qty, and £ total. Butto
 - **Blank** → adds an empty `ProjectLine` to the area
 
 Each line is a sortable row (Alpine `x-sort`) with inline-editable fields:
-`code` · `description` · `qty` · type badge · `unit_price` · `notes` · status (placeholder) · duplicate + delete actions
+`code` · `ref` · `description` · `qty` · type badge · `unit_price` · `notes` · status (placeholder) · duplicate + delete actions
 
 Lines can be dragged between areas; the `sortLine(lineId, position, targetAreaId)` method handles cross-area moves within a DB transaction.
 
 ### Revision Management
 
 A **Revisions** header button opens a modal listing all revisions. From there users can:
-- **View** any revision (sets `$viewingRevisionId`; the page re-queries areas/lines for that revision)
-- **Set Active** — updates `projects.active_revision_id`; amber banner disappears
-- **Create New Revision** — copies all areas and lines from the currently viewed revision into a new `ProjectRevision`
+- **Select** any revision — activates it by updating `projects.active_revision_id`, updates the project `revision` number, and refreshes `$viewingRevisionId`
+- **Create New Revision** — copies all areas and lines from the current revision into a new `ProjectRevision`, then makes that revision active
 
-All area/line operations (add, edit, delete, sort) are scoped to `$viewingRevisionId`, not the active revision.
+All area/line operations (add, edit, delete, duplicate, sort) are scoped to `$viewingRevisionId` and must also verify project ownership. Cross-project or cross-revision Livewire IDs must fail server-side.
 
 ### Concurrent Editing Detection
 
@@ -149,14 +156,16 @@ The outer `<div>` has `wire:poll.30s="heartbeat"`. On each poll (and on `mount`)
 | Method | What it does |
 |---|---|
 | `heartbeat()` | Upserts presence, purges stale, refreshes computed |
-| `setActiveRevision(revisionId)` | Updates `projects.active_revision_id` |
+| `setActiveRevision(revisionId)` | Activates a project revision and updates `projects.revision` |
 | `createNewRevision()` | Copies areas+lines from `$viewingRevisionId` into new revision |
 | `getAreas()` | Returns areas for `$viewingRevisionId` with lines eager-loaded |
+| `findAreaInViewingRevision(areaId)` | Private helper; verifies area belongs to current project and revision |
+| `findLineInViewingRevision(lineId)` | Private helper; verifies line belongs to current project and revision |
 | `addArea()` | Validates `newAreaName`, creates area under `$viewingRevisionId` |
 | `removeArea(areaId)` | Deletes area (cascades to lines); checks area belongs to current revision |
 | `addProduct(areaId)` | Alias → calls `openProductPicker(areaId)` |
-| `addBlankLine(areaId)` | Creates an empty Standard line |
-| `updateLineField(lineId, field, value)` | Inline edit — allowlist: `code, description, qty, unit_price, notes` |
+| `addBlankLine(areaId)` | Creates an empty Custom line |
+| `updateLineField(lineId, field, value)` | Inline edit — allowlist: `code, ref, description, qty, unit_price, notes` |
 | `duplicateLine(lineId)` | Replicates line, inserts after original, re-sequences sort_order |
 | `deleteLine(lineId)` | Hard deletes line |
 | `sortLine(lineId, newPos, targetAreaId)` | Moves line, handles cross-area in a transaction |
@@ -172,8 +181,9 @@ The outer `<div>` has `wire:poll.30s="heartbeat"`. On each poll (and on `mount`)
 |---|---|
 | `concurrentEditors` | Other users with presence within 90 s |
 | `projectRevisions` | All revisions for this project with creator eager-loaded |
-| `productPickerProducts` | Paginated products (15/page) filtered by search + type |
-| `productTypeOptions` | Distinct non-null `type_name` values for the filter dropdown |
+| `productPickerProducts` | Paginated products (15/page) filtered by search + site + type |
+| `productSiteOptions` | Distinct non-null `site` values for the site filter dropdown |
+| `productTypeOptions` | Distinct non-null `type_name` values for the type filter dropdown, scoped by selected site |
 
 ---
 
@@ -183,18 +193,19 @@ Opened when the user clicks **Product** on any area header. Rendered inline at t
 
 **Features:**
 - Live search (250 ms debounce) across `product_name`, `sku`, `description`
-- Type filter dropdown (populated from distinct DB values)
+- Site and Type filter dropdowns (Type options are scoped by selected Site)
 - Paginated product list (15 rows, Prev/Next controls)
 - Clicking a row toggles a custom checkbox; selected rows highlight in primary colour
 - Qty input appears per-row only when that product is selected
 - Footer shows count of selected products and an **Add N Products** button (disabled until ≥1 selected)
-- On add: creates one `ProjectLine` per selected product (`code` = SKU, `description` = product name, `qty` from picker)
+- On add: creates one `ProjectLine` per selected product (`product_id` = product ID, `code` = SKU, `description` = product name, `qty` from picker)
 
 **Livewire state properties:**
 ```
 $productPickerOpen (bool)
 $productPickerAreaId (?int)
 $productSearch (string)
+$productSiteFilter (string)
 $productTypeFilter (string)
 $productPage (int)
 $productSelections (array<int, array{qty: int}>)  — keyed by product_id
@@ -218,13 +229,14 @@ $productSelections (array<int, array{qty: int}>)  — keyed by product_id
 |---|---|
 | `Feature/AuthenticationTest.php` | Login / auth flows |
 | `Feature/AdminProductResourceTest.php` | Filament Products list page (admin) |
+| `Feature/AdminProjectResourceTest.php` | ViewProject server-side revision/project scoping for line actions; Activity Logs revision display |
 | `Feature/AdminUserResourceTest.php` | Filament Users CRUD (admin) |
 | `Feature/FrontEndProductsTest.php` | Products list for non-admin |
 | `Feature/ProductImportTest.php` | `ProductImportService` — happy path, API failure, structure error |
 | `Feature/ExampleTest.php` | Smoke test |
 | `Unit/ExampleTest.php` | Smoke test |
 
-**Not yet covered by tests:** Projects resource, ViewProject page interactions, product picker, area/line management.
+**Remaining project test gaps:** product picker UI flow, revision activation UI, presence heartbeat, PDF generation, and Salesforce project creation.
 
 ---
 
@@ -245,6 +257,23 @@ Three model observers automatically update `projects.last_edited_at` and `projec
 | `ProjectObserver` | Any meaningful change to the `projects` row (skips `last_edited_at`, `last_edited_by`, `active_revision_id`, timestamps) |
 | `ProjectAreaObserver` | Area saved or deleted — only if the area belongs to the **active revision** |
 | `ProjectLineObserver` | Line saved or deleted — only if its area belongs to the **active revision** |
+
+---
+
+## Activity Logs
+
+The admin-only history table is available at `/activity-logs` via `ActivityLogResource`.
+
+Columns:
+- **Who** — current user name when available, falling back to `user_email_snapshot`
+- **Project** — stored `project_name_snapshot`
+- **Rev** — stored `revision_number`, formatted as `R1`, `R2`, etc.; older rows may show `—`
+- **Action Performed** — formatted from `action_type` and `payload`
+- **Date & Time** — `created_at`
+
+`ActivityLog` snapshots `revision_number` automatically from the attached project's current `revision` when a row is created. `revision.created` passes the newly-created revision number explicitly so the log row represents the revision that was created, not the previous active revision.
+
+Tracked action types include project create/update/delete, revision creation, area create/delete, product add, line update, and the legacy `line.qty_updated` type.
 
 ---
 
@@ -276,18 +305,21 @@ SALESFORCE_BASE_URL=          # e.g. https://your-org.my.salesforce.com
 
 | Method | What it does |
 |---|---|
-| `getAccessToken(): ?string` | Private — POSTs to `{host}/services/oauth2/token`; returns Bearer token or null |
-| `fetchOpportunities(int $page, int $perPage, ?string $sortColumn, ?string $sortDirection): array` | SOQL v65.0 query with pagination and sort; returns `['data', 'total']`. Falls back to `ORDER BY CreatedDate DESC` when `$sortColumn` is null (Filament passes null on first load for external `->records()` tables) |
+| `authenticate(): ?array` | Private — POSTs to `{host}/services/oauth2/token`; returns `['token', 'instanceUrl']` or null |
+| `soqlQuery(array $auth, string $soql): ?array` | Private — runs an authenticated SOQL query against API v65.0 and returns decoded JSON or null |
+| `getOpportunities(int $page, int $perPage, ?string $search, ?string $sortColumn, ?string $sortDirection, array $fields): LengthAwarePaginator` | SOQL Opportunity table query with pagination, search, allowlisted sort columns, and `ORDER BY CreatedDate DESC` fallback |
 | `searchOpportunities(string $query, int $limit = 10): array` | Typeahead — `WHERE Name LIKE '%…%' ORDER BY Name ASC`; returns `[Id => 'Name (Reference)']` for Select options |
 | `getOpportunityById(string $id): ?array` | Fetches a single Opportunity by Id; returns `[Id, Name, Project_Reference_Number__c, Owner.Name, Owner.Email, Account.Name]` or null |
+| `fetchProjects(): array` | Simple Opportunity fetch used by the Artisan interrogator command |
+| `fetchAllOpportunityFields(int $limit = 25): array` | Describes Opportunity fields dynamically, then fetches all fields for interrogation/debugging |
 
 ### Salesforce Opportunities page
 
 - Admin-only page at `/salesforce` (navigation icon: cloud, group: Salesforce)
 - Displays a Filament `->records()` external-data table of Opportunities
-- Columns: Name, Reference Number, Stage, Account, Owner, Close Date, Created Date
+- Columns: Reference, Project Name, Stage, Amount, Created Date, Owner
 - Default sort: **Created Date descending** (both `->defaultSort()` on the table and the service fallback)
-- Searchable, sortable, paginated (15 per page)
+- Searchable, sortable, paginated (`10`, `25`, or `50` rows per page)
 
 ### "Salesforce Project" toggle on the New Project form
 
@@ -320,19 +352,25 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 29 May 2026)
+## Known Gaps / Next Steps (as of 3 June 2026)
 
 - [ ] `ProjectLine.status` column exists but is a placeholder (`–`) in the UI — no logic yet
-- [ ] No `product_id` FK on `project_lines` — products are referenced only by copied SKU/name
 - [ ] No unit price on `Product` model — lines require manual price entry after adding
-- [ ] No tests for the Projects resource or ViewProject interactions (revision management, presence, product picker, area/line management)
+- [ ] Project tests cover server-side line/revision scoping, but still need browser/UI coverage for product picker, revision activation, presence, and PDF generation
 - [ ] No Artisan command yet to trigger `ProductImportService` (needs `make:command`)
-- [ ] `cover_percentage` / `branch_name` fields exist on Project but are not surfaced in the form yet
 - [ ] Project totals (across all areas) not shown at the page level
 - [x] ~~No PDF / export functionality yet~~ — **Schedule PDF implemented (see Features completed — 2 June 2026)**
 - [ ] Bearer token for Salesforce is fetched fresh on every call — should be cached for its ~1 hour lifetime
 - [ ] No tests covering the Salesforce service (`Http::fake()` for auth success, auth failure, query failure)
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
+
+---
+
+## Features completed — 3 June 2026
+
+- **Server-side revision scoping hardened for project lines**: `ViewProject` now routes mutating area/line actions through scoped helpers that verify the target record belongs to both the current project and `$viewingRevisionId`. This covers line edit, duplicate, delete, sort/move, blank line creation, selected product insertion, and area removal. Cross-project or cross-revision Livewire IDs now fail server-side. Focused coverage lives in `tests/Feature/AdminProjectResourceTest.php`.
+
+- **Activity Logs revision column**: `activity_logs.revision_number` added and displayed as a **Rev** column in `/activity-logs`. New log rows snapshot the project revision number automatically; `revision.created` explicitly stores the newly-created revision number. Older rows may show `—` if they predate the column.
 
 ---
 

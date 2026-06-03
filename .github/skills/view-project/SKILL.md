@@ -83,10 +83,11 @@ When creating a `ProjectLine` from a `Product`:
 
 | Product field | ProjectLine field |
 |---|---|
+| `$product->id` | `product_id` |
 | `$product->sku` | `code` |
 | `$product->product_name` | `description` |
 
-There is **no `product_id` FK** on `project_lines`. Code and description are plain strings.
+`product_id` is nullable origin tracking for type recalculation and product-backed metadata. `code` and `description` remain copied strings and are the display/PDF values.
 
 ### 5. `updateLineField` allowed fields
 
@@ -209,9 +210,9 @@ All inline inputs use blur (not live binding) to minimise re-renders:
 - Updates both `active_revision_id` (FK) and `revision` (number column) on the project.
 - Calls `$this->record->refresh()` then updates `viewingRevisionId`.
 
-### Viewing old revisions
+### Revision activation
 
-The Blade view shows a yellow warning banner when `$viewingRevisionId !== $this->record->active_revision_id`. Changes to areas/lines still write to the viewed revision — warn the user if that behaviour is unexpected.
+Selecting a revision in the modal activates it via `setActiveRevision()`. The current product decision is that there is no browse-only revision mode in normal UI flow. If a future feature reintroduces browse-only history, it must use a separate method from `setActiveRevision()` and keep all area/line actions scoped to the explicitly viewed revision.
 
 ---
 
