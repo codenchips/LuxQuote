@@ -23,6 +23,13 @@ class ActivityLogsTable
                     ->searchable()
                     ->sortable(),
 
+                TextColumn::make('revision_number')
+                    ->label('Rev')
+                    ->formatStateUsing(fn (?int $state): ?string => $state ? 'R'.$state : null)
+                    ->placeholder('—')
+                    ->sortable()
+                    ->width('4rem'),
+
                 TextColumn::make('action_performed')
                     ->label('Action Performed')
                     ->html()

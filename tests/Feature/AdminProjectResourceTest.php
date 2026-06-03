@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Enums\ProjectLineType;
+use App\Filament\Resources\ActivityLogs\Pages\ListActivityLogs;
 use App\Filament\Resources\Projects\Pages\ViewProject;
+use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectRevision;
@@ -183,6 +185,43 @@ class AdminProjectResourceTest extends TestCase
             ->call('sortLine', $line->id, 0, $targetArea->id);
 
         $this->assertSame($targetArea->id, $line->fresh()->project_area_id);
+    }
+
+    public function test_activity_logs_snapshot_the_project_revision_number(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('createNewRevision');
+
+        $revisionLog = ActivityLog::where('project_id', $project->id)
+            ->where('action_type', 'revision.created')
+            ->first();
+
+        $this->assertSame(2, $revisionLog?->revision_number);
+    }
+
+    public function test_activity_logs_table_shows_the_revision_number(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create(['revision' => 3]);
+
+        ActivityLog::create([
+            'user_id' => $admin->id,
+            'project_id' => $project->id,
+            'action_type' => 'project.updated',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $project->name,
+            'payload' => null,
+        ]);
+
+        Livewire::test(ListActivityLogs::class)
+            ->assertSee('R3');
     }
 
     /**

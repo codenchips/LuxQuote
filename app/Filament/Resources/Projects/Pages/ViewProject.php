@@ -229,6 +229,7 @@ class ViewProject extends ViewRecord
             'action_type' => 'revision.created',
             'user_email_snapshot' => auth()->user()?->email ?? '',
             'project_name_snapshot' => $this->record->name,
+            'revision_number' => $newRevisionNumber,
             'payload' => ['revision_number' => $newRevisionNumber],
         ]);
 

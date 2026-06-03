@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'action_type',
     'user_email_snapshot',
     'project_name_snapshot',
+    'revision_number',
     'payload',
 ])]
 class ActivityLog extends Model
@@ -23,8 +24,20 @@ class ActivityLog extends Model
     {
         return [
             'payload' => 'array',
+            'revision_number' => 'integer',
             'created_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (ActivityLog $activityLog): void {
+            if ($activityLog->revision_number !== null || $activityLog->project_id === null) {
+                return;
+            }
+
+            $activityLog->revision_number = $activityLog->project?->revision;
+        });
     }
 
     public function user(): BelongsTo
