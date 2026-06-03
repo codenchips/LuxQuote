@@ -171,6 +171,22 @@ class ViewProject extends ViewRecord
             ->get();
     }
 
+    private function findAreaInViewingRevision(int $areaId): ProjectArea
+    {
+        return ProjectArea::where('id', $areaId)
+            ->where('project_id', $this->record->id)
+            ->where('project_revision_id', $this->viewingRevisionId)
+            ->firstOrFail();
+    }
+
+    private function findLineInViewingRevision(int $lineId): ProjectLine
+    {
+        return ProjectLine::whereHas('area', function ($query): void {
+            $query->where('project_id', $this->record->id)
+                ->where('project_revision_id', $this->viewingRevisionId);
+        })->findOrFail($lineId);
+    }
+
     // ── Revision management ───────────────────────────────────────────────────
 
     #[Computed]
@@ -262,10 +278,7 @@ class ViewProject extends ViewRecord
 
     public function removeArea(int $areaId): void
     {
-        ProjectArea::where('id', $areaId)
-            ->where('project_revision_id', $this->viewingRevisionId)
-            ->firstOrFail()
-            ->delete();
+        $this->findAreaInViewingRevision($areaId)->delete();
     }
 
     // ── Line management ───────────────────────────────────────────────────────
@@ -324,9 +337,7 @@ class ViewProject extends ViewRecord
             return;
         }
 
-        $area = ProjectArea::where('id', $this->productPickerAreaId)
-            ->where('project_revision_id', $this->viewingRevisionId)
-            ->firstOrFail();
+        $area = $this->findAreaInViewingRevision($this->productPickerAreaId);
 
         $maxSort = $area->lines()->max('sort_order') ?? -1;
 
@@ -400,9 +411,7 @@ class ViewProject extends ViewRecord
 
     public function addBlankLine(int $areaId): void
     {
-        $area = ProjectArea::where('id', $areaId)
-            ->where('project_revision_id', $this->viewingRevisionId)
-            ->firstOrFail();
+        $area = $this->findAreaInViewingRevision($areaId);
 
         $maxSort = $area->lines()->max('sort_order') ?? -1;
 
@@ -422,8 +431,7 @@ class ViewProject extends ViewRecord
             return;
         }
 
-        $line = ProjectLine::whereHas('area', fn ($q) => $q->where('project_id', $this->record->id))
-            ->findOrFail($lineId);
+        $line = $this->findLineInViewingRevision($lineId);
 
         if ($field === 'ref') {
             $value = ($value !== '' && $value !== null)
@@ -463,8 +471,7 @@ class ViewProject extends ViewRecord
 
     public function duplicateLine(int $lineId): void
     {
-        $line = ProjectLine::whereHas('area', fn ($q) => $q->where('project_id', $this->record->id))
-            ->findOrFail($lineId);
+        $line = $this->findLineInViewingRevision($lineId);
 
         $siblings = ProjectLine::where('project_area_id', $line->project_area_id)
             ->orderBy('sort_order')
@@ -484,24 +491,22 @@ class ViewProject extends ViewRecord
 
     public function deleteLine(int $lineId): void
     {
-        ProjectLine::whereHas('area', fn ($q) => $q->where('project_id', $this->record->id))
-            ->findOrFail($lineId)
-            ->delete();
+        $this->findLineInViewingRevision($lineId)->delete();
     }
 
     public function sortLine(int $lineId, int $newPosition, int $targetAreaId): void
     {
-        $line = ProjectLine::whereHas('area', fn ($q) => $q->where('project_id', $this->record->id))
-            ->findOrFail($lineId);
+        $line = $this->findLineInViewingRevision($lineId);
+        $targetArea = $this->findAreaInViewingRevision($targetAreaId);
 
         $sourceAreaId = $line->project_area_id;
 
-        DB::transaction(function () use ($line, $lineId, $newPosition, $targetAreaId, $sourceAreaId): void {
-            if ($sourceAreaId !== $targetAreaId) {
-                $line->update(['project_area_id' => $targetAreaId]);
+        DB::transaction(function () use ($line, $lineId, $newPosition, $targetArea, $sourceAreaId): void {
+            if ($sourceAreaId !== $targetArea->id) {
+                $line->update(['project_area_id' => $targetArea->id]);
             }
 
-            $targetSiblings = ProjectLine::where('project_area_id', $targetAreaId)
+            $targetSiblings = ProjectLine::where('project_area_id', $targetArea->id)
                 ->where('id', '!=', $lineId)
                 ->orderBy('sort_order')
                 ->pluck('id')
@@ -513,7 +518,7 @@ class ViewProject extends ViewRecord
                 ProjectLine::where('id', $id)->update(['sort_order' => $i]);
             }
 
-            if ($sourceAreaId !== $targetAreaId) {
+            if ($sourceAreaId !== $targetArea->id) {
                 ProjectLine::where('project_area_id', $sourceAreaId)
                     ->orderBy('sort_order')
                     ->get()
