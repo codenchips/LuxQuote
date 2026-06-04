@@ -1,6 +1,6 @@
 ---
 name: view-project
-description: "Use when working on ViewProject page, project areas, project lines, line sorting/drag-drop, product picker modal, revision management, heartbeat presence, or concurrent editing. Covers the Livewire component, Blade view, observer chain, and all area/line/revision operations."
+description: "Use when working on ViewProject page, project areas, project lines, validation/approval, revision locking, line sorting/drag-drop, product picker modal, revision management, heartbeat presence, or concurrent editing. Covers the Livewire component, Blade view, observer chain, and all area/line/revision operations."
 ---
 
 # ViewProject Skill
@@ -11,7 +11,7 @@ description: "Use when working on ViewProject page, project areas, project lines
 - Adding new actions, buttons, or inputs to the project view
 - Working with project areas (add, remove, sort) or project lines (add, edit, delete, sort, duplicate)
 - Adding or changing the product picker modal
-- Touching the revision system (create, set active, view history)
+- Touching the revision system (create, set active, view history, validation, locking)
 - Changing heartbeat / concurrent editing presence behaviour
 - Editing `resources/views/filament/resources/projects/pages/view-project.blade.php`
 
@@ -30,6 +30,8 @@ ViewProject (Livewire + Filament custom View page)
 │                                          updateLineField(), duplicateLine(),
 │                                          deleteLine(), sortLine()
 ├── Revision methods                     — setActiveRevision(), createNewRevision()
+├── Validation lock                      — isViewingRevisionValidated,
+│                                          ensureViewingRevisionIsEditable()
 ├── Product picker methods               — openProductPicker(), closeProductPicker(),
 │                                          toggleProductSelection(), addSelectedProducts()
 └── heartbeat()                          — upserts ProjectPresence, purges stale records
@@ -39,6 +41,8 @@ ViewProject (Livewire + Filament custom View page)
 - [ViewProject.php](../../../app/Filament/Resources/Projects/Pages/ViewProject.php)
 - [view-project.blade.php](../../../resources/views/filament/resources/projects/pages/view-project.blade.php)
 - [ProjectResource.php](../../../app/Filament/Resources/Projects/ProjectResource.php)
+- [ValidationProject.php](../../../app/Filament/Resources/Projects/Pages/ValidationProject.php)
+- [ProjectRevisionValidator.php](../../../app/Services/ProjectRevisionValidator.php)
 - Data model reference: [data-model.md](./data-model.md)
 - Observer reference: [observers.md](./observers.md)
 
@@ -93,6 +97,12 @@ When creating a `ProjectLine` from a `Product`:
 
 Only these fields may be updated via `updateLineField()`: `code`, `ref`, `description`, `qty`, `unit_price`, `notes`. Validate with `in_array` before updating.
 
+### 6. Never mutate a validated revision
+
+Every schedule mutation must call `ensureViewingRevisionIsEditable()` before changing an area or line. Validated revisions are locked server-side; disabling UI controls is not sufficient authorization.
+
+Editing a line resets its approval metadata. New revisions and cloned lines must start unvalidated/unapproved.
+
 ---
 
 ## Livewire Properties
@@ -109,6 +119,7 @@ Only these fields may be updated via `updateLineField()`: `code`, `ref`, `descri
 | `$productPage` | `int` | Product picker pagination page |
 | `$productSelections` | `array<int, array{qty: int}>` | Selected products keyed by product ID |
 | `$newAreaName` | `string` | Input for "Add Area" form |
+| `isViewingRevisionValidated` | computed bool | Whether the viewed revision is validated and locked |
 
 ---
 
@@ -129,15 +140,17 @@ Action::make('myAction')
 ### New line operation
 
 1. Add a `public function myOperation(int $lineId): void` method to `ViewProject.php`.
-2. Verify line ownership with `whereHas` (see Rule 2 above).
-3. Add a `wire:click="myOperation({{ $line->id }})"` button in the Blade `@foreach($area->lines as $line)` loop.
-4. Use `@click.stop` if the button is inside the accordion header (prevents collapse).
+2. Call `ensureViewingRevisionIsEditable()`.
+3. Verify line ownership with `whereHas` (see Rule 2 above).
+4. Add a `wire:click="myOperation({{ $line->id }})"` button in the Blade `@foreach($area->lines as $line)` loop.
+5. Use `@click.stop` if the button is inside the accordion header (prevents collapse).
 
 ### New area operation
 
 1. Add a method `public function myAreaOperation(int $areaId): void`.
-2. Scope the area query to `viewingRevisionId` (see Rule 3 above).
-3. Wire it in Blade inside the `@forelse($this->getAreas() as $area)` loop.
+2. Call `ensureViewingRevisionIsEditable()`.
+3. Scope the area query to `viewingRevisionId` (see Rule 3 above).
+4. Wire it in Blade inside the `@forelse($this->getAreas() as $area)` loop.
 
 ### New computed property
 
@@ -203,6 +216,16 @@ All inline inputs use blur (not live binding) to minimise re-renders:
 - Increments revision number: `max(revision_number) + 1`.
 - Sets the new revision as active (`active_revision_id`) and updates `viewingRevisionId`.
 - Always logs to `ActivityLog`.
+- New revision defaults to `validated = false`; cloned lines do not copy approval metadata.
+
+### Revision validation and locking
+
+- `ProjectRevisionValidator` owns validation rule evaluation and status synchronization.
+- A revision is validated only when no unresolved warnings remain and every line is approved.
+- Clean lines are auto-approved (`approved_by = null`); warning approval is explicit (`approved_by = admin ID`).
+- Validated revisions are locked by `ensureViewingRevisionIsEditable()`.
+- `createNewRevision()` remains allowed from a validated revision and creates an editable copy.
+- Running validation may invalidate a revision if a new warning appears.
 
 ### `setActiveRevision(int $revisionId)`
 
@@ -238,3 +261,6 @@ wire:poll.30s        → heartbeat() called every 30 seconds
 - **`ProductLineType::Custom` vs `Modified`** — `Custom` means blank line (no product), `Modified` means a product line whose code/description diverges from the source product. `Standard` means unchanged product line.
 - **MySQL TRUNCATE** — don't use `TRUNCATE` on any project-related table; FK constraints will fail. Use `Model::query()->delete()`.
 - **`product_id` on lines** — `ProjectLine` may have a `product_id` column for tracking origin but it is **not used for display**. Always use `code` and `description`.
+- **Approval is not validation** — `ProjectLine.approved` is per-line state; `ProjectRevision.validated` is synchronized only after evaluating all rules.
+- **Do not copy approval fields during revision cloning** — every new revision must be revalidated.
+- **Do not add validation rules directly to the Filament page** — add them to `ProjectRevisionValidator` so Run, Approve, Merge, and tests share one source of truth.

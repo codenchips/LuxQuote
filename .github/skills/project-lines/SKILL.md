@@ -1,6 +1,6 @@
 ---
 name: project-lines
-description: "Use when adding, editing, or querying ProjectLine records; working with the ProjectLineType enum (Standard/Modified/Custom); implementing line field updates; adding new columns to project lines; understanding line cloning during revision creation; or working with ProjectLine/ProjectArea observers and activity logging."
+description: "Use when adding, editing, approving, validating, merging, or querying ProjectLine records; working with the ProjectLineType enum (Standard/Modified/Custom); implementing line field updates; adding new columns to project lines; understanding line cloning during revision creation; or working with ProjectLine/ProjectArea observers and activity logging."
 ---
 
 # Project Lines Skill
@@ -14,6 +14,7 @@ description: "Use when adding, editing, or querying ProjectLine records; working
 - Understanding the activity log trail for line events
 - Debugging observer behaviour on line save/delete
 - Cloning lines during revision creation
+- Working with validation approval, merge, or validated-revision locking
 
 ---
 
@@ -105,7 +106,22 @@ Only updates if the type actually changes (avoids unnecessary observer triggers)
 | `unit_price` | decimal(10,2)\|null | null | |
 | `notes` | text\|null | null | |
 | `status` | string\|null | null | Not yet in use |
+| `approved` | boolean | false | Per-line validation approval |
+| `approved_at` | timestamp\|null | null | Approval time |
+| `approved_by` | FK → users\|null | null | Explicit approver; null for automatic clean-line approval |
 | `sort_order` | unsigned int | 0 | Cast to integer |
+
+---
+
+## Validation Approval
+
+- New lines default to `approved = false`.
+- `ProjectRevisionValidator::syncValidationStatus()` automatically approves lines that have no warnings, with `approved_by = null`.
+- Admin **Approve** sets approval metadata on every line affected by the warning.
+- **Undo** clears approval metadata for the affected lines.
+- Duplicate-SKU **Merge** keeps the first sorted line, sums quantities, deletes the remaining duplicate lines, and approves the survivor.
+- Any line edit through `ViewProject::updateLineField()` clears approval metadata.
+- Validated revisions are locked; every new line mutation must call `ensureViewingRevisionIsEditable()`.
 
 ---
 
@@ -174,6 +190,8 @@ $newArea->lines()->create($line->only([
 
 > **Important:** New columns added to `project_lines` must also be added to this `only()` call in [ViewProject.php](../../../app/Filament/Resources/Projects/Pages/ViewProject.php) or they will be lost on revision clone.
 
+Approval fields are intentionally excluded from revision cloning. New revisions must always be revalidated.
+
 ---
 
 ## Adding a New Column — Checklist
@@ -227,3 +245,5 @@ Before a cascade delete wipes lines, captures a snapshot of all lines (code, des
 - **Legacy `temp` type** — migrated to `custom` in `2026_05_27_095934`. Don't reintroduce `'temp'`.
 - **`ref` max length** is enforced both in the Blade input (`maxlength="6"`) and in `updateLineField()`. The DB column is also `string(6)`.
 - **Adding a new user-editable field?** You must update `updateLineField()`, the observer's `$trackedFields`, the cloning `only()` list, and the Blade grid columns — all four. Missing any one of them is a common source of silent data loss.
+- **Approval fields must not survive revision cloning.** Do not add `approved`, `approved_at`, or `approved_by` to the clone `only()` list.
+- **Validated revisions are locked server-side.** UI disabling is secondary; call `ensureViewingRevisionIsEditable()` before every mutation.

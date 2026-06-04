@@ -30,10 +30,13 @@
 | `project_id` | FK → projects | |
 | `revision_number` | int | Unique per project |
 | `created_by` | FK → users | |
+| `validated` | bool | Default false; locks revision when true |
+| `validated_at` | datetime\|null | Last successful validation time |
+| `validated_by` | FK → users\|null (nullOnDelete) | User who completed validation |
 
 Unique constraint: `[project_id, revision_number]`
 
-**Relationships:** `project()`, `creator()` (BelongsTo User via `created_by`), `areas()` HasMany ProjectArea.
+**Relationships:** `project()`, `creator()` (BelongsTo User via `created_by`), `validator()` (BelongsTo User via `validated_by`), `areas()` HasMany ProjectArea.
 
 ---
 
@@ -61,6 +64,7 @@ Unique constraint: `[project_id, revision_number]`
 |---|---|---|
 | `id` | int | |
 | `project_area_id` | FK → project_areas | |
+| `product_id` | FK → products\|null (nullOnDelete) | Product origin tracking |
 | `code` | string\|null | Product SKU (display only) |
 | `ref` | string\|null | Uppercase, max 6 chars |
 | `description` | string\|null | Product name (display only) |
@@ -68,9 +72,18 @@ Unique constraint: `[project_id, revision_number]`
 | `type` | string | `ProjectLineType` enum value |
 | `unit_price` | decimal\|null | |
 | `notes` | string\|null | |
+| `approved` | bool | Default false; clean lines may be auto-approved |
+| `approved_at` | datetime\|null | Approval time |
+| `approved_by` | FK → users\|null (nullOnDelete) | Admin for explicit approvals; null for automatic clean-line approval |
 | `sort_order` | int | |
 
-**No `product_id` FK** — `code` and `description` are plain strings copied from the product at line creation.
+`code` and `description` are copied display values. `product_id` only tracks origin and may become null if the catalogue product is deleted.
+
+**Approval semantics:**
+- New and cloned lines default to unapproved.
+- Validation auto-approves clean lines with `approved_by = null`.
+- Explicit warning approval records `approved_by`.
+- Editing a line clears its approval metadata.
 
 **Enum — ProjectLineType:**
 | Value | Label | Meaning |

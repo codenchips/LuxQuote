@@ -1,6 +1,6 @@
 # Company App — Project Status
 
-_Last updated: 3 June 2026_
+_Last updated: 4 June 2026_
 
 ---
 
@@ -55,6 +55,7 @@ projects
 
 project_revisions
   id, project_id (FK), revision_number, created_by (FK → users)
+  validated (bool), validated_at (nullable timestamp), validated_by (nullable FK → users)
   unique(project_id, revision_number)
 
 project_presences
@@ -67,7 +68,9 @@ project_areas
 project_lines
   id, project_area_id (FK), product_id (nullable FK → products, nullOnDelete)
   code, ref, description, qty, type (standard|modified|custom)
-  unit_price, notes, status, sort_order
+  unit_price, notes, status
+  approved (bool), approved_at (nullable timestamp), approved_by (nullable FK → users)
+  sort_order
 
 activity_logs
   id, user_id (nullable FK), project_id (nullable FK), action_type
@@ -81,6 +84,8 @@ activity_logs
 - `Project::activeViewers()` — HasManyThrough User via ProjectPresence (last 90 seconds, excludes self)
 - `Project::lastEditor()` — BelongsTo User via `last_edited_by`
 - `ProjectRevision::creator()` — BelongsTo User via `created_by`
+- `ProjectRevision::validator()` — BelongsTo User via `validated_by`
+- `ProjectLine::approver()` — BelongsTo User via `approved_by`
 - A new Project auto-creates revision #1 on creation (model boot hook) and a default area
 - `ProjectArea` has computed accessors: `line_total_qty` and `line_total` (qty × unit_price sum)
 - `ProjectLine.product_id` is nullable origin tracking for product-backed lines; `code` stores the copied SKU and `description` stores the copied product name used for display/PDF output
@@ -106,6 +111,7 @@ activity_logs
 | `/products` | `ProductResource` | List only — no create/edit pages (data comes from API) |
 | `/projects` | `ProjectResource` | List + custom View page |
 | `/projects/{id}` | `ViewProject` (custom) | Main working page — see below |
+| `/projects/{id}/validation` | `ValidationProject` | Admin-only validation, warning approval, and duplicate merge |
 | `/users` | `UserResource` | Admin-only create/edit/list |
 | `/activity-logs` | `ActivityLogResource` | Admin-only history table |
 | `/salesforce` | `Salesforce` page | Admin-only Salesforce Opportunities table |
@@ -142,6 +148,10 @@ A **Revisions** header button opens a modal listing all revisions. From there us
 - **Select** any revision — activates it by updating `projects.active_revision_id`, updates the project `revision` number, and refreshes `$viewingRevisionId`
 - **Create New Revision** — copies all areas and lines from the current revision into a new `ProjectRevision`, then makes that revision active
 
+New revisions always start **unvalidated** and copied lines start **unapproved**, even when cloned from a validated revision.
+
+Validated revisions are locked against schedule editing. All mutating area/line methods call `ensureViewingRevisionIsEditable()` server-side, and visible inline controls are disabled. Users can create a new revision from a validated revision and continue editing the new copy.
+
 All area/line operations (add, edit, delete, duplicate, sort) are scoped to `$viewingRevisionId` and must also verify project ownership. Cross-project or cross-revision Livewire IDs must fail server-side.
 
 ### Concurrent Editing Detection
@@ -174,6 +184,7 @@ The outer `<div>` has `wire:poll.30s="heartbeat"`. On each poll (and on `mount`)
 | `toggleProductSelection(productId)` | Adds/removes product from `$productSelections` map |
 | `setProductSelectionQty(productId, qty)` | Updates qty for a selected product |
 | `addSelectedProducts()` | Creates `ProjectLine` records from selections, then closes modal |
+| `ensureViewingRevisionIsEditable()` | Private guard; aborts mutating calls against validated revisions |
 
 ### `#[Computed]` properties
 
@@ -184,6 +195,50 @@ The outer `<div>` has `wire:poll.30s="heartbeat"`. On each poll (and on `mount`)
 | `productPickerProducts` | Paginated products (15/page) filtered by search + site + type |
 | `productSiteOptions` | Distinct non-null `site` values for the site filter dropdown |
 | `productTypeOptions` | Distinct non-null `type_name` values for the type filter dropdown, scoped by selected site |
+| `isViewingRevisionValidated` | Whether `$viewingRevisionId` is validated and locked |
+
+---
+
+## Validation & Approval
+
+The admin-only validation page is available at `/projects/{id}/validation`. It validates the project's **active revision** using `App\Services\ProjectRevisionValidator`.
+
+### Current validation rules
+
+1. A SKU should be unique within an Area. Repeating the same SKU in different Areas is allowed.
+2. Every non-empty line SKU should exist in the local `products` catalogue.
+
+SKU comparison for validation is case-insensitive and trims surrounding whitespace.
+
+### Validation lifecycle
+
+- New revisions default to `validated = false`.
+- New or cloned lines default to `approved = false`.
+- **Run Validation** re-evaluates all current rules.
+- Lines with no warnings are automatically approved with `approved_by = null`.
+- Warning lines remain unresolved until an admin explicitly approves the warning or resolves it by merging duplicates.
+- A revision becomes validated only when no unresolved warnings remain and every line is approved.
+- Validating records `validated_at` and `validated_by`, then locks the revision against editing.
+- If a later validation run discovers a new warning, the revision becomes unvalidated and editable again.
+
+### Warning actions
+
+| Action | Behavior |
+|---|---|
+| **Approve** | Explicitly approves all lines affected by that warning and records `approved_at` / `approved_by` |
+| **Undo** | Removes explicit approval for the warning; the revision becomes unvalidated if the warning is unresolved |
+| **Merge** | Available for duplicate-SKU warnings; keeps the first line, sums quantities, deletes the other duplicates, and approves the remaining line |
+
+Explicit warning approval is distinguished from automatic clean-line approval by `approved_by`: explicit approval has a user ID; automatic approval uses null.
+
+### Key files
+
+| File | Role |
+|---|---|
+| `app/Services/ProjectRevisionValidator.php` | Single source of truth for rule evaluation and revision validation status |
+| `app/Filament/Resources/Projects/Pages/ValidationProject.php` | Admin actions: run, approve, undo, merge |
+| `resources/views/filament/resources/projects/pages/validation-project.blade.php` | Validation summary and warning list |
+| `tests/Feature/AdminProjectValidationTest.php` | Validation, approval, merge, revalidation, and locking coverage |
 
 ---
 
@@ -230,13 +285,14 @@ $productSelections (array<int, array{qty: int}>)  — keyed by product_id
 | `Feature/AuthenticationTest.php` | Login / auth flows |
 | `Feature/AdminProductResourceTest.php` | Filament Products list page (admin) |
 | `Feature/AdminProjectResourceTest.php` | ViewProject server-side revision/project scoping for line actions; Activity Logs revision display |
+| `Feature/AdminProjectValidationTest.php` | Revision validation, automatic/explicit approval, Undo, Merge, revalidation, and locking |
 | `Feature/AdminUserResourceTest.php` | Filament Users CRUD (admin) |
 | `Feature/FrontEndProductsTest.php` | Products list for non-admin |
 | `Feature/ProductImportTest.php` | `ProductImportService` — happy path, API failure, structure error |
 | `Feature/ExampleTest.php` | Smoke test |
 | `Unit/ExampleTest.php` | Smoke test |
 
-**Remaining project test gaps:** product picker UI flow, revision activation UI, presence heartbeat, PDF generation, and Salesforce project creation.
+**Remaining project test gaps:** product picker UI flow, revision activation UI, presence heartbeat, validation UI browser coverage, PDF generation, and Salesforce project creation.
 
 ---
 
@@ -352,7 +408,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 3 June 2026)
+## Known Gaps / Next Steps (as of 4 June 2026)
 
 - [ ] `ProjectLine.status` column exists but is a placeholder (`–`) in the UI — no logic yet
 - [ ] No unit price on `Product` model — lines require manual price entry after adding
@@ -363,6 +419,17 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [ ] Bearer token for Salesforce is fetched fresh on every call — should be cached for its ~1 hour lifetime
 - [ ] No tests covering the Salesforce service (`Http::fake()` for auth success, auth failure, query failure)
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
+- [ ] Validation currently has two rules only; pricing, output-readiness, and other approval rules remain to be added
+
+---
+
+## Features completed — 4 June 2026
+
+- **Revision validation and approval workflow**: Active revisions can be checked from `/projects/{id}/validation`. Current rules flag duplicate SKUs within an Area and SKUs missing from the product catalogue.
+- **Persistent validation state**: `project_revisions` now stores `validated`, `validated_at`, and `validated_by`. `project_lines` stores `approved`, `approved_at`, and `approved_by`.
+- **Warning actions**: Admins can explicitly **Approve** warnings, **Undo** approval, or **Merge** duplicate-SKU lines by summing quantities and deleting duplicates.
+- **Validated revision locking**: Validated revisions reject schedule mutations server-side and disable inline editing controls. Creating a new revision produces an editable, unvalidated copy with line approvals reset.
+- **Validation service and tests**: Rule evaluation is centralized in `ProjectRevisionValidator`; focused validation coverage lives in `AdminProjectValidationTest.php`. Full suite: 46 tests / 125 assertions.
 
 ---
 
