@@ -76,6 +76,7 @@
 
                     <button
                         wire:click="addProduct({{ $area->id }})"
+                        @disabled($this->isViewingRevisionValidated)
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
                     >
                         <x-heroicon-o-plus class="w-3 h-3" /> Product 
@@ -83,6 +84,7 @@
 
                     <button
                         wire:click="addBlankLine({{ $area->id }})"
+                        @disabled($this->isViewingRevisionValidated)
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
                     >
                         <x-heroicon-o-plus class="w-3 h-3" /> Blank 
@@ -117,7 +119,7 @@
                 {{-- Sortable lines --}}
                 <div
                     x-sort="(id, pos) => $wire.sortLine(parseInt(id), pos, {{ $area->id }})"
-                    x-sort:config="{ group: 'projectLines', animation: 150 }"
+                    x-sort:config="{ group: 'projectLines', animation: 150, disabled: {{ $this->isViewingRevisionValidated ? 'true' : 'false' }} }"
                     class="divide-y divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800"
                 >
                     @foreach($area->lines as $line)
@@ -142,6 +144,7 @@
                         {{-- Code --}}
                         <input
                             value="{{ $line->code }}"
+                            @disabled($this->isViewingRevisionValidated)
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'code', $el.value)"
                             placeholder="–"
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm font-mono hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white {{ match($line->type) {
@@ -154,6 +157,7 @@
                         {{-- Ref --}}
                         <input
                             value="{{ $line->ref }}"
+                            @disabled($this->isViewingRevisionValidated)
                             maxlength="6"
                             placeholder="–"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'ref', $el.value.toUpperCase().slice(0, 6))"
@@ -164,6 +168,7 @@
                         {{-- Description --}}
                         <input
                             value="{{ $line->description }}"
+                            @disabled($this->isViewingRevisionValidated)
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'description', $el.value)"
                             placeholder="Description..."
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
@@ -173,6 +178,7 @@
                         <input
                             type="number"
                             value="{{ $line->qty }}"
+                            @disabled($this->isViewingRevisionValidated)
                             min="1"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'qty', parseInt($el.value) || 1)"
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
@@ -192,6 +198,7 @@
                             type="number"
                             step="0.01"
                             value="{{ $line->unit_price }}"
+                            @disabled($this->isViewingRevisionValidated)
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'unit_price', $el.value)"
                             placeholder="0.00"
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
@@ -200,6 +207,7 @@
                         {{-- Notes --}}
                         <input
                             value="{{ $line->notes }}"
+                            @disabled($this->isViewingRevisionValidated)
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'notes', $el.value)"
                             placeholder=""
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-500 dark:text-gray-400"
@@ -212,6 +220,7 @@
                         <div class="flex items-center justify-end gap-0.5">
                             <button
                                 wire:click="duplicateLine({{ $line->id }})"
+                                @disabled($this->isViewingRevisionValidated)
                                 title="Duplicate row"
                                 class="rounded p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             >
@@ -219,6 +228,7 @@
                             </button>
                             <button
                                 @click.stop="confirmDeleteLineId = {{ $line->id }}"
+                                @disabled($this->isViewingRevisionValidated)
                                 title="Delete row"
                                 class="rounded p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700"
                             >
@@ -491,6 +501,9 @@
                             <span class="text-sm font-semibold text-gray-900 dark:text-white">Rev {{ $revision->revision_number }}</span>
                             @if($isActive)
                             <span class="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/30 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">Active</span>
+                            @endif
+                            @if($revision->validated)
+                            <span class="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-400">Validated</span>
                             @endif
                             @if($isViewing && !$isActive)
                             <span class="inline-flex items-center rounded-full bg-primary-100 dark:bg-primary-900/30 px-2 py-0.5 text-xs font-medium text-primary-700 dark:text-primary-400">Viewing</span>

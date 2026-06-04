@@ -116,6 +116,10 @@ class ViewProject extends ViewRecord
             }
         }
 
+        if ($this->isViewingRevisionValidated) {
+            $parts[] = 'Validated (locked)';
+        }
+
         return new HtmlString(implode(' &middot; ', $parts));
     }
 
@@ -130,6 +134,7 @@ class ViewProject extends ViewRecord
                 ->icon('heroicon-o-pencil')
                 ->color('gray')
                 ->tooltip('Edit project details')
+                ->visible(fn (): bool => ! $this->isViewingRevisionValidated)
                 ->after(fn () => $this->record->refresh()),
 
             Action::make('manageRevisions')
@@ -142,6 +147,7 @@ class ViewProject extends ViewRecord
                 ->label('Areas')
                 ->icon(Heroicon::OutlinedMapPin)
                 ->color('gray')
+                ->visible(fn (): bool => ! $this->isViewingRevisionValidated)
                 ->modalHeading('Manage Areas')
                 ->modalDescription('Define the rooms, floors, and areas for this project.')
                 ->modalContent(fn (): View => view(
@@ -195,6 +201,18 @@ class ViewProject extends ViewRecord
         return $this->record->revisions()->with('creator')->get();
     }
 
+    #[Computed]
+    public function isViewingRevisionValidated(): bool
+    {
+        if (! $this->viewingRevisionId) {
+            return false;
+        }
+
+        return ProjectRevision::where('project_id', $this->record->id)
+            ->whereKey($this->viewingRevisionId)
+            ->value('validated') ?? false;
+    }
+
     public function setActiveRevision(int $revisionId): void
     {
         $revision = ProjectRevision::where('project_id', $this->record->id)
@@ -207,6 +225,7 @@ class ViewProject extends ViewRecord
 
         $this->record->refresh();
         $this->viewingRevisionId = $revision->id;
+        unset($this->isViewingRevisionValidated);
         $this->revisionsModalOpen = false;
     }
 
@@ -256,6 +275,7 @@ class ViewProject extends ViewRecord
 
         $this->record->refresh();
         $this->viewingRevisionId = $newRevision->id;
+        unset($this->isViewingRevisionValidated);
         $this->revisionsModalOpen = false;
     }
 
@@ -263,6 +283,8 @@ class ViewProject extends ViewRecord
 
     public function addArea(): void
     {
+        $this->ensureViewingRevisionIsEditable();
+
         $this->validate(['newAreaName' => 'required|string|min:1|max:255']);
 
         $maxSort = ProjectArea::where('project_revision_id', $this->viewingRevisionId)->max('sort_order') ?? -1;
@@ -279,6 +301,8 @@ class ViewProject extends ViewRecord
 
     public function removeArea(int $areaId): void
     {
+        $this->ensureViewingRevisionIsEditable();
+
         $this->findAreaInViewingRevision($areaId)->delete();
     }
 
@@ -334,6 +358,8 @@ class ViewProject extends ViewRecord
 
     public function addSelectedProducts(): void
     {
+        $this->ensureViewingRevisionIsEditable();
+
         if (! $this->productPickerAreaId || empty($this->productSelections)) {
             return;
         }
@@ -407,11 +433,15 @@ class ViewProject extends ViewRecord
 
     public function addProduct(int $areaId): void
     {
+        $this->ensureViewingRevisionIsEditable();
+
         $this->openProductPicker($areaId);
     }
 
     public function addBlankLine(int $areaId): void
     {
+        $this->ensureViewingRevisionIsEditable();
+
         $area = $this->findAreaInViewingRevision($areaId);
 
         $maxSort = $area->lines()->max('sort_order') ?? -1;
@@ -426,6 +456,8 @@ class ViewProject extends ViewRecord
 
     public function updateLineField(int $lineId, string $field, mixed $value): void
     {
+        $this->ensureViewingRevisionIsEditable();
+
         $allowed = ['code', 'ref', 'description', 'qty', 'unit_price', 'notes'];
 
         if (! in_array($field, $allowed, true)) {
@@ -439,12 +471,22 @@ class ViewProject extends ViewRecord
                 ? strtoupper(substr((string) $value, 0, 6))
                 : null;
 
-            $line->update(['ref' => $value]);
+            $line->update([
+                'ref' => $value,
+                'approved' => false,
+                'approved_at' => null,
+                'approved_by' => null,
+            ]);
 
             return;
         }
 
-        $line->update([$field => $value !== '' ? $value : null]);
+        $line->update([
+            $field => $value !== '' ? $value : null,
+            'approved' => false,
+            'approved_at' => null,
+            'approved_by' => null,
+        ]);
 
         if (in_array($field, ['code', 'description'], true) && $line->product_id !== null) {
             $line->refresh();
@@ -472,6 +514,8 @@ class ViewProject extends ViewRecord
 
     public function duplicateLine(int $lineId): void
     {
+        $this->ensureViewingRevisionIsEditable();
+
         $line = $this->findLineInViewingRevision($lineId);
 
         $siblings = ProjectLine::where('project_area_id', $line->project_area_id)
@@ -480,6 +524,9 @@ class ViewProject extends ViewRecord
             ->toArray();
 
         $copy = $line->replicate();
+        $copy->approved = false;
+        $copy->approved_at = null;
+        $copy->approved_by = null;
         $copy->save();
 
         $pos = array_search($lineId, $siblings);
@@ -492,11 +539,15 @@ class ViewProject extends ViewRecord
 
     public function deleteLine(int $lineId): void
     {
+        $this->ensureViewingRevisionIsEditable();
+
         $this->findLineInViewingRevision($lineId)->delete();
     }
 
     public function sortLine(int $lineId, int $newPosition, int $targetAreaId): void
     {
+        $this->ensureViewingRevisionIsEditable();
+
         $line = $this->findLineInViewingRevision($lineId);
         $targetArea = $this->findAreaInViewingRevision($targetAreaId);
 
@@ -526,5 +577,10 @@ class ViewProject extends ViewRecord
                     ->each(fn ($l, $i) => $l->update(['sort_order' => $i]));
             }
         });
+    }
+
+    private function ensureViewingRevisionIsEditable(): void
+    {
+        abort_if($this->isViewingRevisionValidated, 403, 'Validated revisions are locked against editing.');
     }
 }

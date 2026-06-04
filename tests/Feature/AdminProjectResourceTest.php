@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Enums\ProjectLineType;
 use App\Filament\Resources\ActivityLogs\Pages\ListActivityLogs;
+use App\Filament\Resources\Projects\Pages\ValidationProject;
 use App\Filament\Resources\Projects\Pages\ViewProject;
 use App\Models\ActivityLog;
+use App\Models\Product;
 use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectRevision;
@@ -18,6 +20,124 @@ use Throwable;
 class AdminProjectResourceTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_admin_can_validate_the_active_project_revision(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Hospital Lighting',
+            'customer_name' => 'Example Customer',
+        ]);
+        $groundFloor = $project->activeRevision->areas()->first();
+        $firstFloor = ProjectArea::create([
+            'project_id' => $project->id,
+            'project_revision_id' => $project->active_revision_id,
+            'name' => 'First Floor',
+            'sort_order' => 1,
+        ]);
+
+        Product::factory()->create(['sku' => 'VALID-SKU']);
+
+        $groundFloor->lines()->createMany([
+            [
+                'code' => 'VALID-SKU',
+                'description' => 'First valid product',
+                'qty' => 1,
+                'type' => ProjectLineType::Standard->value,
+                'sort_order' => 0,
+            ],
+            [
+                'code' => 'valid-sku',
+                'description' => 'Duplicate valid product',
+                'qty' => 1,
+                'type' => ProjectLineType::Standard->value,
+                'sort_order' => 1,
+            ],
+            [
+                'code' => 'MISSING-SKU',
+                'description' => 'Missing product',
+                'qty' => 1,
+                'type' => ProjectLineType::Custom->value,
+                'sort_order' => 2,
+            ],
+        ]);
+
+        $firstFloor->lines()->create([
+            'code' => 'VALID-SKU',
+            'description' => 'Valid in another area',
+            'qty' => 1,
+            'type' => ProjectLineType::Standard->value,
+            'sort_order' => 0,
+        ]);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertSee('Hospital Lighting')
+            ->assertSee('Example Customer')
+            ->assertSee('Rev 1')
+            ->assertSee('2 unresolved issues')
+            ->assertSee('SKU "VALID-SKU" appears 2 times in this area.')
+            ->assertSee('SKU "MISSING-SKU" was not found in the product catalogue.')
+            ->assertSee('Area: Ground Floor')
+            ->assertDontSee('Area: First Floor');
+    }
+
+    public function test_run_validation_rechecks_project_lines(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->first();
+
+        $component = Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertSee('No unresolved issues');
+
+        $area->lines()->create([
+            'code' => 'NEW-MISSING-SKU',
+            'description' => 'New missing product',
+            'qty' => 1,
+            'type' => ProjectLineType::Custom->value,
+            'sort_order' => 0,
+        ]);
+
+        $component
+            ->call('runValidation')
+            ->assertSee('1 unresolved issue')
+            ->assertSee('SKU "NEW-MISSING-SKU" was not found in the product catalogue.');
+    }
+
+    public function test_validation_ignores_lines_from_historical_revisions(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $historicalRevision = ProjectRevision::create([
+            'project_id' => $project->id,
+            'revision_number' => 2,
+            'created_by' => $admin->id,
+        ]);
+        $historicalArea = ProjectArea::create([
+            'project_id' => $project->id,
+            'project_revision_id' => $historicalRevision->id,
+            'name' => 'Historical Area',
+            'sort_order' => 0,
+        ]);
+
+        $historicalArea->lines()->create([
+            'code' => 'HISTORICAL-MISSING-SKU',
+            'description' => 'Historical missing product',
+            'qty' => 1,
+            'type' => ProjectLineType::Custom->value,
+            'sort_order' => 0,
+        ]);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertSee('No unresolved issues')
+            ->assertDontSee('HISTORICAL-MISSING-SKU');
+    }
 
     public function test_line_fields_can_only_be_updated_in_the_viewed_revision(): void
     {
