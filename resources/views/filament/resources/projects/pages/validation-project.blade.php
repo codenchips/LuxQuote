@@ -52,7 +52,7 @@
                     wire:key="{{ $issue['key'] }}"
                     class="border-b border-gray-200 px-5 py-4 last:border-b-0 dark:border-gray-700"
                 >
-                    <div class="flex items-start gap-4">
+                    <div class="flex items-center gap-4">
                         <x-heroicon-o-exclamation-circle class="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
 
                         <div class="min-w-0 flex-1">
@@ -72,9 +72,37 @@
                             </div>
 
                             <p class="mt-2 text-sm text-gray-950 dark:text-white">{{ $issue['message'] }}</p>
+
                         </div>
 
-                        <div class="flex shrink-0 items-center gap-2">
+                        @if($issue['type'] === 'price_mismatch')
+                            <div class="grid w-52 shrink-0 grid-cols-2 gap-2 self-center text-sm">
+                                <label class="space-y-1">
+                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">RRP</span>
+                                    <input
+                                        type="text"
+                                        value="{{ $issue['rrp'] !== null ? number_format((float) $issue['rrp'], 2) : '-' }}"
+                                        disabled
+                                        class="w-full rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                                    />
+                                </label>
+
+                                <label class="space-y-1">
+                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Quote</span>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value="{{ $issue['quote_price'] }}"
+                                        @disabled($issue['approved'])
+                                        x-on:blur="$wire.updateIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }}, $el.value)"
+                                        class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:border-gray-700 dark:disabled:bg-gray-800/70 dark:disabled:text-gray-400"
+                                    />
+                                </label>
+                            </div>
+                        @endif
+
+                        <div class="flex w-48 shrink-0 items-center justify-end gap-2">
                             @if($issue['approved'])
                                 <x-filament::button
                                     wire:click="undoIssueApproval({{ \Illuminate\Support\Js::from($issue['key']) }})"

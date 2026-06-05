@@ -383,6 +383,7 @@ class ViewProject extends ViewRecord
                 'description' => $product->product_name,
                 'qty' => $selection['qty'],
                 'type' => ProjectLineType::Standard->value,
+                'unit_price' => $product->price,
                 'sort_order' => $maxSort,
             ]);
         }

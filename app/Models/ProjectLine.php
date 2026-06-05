@@ -22,6 +22,7 @@ class ProjectLine extends Model
         return [
             'type' => ProjectLineType::class,
             'qty' => 'integer',
+            'unit_price' => 'decimal:2',
             'approved' => 'boolean',
             'approved_at' => 'datetime',
             'sort_order' => 'integer',

@@ -20,7 +20,9 @@ class ProjectRevisionValidator
      *     description: string,
      *     message: string,
      *     line_ids: array<int, int>,
-     *     approved: bool
+     *     approved: bool,
+     *     rrp?: string|null,
+     *     quote_price?: string|null
      * }>
      */
     public function issues(ProjectRevision $revision): array
@@ -31,15 +33,16 @@ class ProjectRevisionValidator
             ->orderBy('sort_order')
             ->get();
 
-        $productSkus = Product::query()
+        $productsBySku = Product::query()
             ->whereIn('sku', $areas->flatMap->lines->pluck('code')->filter()->unique())
-            ->pluck('sku')
-            ->mapWithKeys(fn (string $sku): array => [$this->normaliseSku($sku) => true]);
+            ->get(['sku', 'price'])
+            ->mapWithKeys(fn (Product $product): array => [$this->normaliseSku($product->sku) => $product]);
 
         return $areas
             ->flatMap(fn (ProjectArea $area): array => [
                 ...$this->duplicateSkuIssues($area),
-                ...$this->missingProductIssues($area, $productSkus),
+                ...$this->missingProductIssues($area, $productsBySku),
+                ...$this->priceMismatchIssues($area, $productsBySku),
             ])
             ->values()
             ->all();
@@ -54,7 +57,9 @@ class ProjectRevisionValidator
      *     description: string,
      *     message: string,
      *     line_ids: array<int, int>,
-     *     approved: bool
+     *     approved: bool,
+     *     rrp?: string|null,
+     *     quote_price?: string|null
      * }>
      */
     public function unresolvedIssues(ProjectRevision $revision): array
@@ -110,7 +115,9 @@ class ProjectRevisionValidator
      *     description: string,
      *     message: string,
      *     line_ids: array<int, int>,
-     *     approved: bool
+     *     approved: bool,
+     *     rrp?: string|null,
+     *     quote_price?: string|null
      * }>
      */
     private function duplicateSkuIssues(ProjectArea $area): array
@@ -137,7 +144,7 @@ class ProjectRevisionValidator
     }
 
     /**
-     * @param  Collection<string, bool>  $productSkus
+     * @param  Collection<string, Product>  $productsBySku
      * @return array<int, array{
      *     key: string,
      *     type: string,
@@ -146,14 +153,16 @@ class ProjectRevisionValidator
      *     description: string,
      *     message: string,
      *     line_ids: array<int, int>,
-     *     approved: bool
+     *     approved: bool,
+     *     rrp?: string|null,
+     *     quote_price?: string|null
      * }>
      */
-    private function missingProductIssues(ProjectArea $area, Collection $productSkus): array
+    private function missingProductIssues(ProjectArea $area, Collection $productsBySku): array
     {
         return $area->lines
             ->filter(fn (ProjectLine $line): bool => filled($line->code))
-            ->reject(fn (ProjectLine $line): bool => $productSkus->has($this->normaliseSku($line->code)))
+            ->reject(fn (ProjectLine $line): bool => $productsBySku->has($this->normaliseSku($line->code)))
             ->map(fn (ProjectLine $line): array => $this->issue(
                 key: "missing-product-{$line->id}",
                 type: 'missing_product',
@@ -162,6 +171,51 @@ class ProjectRevisionValidator
                 lines: collect([$line]),
                 message: "SKU \"{$line->code}\" was not found in the product catalogue.",
             ))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<string, Product>  $productsBySku
+     * @return array<int, array{
+     *     key: string,
+     *     type: string,
+     *     area: string,
+     *     code: string,
+     *     description: string,
+     *     message: string,
+     *     line_ids: array<int, int>,
+     *     approved: bool,
+     *     rrp: string|null,
+     *     quote_price: string|null
+     * }>
+     */
+    private function priceMismatchIssues(ProjectArea $area, Collection $productsBySku): array
+    {
+        return $area->lines
+            ->filter(fn (ProjectLine $line): bool => filled($line->code))
+            ->map(function (ProjectLine $line) use ($area, $productsBySku): ?array {
+                /** @var Product|null $product */
+                $product = $productsBySku->get($this->normaliseSku($line->code));
+
+                if ($product === null || $product->price === null || $this->pricesMatch($line->unit_price, $product->price)) {
+                    return null;
+                }
+
+                return $this->issue(
+                    key: "price-mismatch-{$line->id}",
+                    type: 'price_mismatch',
+                    area: $area,
+                    line: $line,
+                    lines: collect([$line]),
+                    message: "Quote price for SKU \"{$line->code}\" does not match the product RRP.",
+                    extra: [
+                        'rrp' => $product->price,
+                        'quote_price' => $line->unit_price,
+                    ],
+                );
+            })
+            ->filter()
             ->values()
             ->all();
     }
@@ -176,7 +230,9 @@ class ProjectRevisionValidator
      *     description: string,
      *     message: string,
      *     line_ids: array<int, int>,
-     *     approved: bool
+     *     approved: bool,
+     *     rrp?: string|null,
+     *     quote_price?: string|null
      * }
      */
     private function issue(
@@ -186,6 +242,7 @@ class ProjectRevisionValidator
         ProjectLine $line,
         Collection $lines,
         string $message,
+        array $extra = [],
     ): array {
         return [
             'key' => $key,
@@ -198,11 +255,25 @@ class ProjectRevisionValidator
             'approved' => $lines->every(
                 fn (ProjectLine $line): bool => $line->approved && $line->approved_by !== null
             ),
-        ];
+        ] + $extra;
     }
 
     private function normaliseSku(string $sku): string
     {
         return mb_strtoupper(trim($sku));
+    }
+
+    private function pricesMatch(string|float|int|null $quotePrice, string|float|int|null $rrp): bool
+    {
+        if ($quotePrice === null || $rrp === null) {
+            return $quotePrice === $rrp;
+        }
+
+        return $this->normalisePrice($quotePrice) === $this->normalisePrice($rrp);
+    }
+
+    private function normalisePrice(string|float|int $price): string
+    {
+        return number_format((float) $price, 2, '.', '');
     }
 }

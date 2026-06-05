@@ -21,6 +21,7 @@ class ProductFactory extends Factory
             'site' => fake()->randomElement(['xcite', 'tamlite', 'luxena']),
             'product_name' => fake()->words(3, true),
             'sku' => strtoupper(fake()->unique()->bothify('??-####-??')),
+            'price' => fake()->optional()->randomFloat(2, 1, 500),
             'description' => fake()->optional()->sentence(),
             'type_name' => fake()->randomElement(['Bollards', 'LED Strip', 'Downlights', 'Floodlights', null]),
             'length_mm' => fake()->optional()->numerify('###'),

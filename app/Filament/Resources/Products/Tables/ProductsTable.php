@@ -32,6 +32,11 @@ class ProductsTable
                     ->searchable()
                     ->sortable()
                     ->copyable(),
+                TextColumn::make('price')
+                    ->label('Price')
+                    ->money('GBP')
+                    ->placeholder('-')
+                    ->sortable(),
                 TextColumn::make('type_name')
                     ->label('Type')
                     ->searchable()

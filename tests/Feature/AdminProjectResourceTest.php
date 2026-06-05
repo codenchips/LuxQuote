@@ -38,7 +38,7 @@ class AdminProjectResourceTest extends TestCase
             'sort_order' => 1,
         ]);
 
-        Product::factory()->create(['sku' => 'VALID-SKU']);
+        Product::factory()->create(['sku' => 'VALID-SKU', 'price' => null]);
 
         $groundFloor->lines()->createMany([
             [
@@ -137,6 +137,33 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(ValidationProject::class, ['record' => $project->id])
             ->assertSee('No unresolved issues')
             ->assertDontSee('HISTORICAL-MISSING-SKU');
+    }
+
+    public function test_adding_products_populates_unit_price_from_product_price(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->first();
+        $product = Product::factory()->create([
+            'sku' => 'PRICED-SKU',
+            'product_name' => 'Priced Product',
+            'price' => 24.50,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->set('productPickerAreaId', $area->id)
+            ->set('productSelections', [$product->id => ['qty' => 2]])
+            ->call('addSelectedProducts');
+
+        $this->assertDatabaseHas('project_lines', [
+            'project_area_id' => $area->id,
+            'product_id' => $product->id,
+            'code' => 'PRICED-SKU',
+            'qty' => 2,
+            'unit_price' => '24.50',
+        ]);
     }
 
     public function test_line_fields_can_only_be_updated_in_the_viewed_revision(): void

@@ -56,7 +56,9 @@ class ValidationProject extends ViewRecord
      *     description: string,
      *     message: string,
      *     line_ids: array<int, int>,
-     *     approved: bool
+     *     approved: bool,
+     *     rrp?: string|null,
+     *     quote_price?: string|null
      * }>
      */
     #[Computed]
@@ -94,6 +96,26 @@ class ValidationProject extends ViewRecord
         $issue = $this->findIssue($issueKey);
 
         $this->linesForIssue($issue)->update([
+            'approved' => false,
+            'approved_at' => null,
+            'approved_by' => null,
+        ]);
+
+        $this->refreshValidation();
+    }
+
+    public function updateIssueQuotePrice(string $issueKey, mixed $value): void
+    {
+        $issue = $this->findIssue($issueKey);
+
+        abort_unless($issue['type'] === 'price_mismatch' && ! $issue['approved'], 404);
+
+        $quotePrice = $value === '' || $value === null
+            ? null
+            : number_format(max(0, (float) $value), 2, '.', '');
+
+        $this->linesForIssue($issue)->update([
+            'unit_price' => $quotePrice,
             'approved' => false,
             'approved_at' => null,
             'approved_by' => null,
@@ -148,7 +170,9 @@ class ValidationProject extends ViewRecord
      *     description: string,
      *     message: string,
      *     line_ids: array<int, int>,
-     *     approved: bool
+     *     approved: bool,
+     *     rrp?: string|null,
+     *     quote_price?: string|null
      * }
      */
     private function findIssue(string $issueKey): array

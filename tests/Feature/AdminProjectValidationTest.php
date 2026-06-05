@@ -33,8 +33,8 @@ class AdminProjectValidationTest extends TestCase
         $this->actingAs($admin);
 
         $project = Project::factory()->for($admin)->create();
-        $product = Product::factory()->create();
-        $line = $this->createLine($project, $product->sku);
+        $product = Product::factory()->create(['price' => 12.34]);
+        $line = $this->createLine($project, $product->sku, unitPrice: 12.34);
 
         Livewire::test(ValidationProject::class, ['record' => $project->id])
             ->call('runValidation')
@@ -79,8 +79,8 @@ class AdminProjectValidationTest extends TestCase
         $this->actingAs($admin);
 
         $project = Project::factory()->for($admin)->create();
-        $product = Product::factory()->create();
-        $line = $this->createLine($project, $product->sku);
+        $product = Product::factory()->create(['price' => 12.34]);
+        $line = $this->createLine($project, $product->sku, unitPrice: 12.34);
 
         $component = Livewire::test(ValidationProject::class, ['record' => $project->id])
             ->call('runValidation');
@@ -104,7 +104,7 @@ class AdminProjectValidationTest extends TestCase
         $this->actingAs($admin);
 
         $project = Project::factory()->for($admin)->create();
-        Product::factory()->create(['sku' => 'DUPLICATE-SKU']);
+        Product::factory()->create(['sku' => 'DUPLICATE-SKU', 'price' => null]);
         $firstLine = $this->createLine($project, 'DUPLICATE-SKU', 2, 0);
         $secondLine = $this->createLine($project, 'DUPLICATE-SKU', 3, 1);
         $issueKey = "duplicate-{$project->activeRevision->areas()->first()->id}-DUPLICATE-SKU";
@@ -125,8 +125,8 @@ class AdminProjectValidationTest extends TestCase
         $this->actingAs($admin);
 
         $project = Project::factory()->for($admin)->create();
-        $product = Product::factory()->create();
-        $line = $this->createLine($project, $product->sku);
+        $product = Product::factory()->create(['price' => 12.34]);
+        $line = $this->createLine($project, $product->sku, unitPrice: 12.34);
 
         Livewire::test(ValidationProject::class, ['record' => $project->id])
             ->call('runValidation');
@@ -153,12 +153,72 @@ class AdminProjectValidationTest extends TestCase
         $this->assertSame(10, $newLine->fresh()->qty);
     }
 
-    private function createLine(Project $project, string $code, int $qty = 1, int $sortOrder = 0): ProjectLine
+    public function test_price_mismatch_is_a_validation_issue_that_can_be_approved_and_undone(): void
     {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $product = Product::factory()->create([
+            'sku' => 'PRICE-SKU',
+            'price' => 12.34,
+        ]);
+        $line = $this->createLine($project, $product->sku, unitPrice: 10.00);
+        $issueKey = "price-mismatch-{$line->id}";
+
+        $component = Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertSee('1 unresolved issue')
+            ->assertSee('Quote price for SKU "PRICE-SKU" does not match the product RRP.')
+            ->assertSee('RRP')
+            ->assertSee('Quote')
+            ->call('approveIssue', $issueKey)
+            ->assertSee('Approved')
+            ->assertSee('Revision validated');
+
+        $this->assertSame('10.00', $line->fresh()->unit_price);
+        $this->assertTrue($line->fresh()->approved);
+
+        $component
+            ->call('undoIssueApproval', $issueKey)
+            ->assertSee('1 unresolved issue');
+
+        $this->assertFalse($line->fresh()->approved);
+        $this->assertFalse($project->activeRevision->fresh()->validated);
+    }
+
+    public function test_manager_can_update_quote_price_to_resolve_price_mismatch(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $product = Product::factory()->create([
+            'sku' => 'UPDATE-PRICE-SKU',
+            'price' => 42.50,
+        ]);
+        $line = $this->createLine($project, $product->sku, unitPrice: 10.00);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->call('updateIssueQuotePrice', "price-mismatch-{$line->id}", '42.50')
+            ->assertSee('Revision validated');
+
+        $this->assertSame('42.50', $line->fresh()->unit_price);
+        $this->assertTrue($line->fresh()->approved);
+        $this->assertTrue($project->activeRevision->fresh()->validated);
+    }
+
+    private function createLine(
+        Project $project,
+        string $code,
+        int $qty = 1,
+        int $sortOrder = 0,
+        float|int|string|null $unitPrice = null,
+    ): ProjectLine {
         return $project->activeRevision->areas()->first()->lines()->create([
             'code' => $code,
             'description' => "{$code} description",
             'qty' => $qty,
+            'unit_price' => $unitPrice,
             'type' => ProjectLineType::Standard->value,
             'sort_order' => $sortOrder,
         ]);
