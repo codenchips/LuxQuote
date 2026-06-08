@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 #[Fillable([
-    'site', 'product_name', 'sku', 'price', 'description', 'type_name',
+    'site', 'product_name', 'sku', 'price', 'description', 'v_description', 'type_name',
     'length_mm', 'width_mm', 'depth_mm', 'diameter_mm', 'cut_out_mm',
     'weight_kg', 'luminaire_wattage_w', 'lumens_lm', 'efficacy_llm_w',
     'beam_angle_fwhm', 'emergency_lumen_output', 'power', 'em_power',
@@ -19,6 +19,11 @@ class Product extends Model
 {
     /** @use HasFactory<ProductFactory> */
     use HasFactory;
+
+    public function displayDescription(): string
+    {
+        return (string) ($this->description ?? $this->product_name);
+    }
 
     /**
      * @return array<string, string>

@@ -43,6 +43,8 @@ class ProductImportService
                 $record[$column === 'SKU' ? 'sku' : $column] = $value !== '' ? $value : null;
             }
 
+            $record['description'] = $this->buildDescription($record);
+
             return $record;
         }, $rows);
 
@@ -55,6 +57,23 @@ class ProductImportService
         $this->populateMissingProjectLinePrices();
 
         return count($records);
+    }
+
+    /**
+     * @param  array<string, mixed>  $record
+     */
+    private function buildDescription(array $record): ?string
+    {
+        $productName = trim((string) ($record['product_name'] ?? ''));
+        $visualDescription = trim((string) ($record['v_description'] ?? $record['description'] ?? ''));
+
+        if (strtolower((string) ($record['site'] ?? '')) === 'xcite') {
+            return $visualDescription !== '' ? $visualDescription : null;
+        }
+
+        $description = trim(implode(' ', array_filter([$productName, $visualDescription])));
+
+        return $description !== '' ? $description : null;
     }
 
     private function populateMissingProjectLinePrices(): void

@@ -17,7 +17,7 @@ class ProductImportTest extends TestCase
     private function apiResponse(array $extra = []): array
     {
         return array_merge([
-            'columns' => ['site', 'product_name', 'SKU', 'price', 'description', 'type_name',
+            'columns' => ['site', 'product_name', 'SKU', 'price', 'v_description', 'type_name',
                 'length_mm', 'width_mm', 'depth_mm', 'diameter_mm', 'cut_out_mm',
                 'weight_kg', 'luminaire_wattage_w', 'lumens_lm', 'efficacy_llm_w',
                 'beam_angle_fwhm', 'emergency_lumen_output', 'power', 'em_power',
@@ -25,7 +25,7 @@ class ProductImportTest extends TestCase
                 'ip_rating', 'ik_rating', 'electrical_class', 'rl_ral'],
             'data' => [
                 ['site' => 'xcite', 'product_name' => 'Test Light', 'SKU' => 'XC-001',
-                    'price' => '12.34', 'description' => 'A test product', 'type_name' => 'Downlights',
+                    'price' => '12.34', 'v_description' => 'A test product', 'type_name' => 'Downlights',
                     'length_mm' => '100', 'width_mm' => null, 'depth_mm' => null,
                     'diameter_mm' => null, 'cut_out_mm' => '', 'weight_kg' => '1.5',
                     'luminaire_wattage_w' => '10W', 'lumens_lm' => '800',
@@ -36,7 +36,7 @@ class ProductImportTest extends TestCase
                     'ip_rating' => 'IP44', 'ik_rating' => null,
                     'electrical_class' => 'Class 2', 'rl_ral' => null],
                 ['site' => 'tamlite', 'product_name' => 'Another Light', 'SKU' => 'TL-002',
-                    'price' => '', 'description' => null, 'type_name' => 'Floodlights',
+                    'price' => '', 'v_description' => 'Wide beam', 'type_name' => 'Floodlights',
                     'length_mm' => null, 'width_mm' => null, 'depth_mm' => null,
                     'diameter_mm' => null, 'cut_out_mm' => null, 'weight_kg' => null,
                     'luminaire_wattage_w' => null, 'lumens_lm' => null,
@@ -60,8 +60,19 @@ class ProductImportTest extends TestCase
 
         $this->assertSame(2, $count);
         $this->assertDatabaseCount('products', 2);
-        $this->assertDatabaseHas('products', ['sku' => 'XC-001', 'product_name' => 'Test Light', 'price' => '12.34']);
-        $this->assertDatabaseHas('products', ['sku' => 'TL-002', 'site' => 'tamlite']);
+        $this->assertDatabaseHas('products', [
+            'sku' => 'XC-001',
+            'product_name' => 'Test Light',
+            'v_description' => 'A test product',
+            'description' => 'A test product',
+            'price' => '12.34',
+        ]);
+        $this->assertDatabaseHas('products', [
+            'sku' => 'TL-002',
+            'site' => 'tamlite',
+            'v_description' => 'Wide beam',
+            'description' => 'Another Light Wide beam',
+        ]);
     }
 
     public function test_import_maps_sku_column_to_lowercase(): void

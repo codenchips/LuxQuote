@@ -35,6 +35,7 @@ class FrontEndProductsTest extends TestCase
         $user = User::factory()->create();
         Product::factory()->create([
             'product_name' => 'Super Bright LED',
+            'description' => 'Super Bright LED visual description',
             'sku' => 'SB-LED-001',
             'site' => 'xcite',
             'type_name' => 'Downlights',
@@ -43,7 +44,7 @@ class FrontEndProductsTest extends TestCase
         $this->actingAs($user);
 
         Livewire::test(ListProducts::class)
-            ->assertSee('Super Bright LED')
+            ->assertSee('Super Bright LED visual description')
             ->assertSee('SB-LED-001')
             ->assertSee('xcite')
             ->assertSee('Downlights');

@@ -367,10 +367,7 @@
 
                     {{-- Name + description --}}
                     <div class="min-w-0">
-                        <div class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ $product->product_name }}</div>
-                        @if($product->description)
-                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ $product->description }}</div>
-                        @endif
+                        <div class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ $product->displayDescription() }}</div>
                     </div>
 
                     {{-- SKU --}}

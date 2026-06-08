@@ -31,6 +31,7 @@ class AdminProductResourceTest extends TestCase
         $product = Product::factory()->create([
             'site' => 'xcite',
             'product_name' => 'My Lamp',
+            'description' => 'My visual lamp description',
             'sku' => 'XC-TEST-01',
             'price' => 42.50,
             'type_name' => 'Downlights',
@@ -39,7 +40,7 @@ class AdminProductResourceTest extends TestCase
         $this->actingAs($admin);
 
         Livewire::test(ListProducts::class)
-            ->assertSee($product->product_name)
+            ->assertSee($product->description)
             ->assertSee($product->sku)
             ->assertSee('42.50')
             ->assertSee($product->site)
@@ -52,7 +53,7 @@ class AdminProductResourceTest extends TestCase
 
         Http::fake([
             '*' => Http::response([
-                'columns' => ['site', 'product_name', 'SKU', 'price', 'description', 'type_name',
+                'columns' => ['site', 'product_name', 'SKU', 'price', 'v_description', 'type_name',
                     'length_mm', 'width_mm', 'depth_mm', 'diameter_mm', 'cut_out_mm',
                     'weight_kg', 'luminaire_wattage_w', 'lumens_lm', 'efficacy_llm_w',
                     'beam_angle_fwhm', 'emergency_lumen_output', 'power', 'em_power',
@@ -60,7 +61,7 @@ class AdminProductResourceTest extends TestCase
                     'ip_rating', 'ik_rating', 'electrical_class', 'rl_ral'],
                 'data' => [
                     ['site' => 'xcite', 'product_name' => 'Lamp A', 'SKU' => 'XC-A',
-                        'price' => '15.99', 'description' => null, 'type_name' => 'Downlights',
+                        'price' => '15.99', 'v_description' => 'Lamp A visual description', 'type_name' => 'Downlights',
                         'length_mm' => null, 'width_mm' => null, 'depth_mm' => null,
                         'diameter_mm' => null, 'cut_out_mm' => null, 'weight_kg' => null,
                         'luminaire_wattage_w' => null, 'lumens_lm' => null,

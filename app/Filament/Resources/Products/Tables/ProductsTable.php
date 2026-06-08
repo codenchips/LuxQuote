@@ -22,7 +22,7 @@ class ProductsTable
                     ->badge()
                     ->searchable()
                     ->sortable(),
-                TextColumn::make('product_name')
+                TextColumn::make('description')
                     ->label('Product')
                     ->searchable()
                     ->sortable()
@@ -41,7 +41,7 @@ class ProductsTable
                     ->label('Type')
                     ->searchable()
                     ->sortable(),
-                TextColumn::make('description')
+                TextColumn::make('v_description')
                     ->label('Description')
                     ->limit(80)
                     ->wrap()

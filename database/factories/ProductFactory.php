@@ -23,6 +23,7 @@ class ProductFactory extends Factory
             'sku' => strtoupper(fake()->unique()->bothify('??-####-??')),
             'price' => fake()->optional()->randomFloat(2, 1, 500),
             'description' => fake()->optional()->sentence(),
+            'v_description' => fake()->optional()->sentence(),
             'type_name' => fake()->randomElement(['Bollards', 'LED Strip', 'Downlights', 'Floodlights', null]),
             'length_mm' => fake()->optional()->numerify('###'),
             'width_mm' => fake()->optional()->numerify('###'),

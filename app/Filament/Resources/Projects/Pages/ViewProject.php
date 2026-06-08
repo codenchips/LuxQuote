@@ -388,7 +388,7 @@ class ViewProject extends ViewRecord
             $area->lines()->create([
                 'product_id' => $product->id,
                 'code' => $product->sku,
-                'description' => $product->product_name,
+                'description' => $product->displayDescription(),
                 'qty' => $selection['qty'],
                 'type' => ProjectLineType::Standard->value,
                 'unit_price' => $product->price,
@@ -449,10 +449,10 @@ class ViewProject extends ViewRecord
             $area->lines()->create([
                 'product_id' => $product?->id,
                 'code' => $product?->sku ?? $row['sku'],
-                'description' => $product?->product_name ?? '',
+                'description' => $product?->displayDescription() ?? '',
                 'qty' => $row['qty'],
                 'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
-                'unit_price' => $product?->price,
+                'unit_price' => $row['unit_price'],
                 'sort_order' => $maxSort,
             ]);
         }
@@ -461,34 +461,37 @@ class ViewProject extends ViewRecord
     }
 
     /**
-     * @return array<int, array{qty: int, sku: string}>
+     * @return array<int, array{qty: int, sku: string, unit_price: string}>
      */
     private function parsePastedProductData(): array
     {
-        $lines = preg_split('/\r\n|\r|\n/', $this->pastedProductData) ?: [];
         $rows = [];
+        $handle = fopen('php://temp', 'r+');
 
-        foreach ($lines as $line) {
-            if (trim($line) === '') {
-                continue;
-            }
+        if ($handle === false) {
+            return $rows;
+        }
 
-            $columns = str_contains($line, "\t")
-                ? explode("\t", $line)
-                : str_getcsv($line);
+        fwrite($handle, $this->pastedProductData);
+        rewind($handle);
 
+        while (($columns = fgetcsv($handle, 0, "\t", '"', '')) !== false) {
             $qty = trim((string) ($columns[0] ?? ''));
             $sku = trim((string) ($columns[1] ?? ''));
+            $price = trim((string) ($columns[3] ?? ''));
 
-            if ($this->isPastedProductHeader($qty, $sku) || ! is_numeric($qty) || $sku === '') {
+            if ($this->isPastedProductHeader($qty, $sku) || ! is_numeric($qty) || $sku === '' || ! is_numeric($price)) {
                 continue;
             }
 
             $rows[] = [
                 'qty' => max(1, (int) $qty),
                 'sku' => $sku,
+                'unit_price' => number_format(max(0, (float) $price), 2, '.', ''),
             ];
         }
+
+        fclose($handle);
 
         return $rows;
     }
@@ -611,7 +614,7 @@ class ViewProject extends ViewRecord
         }
 
         $unchanged = $line->code === $product->sku
-            && $line->description === $product->product_name;
+            && $line->description === $product->displayDescription();
 
         $newType = $unchanged ? ProjectLineType::Standard : ProjectLineType::Modified;
 

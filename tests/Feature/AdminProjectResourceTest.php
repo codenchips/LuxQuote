@@ -149,6 +149,7 @@ class AdminProjectResourceTest extends TestCase
         $product = Product::factory()->create([
             'sku' => 'PRICED-SKU',
             'product_name' => 'Priced Product',
+            'description' => 'Priced Product Visual Description',
             'price' => 24.50,
         ]);
 
@@ -161,6 +162,7 @@ class AdminProjectResourceTest extends TestCase
             'project_area_id' => $area->id,
             'product_id' => $product->id,
             'code' => 'PRICED-SKU',
+            'description' => 'Priced Product Visual Description',
             'qty' => 2,
             'unit_price' => '24.50',
         ]);
@@ -183,18 +185,20 @@ class AdminProjectResourceTest extends TestCase
         $tabProduct = Product::factory()->create([
             'sku' => 'TAB-SKU',
             'product_name' => 'Tab Product',
-            'price' => 12.50,
+            'description' => 'Tab Product Visual Description',
+            'price' => 99.99,
         ]);
         $commaProduct = Product::factory()->create([
-            'sku' => 'COMMA-SKU',
-            'product_name' => 'Comma Product',
-            'price' => 24.75,
+            'sku' => 'SECOND-SKU',
+            'product_name' => 'Second Product',
+            'description' => 'Second Product Visual Description',
+            'price' => 88.88,
         ]);
 
         Livewire::test(ViewProject::class, ['record' => $project->id])
             ->call('openPasteProductsModal', $area->id)
             ->assertSet('pasteProductsModalOpen', true)
-            ->set('pastedProductData', "2\tTAB-SKU\tDiscarded\n3,COMMA-SKU,Discarded")
+            ->set('pastedProductData', "2\tTAB-SKU\t\"Discarded quoted\nmultiline description\"\t12.50\n3\tSECOND-SKU\tDiscarded description\t24.75")
             ->call('addPastedProducts')
             ->assertSet('pasteProductsModalOpen', false);
 
@@ -205,14 +209,14 @@ class AdminProjectResourceTest extends TestCase
 
         $this->assertSame($tabProduct->id, $lines[1]->product_id);
         $this->assertSame('TAB-SKU', $lines[1]->code);
-        $this->assertSame('Tab Product', $lines[1]->description);
+        $this->assertSame('Tab Product Visual Description', $lines[1]->description);
         $this->assertSame(2, $lines[1]->qty);
         $this->assertSame('12.50', $lines[1]->unit_price);
         $this->assertSame(ProjectLineType::Standard, $lines[1]->type);
 
         $this->assertSame($commaProduct->id, $lines[2]->product_id);
-        $this->assertSame('COMMA-SKU', $lines[2]->code);
-        $this->assertSame('Comma Product', $lines[2]->description);
+        $this->assertSame('SECOND-SKU', $lines[2]->code);
+        $this->assertSame('Second Product Visual Description', $lines[2]->description);
         $this->assertSame(3, $lines[2]->qty);
         $this->assertSame('24.75', $lines[2]->unit_price);
         $this->assertSame(ProjectLineType::Standard, $lines[2]->type);
