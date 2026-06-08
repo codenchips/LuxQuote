@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Project;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -189,6 +190,156 @@ class SalesforceService
         return ($result['records'] ?? [])[0] ?? null;
     }
 
+    public function findOpportunityIdForProject(Project $project): ?string
+    {
+        if (filled($project->salesforce_id)) {
+            return $project->salesforce_id;
+        }
+
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return null;
+        }
+
+        return $this->findOpportunityIdForProjectUsingAuth($project, $auth);
+    }
+
+    /**
+     * Upload a schedule PDF as a Salesforce file version attached to the project's Opportunity.
+     *
+     * @return array{success: bool, url?: string, contentVersionId?: string, contentDocumentId?: string, message?: string}
+     */
+    public function uploadSchedulePdf(Project $project, string $pdfContent, string $filename): array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return ['success' => false, 'message' => 'Salesforce authentication failed.'];
+        }
+
+        $opportunityId = $this->findOpportunityIdForProjectUsingAuth($project, $auth);
+
+        if (blank($opportunityId)) {
+            return ['success' => false, 'message' => 'No matching Salesforce Opportunity was found for this project.'];
+        }
+
+        $title = pathinfo($filename, PATHINFO_FILENAME);
+        $contentDocumentId = $this->findLinkedContentDocumentId($auth, $opportunityId, $title);
+        $metadata = [
+            'Title' => $title,
+            'PathOnClient' => $filename,
+        ];
+
+        if ($contentDocumentId) {
+            $metadata['ContentDocumentId'] = $contentDocumentId;
+        } else {
+            $metadata['FirstPublishLocationId'] = $opportunityId;
+        }
+
+        $metadataJson = json_encode($metadata, JSON_THROW_ON_ERROR);
+
+        $response = Http::withToken($auth['token'])
+            ->acceptJson()
+            ->asMultipart()
+            ->post("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/ContentVersion', [
+                [
+                    'name' => 'entity_content',
+                    'contents' => $metadataJson,
+                    'headers' => ['Content-Type' => 'application/json'],
+                ],
+                [
+                    'name' => 'VersionData',
+                    'contents' => $pdfContent,
+                    'filename' => $filename,
+                    'headers' => ['Content-Type' => 'application/pdf'],
+                ],
+            ]);
+
+        if ($response->failed()) {
+            Log::error('Salesforce file upload failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'project_id' => $project->id,
+                'opportunity_id' => $opportunityId,
+            ]);
+
+            return ['success' => false, 'message' => $this->salesforceErrorMessage($response->json())];
+        }
+
+        $contentVersionId = (string) $response->json('id');
+        $contentDocumentId ??= $this->findContentDocumentIdForVersion($auth, $contentVersionId);
+
+        return [
+            'success' => true,
+            'url' => $contentDocumentId
+                ? "{$auth['instanceUrl']}/lightning/r/ContentDocument/{$contentDocumentId}/view"
+                : "{$auth['instanceUrl']}/lightning/r/Opportunity/{$opportunityId}/view",
+            'contentVersionId' => $contentVersionId,
+            'contentDocumentId' => $contentDocumentId,
+        ];
+    }
+
+    private function salesforceErrorMessage(mixed $errors): string
+    {
+        if (is_array($errors) && isset($errors[0]['message'])) {
+            return 'Salesforce file upload failed: '.$errors[0]['message'];
+        }
+
+        return 'Salesforce file upload failed.';
+    }
+
+    /**
+     * @param  array{token: string, instanceUrl: string}  $auth
+     */
+    private function findOpportunityIdForProjectUsingAuth(Project $project, array $auth): ?string
+    {
+        if (filled($project->salesforce_id)) {
+            return $project->salesforce_id;
+        }
+
+        if (blank($project->reference_number)) {
+            return null;
+        }
+
+        $reference = $this->soqlEscape((string) $project->reference_number);
+        $result = $this->soqlQuery(
+            $auth,
+            "SELECT Id FROM Opportunity WHERE Project_Reference_Number__c = '{$reference}' LIMIT 1",
+        );
+
+        return ($result['records'] ?? [])[0]['Id'] ?? null;
+    }
+
+    /**
+     * @param  array{token: string, instanceUrl: string}  $auth
+     */
+    private function findLinkedContentDocumentId(array $auth, string $opportunityId, string $title): ?string
+    {
+        $escapedOpportunityId = $this->soqlEscape($opportunityId);
+        $escapedTitle = $this->soqlEscape($title);
+        $result = $this->soqlQuery(
+            $auth,
+            "SELECT ContentDocumentId FROM ContentDocumentLink WHERE LinkedEntityId = '{$escapedOpportunityId}' AND ContentDocument.Title = '{$escapedTitle}' ORDER BY SystemModstamp DESC LIMIT 1",
+        );
+
+        return ($result['records'] ?? [])[0]['ContentDocumentId'] ?? null;
+    }
+
+    /**
+     * @param  array{token: string, instanceUrl: string}  $auth
+     */
+    private function findContentDocumentIdForVersion(array $auth, string $contentVersionId): ?string
+    {
+        $escapedContentVersionId = $this->soqlEscape($contentVersionId);
+        $result = $this->soqlQuery(
+            $auth,
+            "SELECT ContentDocumentId FROM ContentVersion WHERE Id = '{$escapedContentVersionId}' LIMIT 1",
+        );
+
+        return ($result['records'] ?? [])[0]['ContentDocumentId'] ?? null;
+    }
+
     /**
      * Fetch Opportunity records for the Artisan interrogator command.
      *
@@ -229,7 +380,7 @@ class SalesforceService
 
         $describe = Http::withToken($auth['token'])
             ->acceptJson()
-            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Opportinity/describe');
+            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Opportunity/describe');
         //  ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/ContentVersion/describe');
 
         if ($describe->failed()) {

@@ -35,6 +35,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
     'last_edited_at',
     'last_edited_by',
     'salesforce_project',
+    'salesforce_id',
 ])]
 class Project extends Model
 {

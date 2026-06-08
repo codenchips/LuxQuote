@@ -26,6 +26,7 @@ class ListProjects extends ListRecords
 
                         if (is_array($sfData) && ! empty($sfData['Name'])) {
                             $data['name'] = $sfData['Name'];
+                            $data['salesforce_id'] = $sfData['Id'] ?? $data['salesforce_id'] ?? null;
                         }
                     }
 

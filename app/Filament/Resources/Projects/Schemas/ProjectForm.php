@@ -61,6 +61,7 @@ class ProjectForm
                     ->afterStateUpdated(function (?string $state, Set $set): void {
                         if (blank($state)) {
                             $set('name', null);
+                            $set('salesforce_id', null);
                             $set('salesforce_pending_data', null);
 
                             return;
@@ -73,6 +74,7 @@ class ProjectForm
                         }
 
                         $set('name', $record['Name'] ?? '');
+                        $set('salesforce_id', $record['Id'] ?? null);
                         $set('salesforce_pending_data', json_encode($record));
                     })
                     ->visible(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true && $record === null)

@@ -13,6 +13,7 @@ use App\Models\ProjectArea;
 use App\Models\ProjectRevision;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\TestCase;
 use Throwable;
@@ -291,6 +292,45 @@ class AdminProjectResourceTest extends TestCase
         $this->assertNull($line->qty);
         $this->assertNull($line->unit_price);
         $this->assertNull($line->notes);
+    }
+
+    public function test_salesforce_project_details_save_does_not_upload_pdf_without_products(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Empty Salesforce Project',
+            'customer_name' => 'Example Customer',
+            'reference_number' => '22600',
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+        ]);
+
+        Http::fake();
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->callAction('editProject', [
+                'name' => 'Empty Salesforce Project Updated',
+                'reference_number' => '22600',
+                'customer_name' => 'Example Customer',
+                'contractor' => null,
+                'site_location' => null,
+                'owner_email' => $project->owner_email,
+                'created_by_email' => $project->created_by_email,
+                'department' => null,
+                'date' => $project->date->format('Y-m-d'),
+                'revision' => $project->revision,
+                'visibility' => $project->visibility->value,
+                'branch_name' => null,
+                'cover_percentage' => null,
+                'quote_notes' => null,
+                'internal_notes' => null,
+                'general_notes' => null,
+            ]);
+
+        Http::assertNothingSent();
+        $this->assertSame('Empty Salesforce Project Updated', $project->fresh()->name);
     }
 
     public function test_lines_cannot_be_sorted_into_an_area_from_another_project(): void

@@ -12,8 +12,11 @@ use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectPresence;
 use App\Models\ProjectRevision;
+use App\Services\ProjectSchedulePdfService;
+use App\Services\SalesforceService;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -23,6 +26,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Computed;
+use Throwable;
 
 class ViewProject extends ViewRecord
 {
@@ -143,7 +147,7 @@ class ViewProject extends ViewRecord
                 ->color('gray')
                 ->tooltip('Edit project details')
                 ->visible(fn (): bool => ! $this->isViewingRevisionValidated)
-                ->after(fn () => $this->record->refresh()),
+                ->after(fn () => $this->afterProjectDetailsSaved()),
 
             Action::make('manageRevisions')
                 ->label('Revisions')
@@ -183,6 +187,80 @@ class ViewProject extends ViewRecord
             ->with(['lines' => fn ($q) => $q->orderBy('sort_order')])
             ->orderBy('sort_order')
             ->get();
+    }
+
+    private function afterProjectDetailsSaved(): void
+    {
+        $this->record->refresh();
+
+        if (! $this->record->salesforce_project) {
+            return;
+        }
+
+        $revision = ProjectRevision::where('project_id', $this->record->id)
+            ->find($this->viewingRevisionId ?? $this->record->active_revision_id);
+
+        if (! $revision) {
+            Notification::make()
+                ->title('Salesforce upload skipped')
+                ->body('No project revision was available for the schedule PDF.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        if (! $this->revisionHasScheduleProducts($revision)) {
+            return;
+        }
+
+        try {
+            $pdf = app(ProjectSchedulePdfService::class);
+            $filename = $pdf->filename($this->record, $revision);
+            $result = app(SalesforceService::class)->uploadSchedulePdf(
+                project: $this->record,
+                pdfContent: $pdf->content($this->record, $revision),
+                filename: $filename,
+            );
+        } catch (Throwable $exception) {
+            Notification::make()
+                ->title('Salesforce upload failed')
+                ->body($exception->getMessage())
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        if (! $result['success']) {
+            Notification::make()
+                ->title('Salesforce upload failed')
+                ->body($result['message'] ?? 'The schedule PDF could not be uploaded to Salesforce.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $salesforceUrl = $result['url'] ?? null;
+
+        Notification::make()
+            ->title('Schedule PDF uploaded to Salesforce')
+            ->body($salesforceUrl ? 'The file is available on Salesforce.' : 'The file is available on the Salesforce Opportunity.')
+            ->actions($salesforceUrl ? [
+                Action::make('viewSalesforceFile')
+                    ->label('View in Salesforce')
+                    ->url($salesforceUrl, shouldOpenInNewTab: true),
+            ] : [])
+            ->success()
+            ->send();
+    }
+
+    private function revisionHasScheduleProducts(ProjectRevision $revision): bool
+    {
+        return $revision->areas()
+            ->whereHas('lines', fn ($query) => $query->whereNotNull('code')->where('code', '!=', ''))
+            ->exists();
     }
 
     private function findAreaInViewingRevision(int $areaId): ProjectArea
