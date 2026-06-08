@@ -1,6 +1,6 @@
 # Company App — Project Status
 
-_Last updated: 4 June 2026_
+_Last updated: 8 June 2026_
 
 ---
 
@@ -37,7 +37,7 @@ users
   role (admin|users)
 
 products
-  id, site, product_name, sku, description, type_name
+  id, site, product_name, sku, price, description, v_description, type_name
   length_mm, width_mm, depth_mm, diameter_mm, cut_out_mm
   weight_kg, luminaire_wattage_w, lumens_lm, efficacy_llm_w
   beam_angle_fwhm, emergency_lumen_output, power, em_power
@@ -56,6 +56,7 @@ projects
 project_revisions
   id, project_id (FK), revision_number, created_by (FK → users)
   validated (bool), validated_at (nullable timestamp), validated_by (nullable FK → users)
+  status (draft|approved)
   unique(project_id, revision_number)
 
 project_presences
@@ -88,7 +89,8 @@ activity_logs
 - `ProjectLine::approver()` — BelongsTo User via `approved_by`
 - A new Project auto-creates revision #1 on creation (model boot hook) and a default area
 - `ProjectArea` has computed accessors: `line_total_qty` and `line_total` (qty × unit_price sum)
-- `ProjectLine.product_id` is nullable origin tracking for product-backed lines; `code` stores the copied SKU and `description` stores the copied product name used for display/PDF output
+- `Product.description` is the display description derived during import: Xcite uses `v_description`; other sites use `product_name + ' ' + v_description`
+- `ProjectLine.product_id` is nullable origin tracking for product-backed lines; `code` stores the copied SKU and `description` stores the copied product display description used for schedule/PDF output
 - `ActivityLog.revision_number` snapshots the project revision number at the time of the event; older rows may be null
 
 ---
@@ -99,6 +101,7 @@ activity_logs
 |---|---|
 | `UserRole` | `Admin`, `Users` |
 | `ProjectStatus` | `Draft`, `InProgress`, `Complete`, `Cancelled`, `Archived` |
+| `ProjectRevisionStatus` | `Draft`, `Approved` |
 | `ProjectVisibility` | `Open`, `Private` |
 | `ProjectLineType` | `Standard`, `Modified`, `Custom` |
 
@@ -135,6 +138,7 @@ This is the most complex page. It is a custom `ViewRecord` Livewire component wi
 ### Per-area card
 Each area header shows the area name, line count, total qty, and £ total. Buttons in the header:
 - **Product** → opens the product picker modal (see below)
+- **Paste** → opens a paste modal for importing spreadsheet rows into the area
 - **Blank** → adds an empty `ProjectLine` to the area
 
 Each line is a sortable row (Alpine `x-sort`) with inline-editable fields:
@@ -184,6 +188,9 @@ The outer `<div>` has `wire:poll.30s="heartbeat"`. On each poll (and on `mount`)
 | `toggleProductSelection(productId)` | Adds/removes product from `$productSelections` map |
 | `setProductSelectionQty(productId, qty)` | Updates qty for a selected product |
 | `addSelectedProducts()` | Creates `ProjectLine` records from selections, then closes modal |
+| `openPasteProductsModal(areaId)` | Opens the paste-products modal for an Area |
+| `closePasteProductsModal()` | Closes the paste modal and clears paste state |
+| `addPastedProducts()` | Parses pasted rows and creates `ProjectLine` records |
 | `ensureViewingRevisionIsEditable()` | Private guard; aborts mutating calls against validated revisions |
 
 ### `#[Computed]` properties
@@ -207,6 +214,7 @@ The admin-only validation page is available at `/projects/{id}/validation`. It v
 
 1. A SKU should be unique within an Area. Repeating the same SKU in different Areas is allowed.
 2. Every non-empty line SKU should exist in the local `products` catalogue.
+3. Product-backed quote prices should match the product catalogue RRP unless explicitly approved.
 
 SKU comparison for validation is case-insensitive and trims surrounding whitespace.
 
@@ -220,6 +228,8 @@ SKU comparison for validation is case-insensitive and trims surrounding whitespa
 - A revision becomes validated only when no unresolved warnings remain and every line is approved.
 - Validating records `validated_at` and `validated_by`, then locks the revision against editing.
 - If a later validation run discovers a new warning, the revision becomes unvalidated and editable again.
+- Once a revision is validated, admins can click **Approve Revision**. This sets `project_revisions.status = approved`.
+- If a later validation run finds new warnings, an approved revision status resets to `draft`.
 
 ### Warning actions
 
@@ -228,6 +238,7 @@ SKU comparison for validation is case-insensitive and trims surrounding whitespa
 | **Approve** | Explicitly approves all lines affected by that warning and records `approved_at` / `approved_by` |
 | **Undo** | Removes explicit approval for the warning; the revision becomes unvalidated if the warning is unresolved |
 | **Merge** | Available for duplicate-SKU warnings; keeps the first line, sums quantities, deletes the other duplicates, and approves the remaining line |
+| **Match** | Available for price mismatch warnings; updates the quote price to the catalogue RRP and re-runs validation |
 
 Explicit warning approval is distinguished from automatic clean-line approval by `approved_by`: explicit approval has a user ID; automatic approval uses null.
 
@@ -236,7 +247,7 @@ Explicit warning approval is distinguished from automatic clean-line approval by
 | File | Role |
 |---|---|
 | `app/Services/ProjectRevisionValidator.php` | Single source of truth for rule evaluation and revision validation status |
-| `app/Filament/Resources/Projects/Pages/ValidationProject.php` | Admin actions: run, approve, undo, merge |
+| `app/Filament/Resources/Projects/Pages/ValidationProject.php` | Admin actions: run, approve warning, undo, merge, match price, approve revision |
 | `resources/views/filament/resources/projects/pages/validation-project.blade.php` | Validation summary and warning list |
 | `tests/Feature/AdminProjectValidationTest.php` | Validation, approval, merge, revalidation, and locking coverage |
 
@@ -253,7 +264,7 @@ Opened when the user clicks **Product** on any area header. Rendered inline at t
 - Clicking a row toggles a custom checkbox; selected rows highlight in primary colour
 - Qty input appears per-row only when that product is selected
 - Footer shows count of selected products and an **Add N Products** button (disabled until ≥1 selected)
-- On add: creates one `ProjectLine` per selected product (`product_id` = product ID, `code` = SKU, `description` = product name, `qty` from picker)
+- On add: creates one `ProjectLine` per selected product (`product_id` = product ID, `code` = SKU, `description` = `Product::displayDescription()`, `unit_price` = product price, `qty` from picker)
 
 **Livewire state properties:**
 ```
@@ -268,11 +279,40 @@ $productSelections (array<int, array{qty: int}>)  — keyed by product_id
 
 ---
 
+## Paste Products Modal
+
+Opened when the user clicks **Paste** on an area header. It is rendered inline in `view-project.blade.php` and uses a textarea labelled **Paste product data** plus **Cancel** and **Add Products** actions.
+
+Expected pasted data is tab-delimited with four fields:
+
+```
+qty    sku    description    price
+```
+
+Rules:
+- The first row is data; there is no header row.
+- The delimiter between fields is always a tab.
+- The pasted description column is discarded. It may be quoted, unquoted, contain punctuation, or span multiple lines inside quotes.
+- The parser uses tab-delimited CSV parsing so quoted multiline descriptions stay attached to their row.
+- `qty` is imported into `ProjectLine.qty`.
+- `sku` is imported into `ProjectLine.code`.
+- `price` is imported into `ProjectLine.unit_price` and overrides any product catalogue price for that pasted line.
+- When the SKU exists in `products`, `product_id` is set and `ProjectLine.description` is copied from `Product::displayDescription()`.
+- When the SKU does not exist, the line is still added with blank description and `Custom` type so validation can flag the missing SKU.
+- The modal's **Add Products** button enables immediately when text is pasted, via Alpine state, without waiting for a Livewire re-render.
+
+---
+
 ## Product Catalogue
 
 - Data source: external API `POST https://tcms.tamlite.co.uk/api/product_data`
 - Import handled by `App\Services\ProductImportService`
 - Import **deletes** all existing products then bulk-inserts in chunks of 500 (DELETE used over TRUNCATE to respect FK constraints)
+- API field `SKU` is mapped to local `sku`
+- API field `v_description` is stored separately and also used to build local `description`
+- Local `description` is derived during import:
+  - `site = xcite`: `description = v_description`
+  - all other sites: `description = product_name + ' ' + v_description`
 - `site` values seen in factory: `xcite`, `tamlite`, `luxena`
 - No create/edit UI — read-only in Filament, imported via Artisan or tests
 
@@ -284,7 +324,7 @@ $productSelections (array<int, array{qty: int}>)  — keyed by product_id
 |---|---|
 | `Feature/AuthenticationTest.php` | Login / auth flows |
 | `Feature/AdminProductResourceTest.php` | Filament Products list page (admin) |
-| `Feature/AdminProjectResourceTest.php` | ViewProject server-side revision/project scoping for line actions; Activity Logs revision display |
+| `Feature/AdminProjectResourceTest.php` | ViewProject server-side revision/project scoping for line actions; paste products; Activity Logs revision display |
 | `Feature/AdminProjectValidationTest.php` | Revision validation, automatic/explicit approval, Undo, Merge, revalidation, and locking |
 | `Feature/AdminUserResourceTest.php` | Filament Users CRUD (admin) |
 | `Feature/FrontEndProductsTest.php` | Products list for non-admin |
@@ -408,10 +448,9 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 4 June 2026)
+## Known Gaps / Next Steps (as of 8 June 2026)
 
 - [ ] `ProjectLine.status` column exists but is a placeholder (`–`) in the UI — no logic yet
-- [ ] No unit price on `Product` model — lines require manual price entry after adding
 - [ ] Project tests cover server-side line/revision scoping, but still need browser/UI coverage for product picker, revision activation, presence, and PDF generation
 - [ ] No Artisan command yet to trigger `ProductImportService` (needs `make:command`)
 - [ ] Project totals (across all areas) not shown at the page level
@@ -419,7 +458,16 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [ ] Bearer token for Salesforce is fetched fresh on every call — should be cached for its ~1 hour lifetime
 - [ ] No tests covering the Salesforce service (`Http::fake()` for auth success, auth failure, query failure)
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
-- [ ] Validation currently has two rules only; pricing, output-readiness, and other approval rules remain to be added
+- [ ] Validation currently covers duplicate SKU, missing SKU, and price mismatch; output-readiness and other approval rules remain to be added
+
+---
+
+## Features completed — 8 June 2026
+
+- **Paste products into Areas**: Area headers now include **Paste** beside **Product** and **Blank**. The modal imports tab-delimited `qty, sku, description, price` rows copied from spreadsheets, ignores the pasted description, handles quoted multiline descriptions, uses the pasted price, and fills the line description from the product catalogue when the SKU exists.
+- **Product display description**: Product import now stores API `v_description` and derives local `products.description` from `product_name + v_description`, except Xcite products which use `v_description` only. Product list, product picker, and new project lines use `Product::displayDescription()`.
+- **Price mismatch validation workflow**: Validation now flags quote price vs RRP mismatches, shows RRP/Quote inputs, and provides **Match** to update the quote price to RRP. Row buttons and price inputs have been aligned to a consistent height.
+- **Revision approval status**: Validated revisions can now be marked **Approved** via the validation page. `project_revisions.status` tracks `draft|approved`; approval is blocked until validation passes and resets to draft if later validation finds issues.
 
 ---
 

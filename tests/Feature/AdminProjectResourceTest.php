@@ -260,6 +260,39 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame('Active revision line', $activeRevisionLine->fresh()->description);
     }
 
+    public function test_line_fields_can_be_cleared_for_spacing_rows(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $line = $project->activeRevision->areas()->first()->lines()->create([
+            'code' => 'SPACER',
+            'ref' => 'A1',
+            'description' => 'Spacer row',
+            'qty' => 1,
+            'unit_price' => 12.34,
+            'notes' => 'Spacing note',
+            'type' => ProjectLineType::Custom->value,
+            'sort_order' => 0,
+        ]);
+
+        $component = Livewire::test(ViewProject::class, ['record' => $project->id]);
+
+        foreach (['code', 'ref', 'description', 'qty', 'unit_price', 'notes'] as $field) {
+            $component->call('updateLineField', $line->id, $field, '');
+        }
+
+        $line->refresh();
+
+        $this->assertNull($line->code);
+        $this->assertNull($line->ref);
+        $this->assertNull($line->description);
+        $this->assertNull($line->qty);
+        $this->assertNull($line->unit_price);
+        $this->assertNull($line->notes);
+    }
+
     public function test_lines_cannot_be_sorted_into_an_area_from_another_project(): void
     {
         $admin = User::factory()->admin()->create();

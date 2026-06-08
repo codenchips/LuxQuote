@@ -593,7 +593,7 @@ class ViewProject extends ViewRecord
         }
 
         $line->update([
-            $field => $value !== '' ? $value : null,
+            $field => $this->normaliseLineFieldValue($field, $value),
             'approved' => false,
             'approved_at' => null,
             'approved_by' => null,
@@ -603,6 +603,23 @@ class ViewProject extends ViewRecord
             $line->refresh();
             $this->recalculateLineType($line);
         }
+    }
+
+    private function normaliseLineFieldValue(string $field, mixed $value): mixed
+    {
+        if ($value === '' || $value === null) {
+            return null;
+        }
+
+        if ($field === 'qty') {
+            return max(1, (int) $value);
+        }
+
+        if ($field === 'unit_price') {
+            return max(0, (float) $value);
+        }
+
+        return $value;
     }
 
     private function recalculateLineType(ProjectLine $line): void
