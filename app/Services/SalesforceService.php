@@ -229,7 +229,8 @@ class SalesforceService
 
         $describe = Http::withToken($auth['token'])
             ->acceptJson()
-            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Opportunity/describe');
+            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Opportinity/describe');
+        //  ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/ContentVersion/describe');
 
         if ($describe->failed()) {
             Log::error('Salesforce describe failed', ['status' => $describe->status()]);
@@ -239,6 +240,8 @@ class SalesforceService
 
         $fieldNames = array_column($describe->json()['fields'] ?? [], 'name');
 
+        // var_dump($fieldNames); // Debug output to verify field retrieval
+
         if (empty($fieldNames)) {
             return ['success' => false, 'status' => 0, 'errors' => ['No fields returned from describe']];
         }
@@ -246,6 +249,7 @@ class SalesforceService
         $result = $this->soqlQuery(
             $auth,
             'SELECT '.implode(', ', $fieldNames)." FROM Opportunity LIMIT {$limit}",
+            // 'SELECT '.implode(', ', $fieldNames)." FROM ContentVersion LIMIT {$limit}",
         );
 
         if ($result === null) {

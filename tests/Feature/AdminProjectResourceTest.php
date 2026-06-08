@@ -166,6 +166,58 @@ class AdminProjectResourceTest extends TestCase
         ]);
     }
 
+    public function test_admin_can_paste_products_into_an_area(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->first();
+        $existingLine = $area->lines()->create([
+            'code' => 'EXISTING',
+            'description' => 'Existing line',
+            'qty' => 1,
+            'type' => ProjectLineType::Custom->value,
+            'sort_order' => 0,
+        ]);
+        $tabProduct = Product::factory()->create([
+            'sku' => 'TAB-SKU',
+            'product_name' => 'Tab Product',
+            'price' => 12.50,
+        ]);
+        $commaProduct = Product::factory()->create([
+            'sku' => 'COMMA-SKU',
+            'product_name' => 'Comma Product',
+            'price' => 24.75,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('openPasteProductsModal', $area->id)
+            ->assertSet('pasteProductsModalOpen', true)
+            ->set('pastedProductData', "2\tTAB-SKU\tDiscarded\n3,COMMA-SKU,Discarded")
+            ->call('addPastedProducts')
+            ->assertSet('pasteProductsModalOpen', false);
+
+        $lines = $area->lines()->orderBy('sort_order')->get();
+
+        $this->assertCount(3, $lines);
+        $this->assertSame($existingLine->id, $lines[0]->id);
+
+        $this->assertSame($tabProduct->id, $lines[1]->product_id);
+        $this->assertSame('TAB-SKU', $lines[1]->code);
+        $this->assertSame('Tab Product', $lines[1]->description);
+        $this->assertSame(2, $lines[1]->qty);
+        $this->assertSame('12.50', $lines[1]->unit_price);
+        $this->assertSame(ProjectLineType::Standard, $lines[1]->type);
+
+        $this->assertSame($commaProduct->id, $lines[2]->product_id);
+        $this->assertSame('COMMA-SKU', $lines[2]->code);
+        $this->assertSame('Comma Product', $lines[2]->description);
+        $this->assertSame(3, $lines[2]->qty);
+        $this->assertSame('24.75', $lines[2]->unit_price);
+        $this->assertSame(ProjectLineType::Standard, $lines[2]->type);
+    }
+
     public function test_line_fields_can_only_be_updated_in_the_viewed_revision(): void
     {
         $admin = User::factory()->admin()->create();

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\ProjectLineType;
+use App\Enums\ProjectRevisionStatus;
 use App\Filament\Resources\Projects\Pages\ValidationProject;
 use App\Filament\Resources\Projects\Pages\ViewProject;
 use App\Models\Product;
@@ -24,6 +25,7 @@ class AdminProjectValidationTest extends TestCase
         $line = $this->createLine($project, 'DEFAULT-SKU');
 
         $this->assertFalse($project->activeRevision->validated);
+        $this->assertSame(ProjectRevisionStatus::Draft, $project->activeRevision->status);
         $this->assertFalse($line->approved);
     }
 
@@ -96,6 +98,54 @@ class AdminProjectValidationTest extends TestCase
             ->assertSee('1 unresolved issue');
 
         $this->assertFalse($project->activeRevision->fresh()->validated);
+    }
+
+    public function test_admin_can_approve_revision_once_it_is_validated(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $product = Product::factory()->create(['price' => 12.34]);
+        $this->createLine($project, $product->sku, unitPrice: 12.34);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertSee('Approve Revision')
+            ->call('approveRevision')
+            ->assertForbidden();
+
+        $this->assertSame(ProjectRevisionStatus::Draft, $project->activeRevision->fresh()->status);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->call('runValidation')
+            ->assertSee('Revision validated')
+            ->call('approveRevision');
+
+        $this->assertSame(ProjectRevisionStatus::Approved, $project->activeRevision->fresh()->status);
+    }
+
+    public function test_run_validation_resets_approved_revision_status_when_a_new_warning_appears(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $product = Product::factory()->create(['price' => 12.34]);
+        $this->createLine($project, $product->sku, unitPrice: 12.34);
+
+        $component = Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->call('runValidation')
+            ->call('approveRevision');
+
+        $this->assertSame(ProjectRevisionStatus::Approved, $project->activeRevision->fresh()->status);
+
+        $product->delete();
+
+        $component
+            ->call('runValidation')
+            ->assertSee('1 unresolved issue');
+
+        $this->assertSame(ProjectRevisionStatus::Draft, $project->activeRevision->fresh()->status);
     }
 
     public function test_admin_can_merge_duplicate_skus_and_validate_the_revision(): void
@@ -204,6 +254,29 @@ class AdminProjectValidationTest extends TestCase
 
         $this->assertSame('42.50', $line->fresh()->unit_price);
         $this->assertTrue($line->fresh()->approved);
+        $this->assertTrue($project->activeRevision->fresh()->validated);
+    }
+
+    public function test_admin_can_match_quote_price_to_rrp_to_resolve_price_mismatch(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $product = Product::factory()->create([
+            'sku' => 'MATCH-PRICE-SKU',
+            'price' => 64.25,
+        ]);
+        $line = $this->createLine($project, $product->sku, unitPrice: 10.00);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertSee('Match')
+            ->call('matchIssueQuotePrice', "price-mismatch-{$line->id}")
+            ->assertSee('Revision validated');
+
+        $this->assertSame('64.25', $line->fresh()->unit_price);
+        $this->assertTrue($line->fresh()->approved);
+        $this->assertNull($line->fresh()->approved_by);
         $this->assertTrue($project->activeRevision->fresh()->validated);
     }
 

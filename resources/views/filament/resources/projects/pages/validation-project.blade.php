@@ -6,7 +6,18 @@
     @endphp
 
     <div class="space-y-6">
-        <div class="flex justify-end">
+        <div class="flex justify-end gap-2">
+            <x-filament::button
+                wire:click="approveRevision"
+                wire:loading.attr="disabled"
+                wire:target="approveRevision"
+                color="success"
+                icon="heroicon-o-check-badge"
+                :disabled="! $isValidated"
+            >
+                Approve Revision
+            </x-filament::button>
+
             <x-filament::button
                 wire:click="runValidation"
                 wire:loading.attr="disabled"
@@ -83,7 +94,7 @@
                                         type="text"
                                         value="{{ $issue['rrp'] !== null ? number_format((float) $issue['rrp'], 2) : '-' }}"
                                         disabled
-                                        class="w-full rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                                        class="h-[34px] w-full rounded-lg border border-gray-200 bg-gray-50 px-2 py-0 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
                                     />
                                 </label>
 
@@ -96,18 +107,24 @@
                                         value="{{ $issue['quote_price'] }}"
                                         @disabled($issue['approved'])
                                         x-on:blur="$wire.updateIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }}, $el.value)"
-                                        class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:border-gray-700 dark:disabled:bg-gray-800/70 dark:disabled:text-gray-400"
+                                        class="h-[34px] w-full rounded-lg border border-gray-300 bg-white px-2 py-0 text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:border-gray-700 dark:disabled:bg-gray-800/70 dark:disabled:text-gray-400"
                                     />
                                 </label>
                             </div>
                         @endif
 
-                        <div class="flex w-48 shrink-0 items-center justify-end gap-2">
+                        <div
+                            @class([
+                                'flex w-48 shrink-0 items-center justify-end gap-2',
+                                'self-start pt-5' => $issue['type'] === 'price_mismatch',
+                            ])
+                        >
                             @if($issue['approved'])
                                 <x-filament::button
                                     wire:click="undoIssueApproval({{ \Illuminate\Support\Js::from($issue['key']) }})"
                                     color="gray"
                                     size="sm"
+                                    class="h-[34px] min-h-[34px]"
                                 >
                                     Undo
                                 </x-filament::button>
@@ -118,8 +135,21 @@
                                         color="gray"
                                         size="sm"
                                         icon="heroicon-o-arrows-pointing-in"
+                                        class="h-[34px] min-h-[34px]"
                                     >
                                         Merge
+                                    </x-filament::button>
+                                @endif
+
+                                @if($issue['type'] === 'price_mismatch')
+                                    <x-filament::button
+                                        wire:click="matchIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }})"
+                                        color="gray"
+                                        size="sm"
+                                        icon="heroicon-o-arrows-right-left"
+                                        class="h-[34px] min-h-[34px]"
+                                    >
+                                        Match
                                     </x-filament::button>
                                 @endif
 
@@ -127,6 +157,7 @@
                                     wire:click="approveIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
                                     size="sm"
                                     icon="heroicon-o-hand-thumb-up"
+                                    class="h-[34px] min-h-[34px]"
                                 >
                                     Approve
                                 </x-filament::button>

@@ -83,6 +83,14 @@
                     </button>
 
                     <button
+                        wire:click="openPasteProductsModal({{ $area->id }})"
+                        @disabled($this->isViewingRevisionValidated)
+                        class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
+                    >
+                        <x-heroicon-o-plus class="w-3 h-3" /> Paste
+                    </button>
+
+                    <button
                         wire:click="addBlankLine({{ $area->id }})"
                         @disabled($this->isViewingRevisionValidated)
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
@@ -462,6 +470,68 @@
                 </div>
             </div>
 
+        </div>
+    </div>
+    @endif
+
+    {{-- Paste Products Modal --}}
+    @if($pasteProductsModalOpen)
+    <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Paste Products"
+        class="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+    >
+        <div
+            class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            wire:click="closePasteProductsModal"
+        ></div>
+
+        <div
+            x-data="{ pastedProductData: @js($pastedProductData) }"
+            class="relative z-10 w-full max-w-xl bg-white dark:bg-gray-900 rounded-xl shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700"
+        >
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="text-base font-semibold text-gray-900 dark:text-white">Paste Products</h2>
+                <button
+                    wire:click="closePasteProductsModal"
+                    class="rounded-lg p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                    <x-heroicon-o-x-mark class="w-5 h-5" />
+                </button>
+            </div>
+
+            <div class="px-6 py-5">
+                <label for="pasted-product-data" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Paste product data
+                </label>
+                <textarea
+                    id="pasted-product-data"
+                    x-model="pastedProductData"
+                    wire:model="pastedProductData"
+                    rows="10"
+                    class="mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-mono text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                ></textarea>
+            </div>
+
+            <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-b-xl">
+                <button
+                    wire:click="closePasteProductsModal"
+                    class="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                >
+                    Cancel
+                </button>
+                <button
+                    wire:click="addPastedProducts"
+                    x-bind:disabled="pastedProductData.trim() === ''"
+                    class="px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                        bg-primary-600 text-white hover:bg-primary-700
+                        disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400
+                        dark:disabled:bg-gray-700 dark:disabled:text-gray-500"
+                >
+                    Add Products
+                </button>
+            </div>
         </div>
     </div>
     @endif

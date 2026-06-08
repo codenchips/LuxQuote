@@ -57,6 +57,14 @@ class ViewProject extends ViewRecord
     /** @var array<int, array{qty: int}> */
     public array $productSelections = [];
 
+    // ── Paste products state ─────────────────────────────────────────────────
+
+    public bool $pasteProductsModalOpen = false;
+
+    public ?int $pasteProductsAreaId = null;
+
+    public string $pastedProductData = '';
+
     public function mount(int|string $record): void
     {
         parent::mount($record);
@@ -389,6 +397,105 @@ class ViewProject extends ViewRecord
         }
 
         $this->closeProductPicker();
+    }
+
+    public function openPasteProductsModal(int $areaId): void
+    {
+        $this->ensureViewingRevisionIsEditable();
+
+        $this->findAreaInViewingRevision($areaId);
+
+        $this->pasteProductsAreaId = $areaId;
+        $this->pastedProductData = '';
+        $this->pasteProductsModalOpen = true;
+    }
+
+    public function closePasteProductsModal(): void
+    {
+        $this->pasteProductsModalOpen = false;
+        $this->pasteProductsAreaId = null;
+        $this->pastedProductData = '';
+    }
+
+    public function addPastedProducts(): void
+    {
+        $this->ensureViewingRevisionIsEditable();
+
+        if (! $this->pasteProductsAreaId) {
+            return;
+        }
+
+        $area = $this->findAreaInViewingRevision($this->pasteProductsAreaId);
+        $rows = $this->parsePastedProductData();
+
+        if ($rows === []) {
+            $this->closePasteProductsModal();
+
+            return;
+        }
+
+        $productsBySku = Product::query()
+            ->whereIn('sku', collect($rows)->pluck('sku')->unique())
+            ->get()
+            ->keyBy(fn (Product $product): string => strtoupper($product->sku));
+
+        $maxSort = $area->lines()->max('sort_order') ?? -1;
+
+        foreach ($rows as $row) {
+            /** @var Product|null $product */
+            $product = $productsBySku->get(strtoupper($row['sku']));
+            $maxSort++;
+
+            $area->lines()->create([
+                'product_id' => $product?->id,
+                'code' => $product?->sku ?? $row['sku'],
+                'description' => $product?->product_name ?? '',
+                'qty' => $row['qty'],
+                'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
+                'unit_price' => $product?->price,
+                'sort_order' => $maxSort,
+            ]);
+        }
+
+        $this->closePasteProductsModal();
+    }
+
+    /**
+     * @return array<int, array{qty: int, sku: string}>
+     */
+    private function parsePastedProductData(): array
+    {
+        $lines = preg_split('/\r\n|\r|\n/', $this->pastedProductData) ?: [];
+        $rows = [];
+
+        foreach ($lines as $line) {
+            if (trim($line) === '') {
+                continue;
+            }
+
+            $columns = str_contains($line, "\t")
+                ? explode("\t", $line)
+                : str_getcsv($line);
+
+            $qty = trim((string) ($columns[0] ?? ''));
+            $sku = trim((string) ($columns[1] ?? ''));
+
+            if ($this->isPastedProductHeader($qty, $sku) || ! is_numeric($qty) || $sku === '') {
+                continue;
+            }
+
+            $rows[] = [
+                'qty' => max(1, (int) $qty),
+                'sku' => $sku,
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function isPastedProductHeader(string $qty, string $sku): bool
+    {
+        return strtolower($qty) === 'qty' && strtolower($sku) === 'sku';
     }
 
     #[Computed]

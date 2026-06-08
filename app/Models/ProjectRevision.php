@@ -2,16 +2,18 @@
 
 namespace App\Models;
 
+use App\Enums\ProjectRevisionStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['project_id', 'revision_number', 'created_by', 'validated', 'validated_at', 'validated_by'])]
+#[Fillable(['project_id', 'revision_number', 'created_by', 'validated', 'validated_at', 'validated_by', 'status'])]
 class ProjectRevision extends Model
 {
     protected $attributes = [
         'validated' => false,
+        'status' => ProjectRevisionStatus::Draft->value,
     ];
 
     protected function casts(): array
@@ -19,6 +21,7 @@ class ProjectRevision extends Model
         return [
             'validated' => 'boolean',
             'validated_at' => 'datetime',
+            'status' => ProjectRevisionStatus::class,
         ];
     }
 

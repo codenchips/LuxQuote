@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Projects\Pages;
 
+use App\Enums\ProjectRevisionStatus;
 use App\Enums\UserRole;
 use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
@@ -78,6 +79,20 @@ class ValidationProject extends ViewRecord
         $this->refreshValidation();
     }
 
+    public function approveRevision(): void
+    {
+        $revision = $this->activeRevision();
+
+        abort_unless($revision->validated, 403);
+
+        $revision->update([
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        unset($this->activeRevisionValidated);
+        $this->record->load('activeRevision');
+    }
+
     public function approveIssue(string $issueKey): void
     {
         $issue = $this->findIssue($issueKey);
@@ -116,6 +131,22 @@ class ValidationProject extends ViewRecord
 
         $this->linesForIssue($issue)->update([
             'unit_price' => $quotePrice,
+            'approved' => false,
+            'approved_at' => null,
+            'approved_by' => null,
+        ]);
+
+        $this->refreshValidation();
+    }
+
+    public function matchIssueQuotePrice(string $issueKey): void
+    {
+        $issue = $this->findIssue($issueKey);
+
+        abort_unless($issue['type'] === 'price_mismatch' && ! $issue['approved'] && $issue['rrp'] !== null, 404);
+
+        $this->linesForIssue($issue)->update([
+            'unit_price' => number_format((float) $issue['rrp'], 2, '.', ''),
             'approved' => false,
             'approved_at' => null,
             'approved_by' => null,

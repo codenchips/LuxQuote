@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\ProjectRevisionStatus;
 use App\Models\Product;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
@@ -88,6 +89,12 @@ class ProjectRevisionValidator
             && $this->lineQuery($revision)->where('approved', false)->doesntExist();
 
         if ($revision->validated === $validated) {
+            if (! $validated && $revision->status === ProjectRevisionStatus::Approved) {
+                $revision->update([
+                    'status' => ProjectRevisionStatus::Draft,
+                ]);
+            }
+
             return $validated;
         }
 
@@ -95,6 +102,7 @@ class ProjectRevisionValidator
             'validated' => $validated,
             'validated_at' => $validated ? now() : null,
             'validated_by' => $validated ? auth()->id() : null,
+            'status' => $validated ? $revision->status : ProjectRevisionStatus::Draft,
         ]);
 
         return $validated;
