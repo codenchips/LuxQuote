@@ -25,6 +25,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Throwable;
 
@@ -68,6 +69,8 @@ class ViewProject extends ViewRecord
     public ?int $pasteProductsAreaId = null;
 
     public string $pastedProductData = '';
+
+    public ?string $pasteProductsError = null;
 
     public function mount(int|string $record): void
     {
@@ -485,6 +488,7 @@ class ViewProject extends ViewRecord
 
         $this->pasteProductsAreaId = $areaId;
         $this->pastedProductData = '';
+        $this->pasteProductsError = null;
         $this->pasteProductsModalOpen = true;
     }
 
@@ -493,6 +497,7 @@ class ViewProject extends ViewRecord
         $this->pasteProductsModalOpen = false;
         $this->pasteProductsAreaId = null;
         $this->pastedProductData = '';
+        $this->pasteProductsError = null;
     }
 
     public function addPastedProducts(): void
@@ -503,11 +508,17 @@ class ViewProject extends ViewRecord
             return;
         }
 
+        $this->pasteProductsError = null;
+
         $area = $this->findAreaInViewingRevision($this->pasteProductsAreaId);
-        $rows = $this->parsePastedProductData();
+        $parsed = $this->parsePastedProductData();
+        $rows = $parsed['rows'];
+        $rejectedRows = $parsed['rejected'];
 
         if ($rows === []) {
-            $this->closePasteProductsModal();
+            $this->pasteProductsError = $rejectedRows > 0
+                ? $rejectedRows.' pasted '.Str::plural('row', $rejectedRows).' could not be imported. Check that each row has Qty and SKU columns.'
+                : 'Paste product rows with Qty and SKU columns.';
 
             return;
         }
@@ -519,35 +530,54 @@ class ViewProject extends ViewRecord
 
         $maxSort = $area->lines()->max('sort_order') ?? -1;
 
-        foreach ($rows as $row) {
-            /** @var Product|null $product */
-            $product = $productsBySku->get(strtoupper($row['sku']));
-            $maxSort++;
+        try {
+            DB::transaction(function () use ($area, $productsBySku, $rows, &$maxSort): void {
+                foreach ($rows as $row) {
+                    /** @var Product|null $product */
+                    $product = $productsBySku->get(strtoupper($row['sku']));
+                    $maxSort++;
 
-            $area->lines()->create([
-                'product_id' => $product?->id,
-                'code' => $product?->sku ?? $row['sku'],
-                'description' => $product?->displayDescription() ?? '',
-                'qty' => $row['qty'],
-                'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
-                'unit_price' => $row['unit_price'],
-                'sort_order' => $maxSort,
-            ]);
+                    $area->lines()->create([
+                        'product_id' => $product?->id,
+                        'code' => $product?->sku ?? $row['sku'],
+                        'description' => $product?->displayDescription() ?? '',
+                        'qty' => $row['qty'],
+                        'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
+                        'unit_price' => $row['unit_price'] ?? $product?->price,
+                        'sort_order' => $maxSort,
+                    ]);
+                }
+            });
+        } catch (Throwable $exception) {
+            report($exception);
+
+            $this->pasteProductsError = 'The pasted rows could not be saved. Please check the pasted data and try again.';
+
+            return;
         }
 
         $this->closePasteProductsModal();
+
+        if ($rejectedRows > 0) {
+            Notification::make()
+                ->title('Some products were not added')
+                ->body($rejectedRows.' pasted '.Str::plural('row', $rejectedRows).' could not be imported. The valid rows were added.')
+                ->warning()
+                ->send();
+        }
     }
 
     /**
-     * @return array<int, array{qty: int, sku: string, unit_price: string}>
+     * @return array{rows: array<int, array{qty: int, sku: string, unit_price: ?string}>, rejected: int}
      */
     private function parsePastedProductData(): array
     {
         $rows = [];
+        $rejected = 0;
         $handle = fopen('php://temp', 'r+');
 
         if ($handle === false) {
-            return $rows;
+            return ['rows' => $rows, 'rejected' => 0];
         }
 
         fwrite($handle, $this->pastedProductData);
@@ -558,20 +588,30 @@ class ViewProject extends ViewRecord
             $sku = trim((string) ($columns[1] ?? ''));
             $price = trim((string) ($columns[3] ?? ''));
 
-            if ($this->isPastedProductHeader($qty, $sku) || ! is_numeric($qty) || $sku === '' || ! is_numeric($price)) {
+            if ($qty === '' && $sku === '' && $price === '') {
+                continue;
+            }
+
+            if ($this->isPastedProductHeader($qty, $sku)) {
+                continue;
+            }
+
+            if (! is_numeric($qty) || $sku === '' || ($price !== '' && ! is_numeric($price))) {
+                $rejected++;
+
                 continue;
             }
 
             $rows[] = [
                 'qty' => max(1, (int) $qty),
                 'sku' => $sku,
-                'unit_price' => number_format(max(0, (float) $price), 2, '.', ''),
+                'unit_price' => $price === '' ? null : number_format(max(0, (float) $price), 2, '.', ''),
             ];
         }
 
         fclose($handle);
 
-        return $rows;
+        return ['rows' => $rows, 'rejected' => $rejected];
     }
 
     private function isPastedProductHeader(string $qty, string $sku): bool

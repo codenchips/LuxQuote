@@ -500,7 +500,12 @@
 
             <div class="px-6 py-5">
                 <label for="pasted-product-data" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Paste product data
+                    Paste product data<br>
+                    Format: 
+                    <span class="text-green-600 dark:text-green-400">qty</span> [tab] 
+                    <span class="text-green-600 dark:text-green-400">sku</span> [tab] 
+                    <span class="text-green-600 dark:text-green-400">description</span> [tab] 
+                    <span class="text-green-600 dark:text-green-400">unit price</span>                                       
                 </label>
                 <textarea
                     id="pasted-product-data"
@@ -509,6 +514,13 @@
                     rows="10"
                     class="mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-mono text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 ></textarea>
+
+                @if($pasteProductsError)
+                <div class="mt-3 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                    <x-heroicon-o-exclamation-triangle class="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{{ $pasteProductsError }}</span>
+                </div>
+                @endif
             </div>
 
             <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-b-xl">

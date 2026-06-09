@@ -223,6 +223,112 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame(ProjectLineType::Standard, $lines[2]->type);
     }
 
+    public function test_admin_can_paste_products_with_optional_description_and_price_columns(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->first();
+        $twoColumnProduct = Product::factory()->create([
+            'sku' => 'TWO-COL',
+            'product_name' => 'Two Column Product',
+            'description' => 'Two Column Product Description',
+            'price' => 12.34,
+        ]);
+        $threeColumnProduct = Product::factory()->create([
+            'sku' => 'THREE-COL',
+            'product_name' => 'Three Column Product',
+            'description' => 'Three Column Product Description',
+            'price' => 56.78,
+        ]);
+        $fourColumnProduct = Product::factory()->create([
+            'sku' => 'FOUR-COL',
+            'product_name' => 'Four Column Product',
+            'description' => 'Four Column Product Description',
+            'price' => 90.12,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('openPasteProductsModal', $area->id)
+            ->set('pastedProductData', "1\tTWO-COL\n2\tTHREE-COL\tDiscarded description\n3\tFOUR-COL\tDiscarded description\t44.44")
+            ->call('addPastedProducts')
+            ->assertSet('pasteProductsModalOpen', false)
+            ->assertSet('pasteProductsError', null);
+
+        $lines = $area->lines()->orderBy('sort_order')->get();
+
+        $this->assertCount(3, $lines);
+
+        $this->assertSame($twoColumnProduct->id, $lines[0]->product_id);
+        $this->assertSame('TWO-COL', $lines[0]->code);
+        $this->assertSame('Two Column Product Description', $lines[0]->description);
+        $this->assertSame(1, $lines[0]->qty);
+        $this->assertSame('12.34', $lines[0]->unit_price);
+
+        $this->assertSame($threeColumnProduct->id, $lines[1]->product_id);
+        $this->assertSame('THREE-COL', $lines[1]->code);
+        $this->assertSame('Three Column Product Description', $lines[1]->description);
+        $this->assertSame(2, $lines[1]->qty);
+        $this->assertSame('56.78', $lines[1]->unit_price);
+
+        $this->assertSame($fourColumnProduct->id, $lines[2]->product_id);
+        $this->assertSame('FOUR-COL', $lines[2]->code);
+        $this->assertSame('Four Column Product Description', $lines[2]->description);
+        $this->assertSame(3, $lines[2]->qty);
+        $this->assertSame('44.44', $lines[2]->unit_price);
+    }
+
+    public function test_paste_products_warns_when_no_rows_can_be_imported(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->first();
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('openPasteProductsModal', $area->id)
+            ->set('pastedProductData', "not-a-qty\t\tDescription\tfree\n\tNO-QTY\tDescription\t12.00")
+            ->call('addPastedProducts')
+            ->assertSet('pasteProductsModalOpen', true)
+            ->assertSet('pasteProductsError', '2 pasted rows could not be imported. Check that each row has Qty and SKU columns.')
+            ->assertSee('2 pasted rows could not be imported.');
+
+        $this->assertSame(0, $area->lines()->count());
+    }
+
+    public function test_paste_products_warns_when_some_rows_are_skipped(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->first();
+        $product = Product::factory()->create([
+            'sku' => 'VALID-SKU',
+            'product_name' => 'Valid Product',
+            'description' => 'Valid Product Description',
+            'price' => 99.99,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('openPasteProductsModal', $area->id)
+            ->assertSet('pasteProductsError', null)
+            ->set('pastedProductData', "bad\tBROKEN\tDescription\t12.00\n2\tVALID-SKU\tDescription\t14.50\n3\tNO-PRICE\tDescription\tfree")
+            ->call('addPastedProducts')
+            ->assertSet('pasteProductsModalOpen', false)
+            ->assertSet('pasteProductsError', null)
+            ->assertNotified('Some products were not added');
+
+        $line = $area->lines()->first();
+
+        $this->assertSame($product->id, $line->product_id);
+        $this->assertSame('VALID-SKU', $line->code);
+        $this->assertSame(2, $line->qty);
+        $this->assertSame('14.50', $line->unit_price);
+    }
+
     public function test_line_fields_can_only_be_updated_in_the_viewed_revision(): void
     {
         $admin = User::factory()->admin()->create();
