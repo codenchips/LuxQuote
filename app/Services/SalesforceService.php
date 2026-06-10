@@ -184,7 +184,7 @@ class SalesforceService
         $escaped = $this->soqlEscape($id);
         $result = $this->soqlQuery(
             $auth,
-            "SELECT Id, Name, Project_Reference_Number__c, Owner.Name, Owner.Email, Account.Name FROM Opportunity WHERE Id = '{$escaped}' LIMIT 1",
+            "SELECT Id, Name, Project_Reference_Number__c, CEF_Cover__c, Amount, Owner.Name, Owner.Email, Account.Name FROM Opportunity WHERE Id = '{$escaped}' LIMIT 1",
         );
 
         return ($result['records'] ?? [])[0] ?? null;

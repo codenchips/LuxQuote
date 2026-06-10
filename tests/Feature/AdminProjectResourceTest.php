@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Enums\ProjectLineType;
 use App\Filament\Resources\ActivityLogs\Pages\ListActivityLogs;
+use App\Filament\Resources\Projects\Pages\ListProjects;
 use App\Filament\Resources\Projects\Pages\ValidationProject;
 use App\Filament\Resources\Projects\Pages\ViewProject;
+use App\Filament\Resources\Projects\Schemas\ProjectForm;
 use App\Models\ActivityLog;
 use App\Models\Product;
 use App\Models\Project;
@@ -21,6 +23,63 @@ use Throwable;
 class AdminProjectResourceTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_project_create_form_requires_key_project_fields(): void
+    {
+        $this->assertTrue(ProjectForm::createActionIsDisabled([
+            'name' => 'Office Fit Out',
+            'customer_name' => 'Example Customer',
+            'reference_number' => '',
+        ]));
+
+        $this->assertFalse(ProjectForm::createActionIsDisabled([
+            'name' => 'Office Fit Out',
+            'customer_name' => 'Example Customer',
+            'reference_number' => 'LQ-001',
+        ]));
+
+        $this->assertFalse(ProjectForm::createActionIsDisabled(
+            [
+                'name' => null,
+                'customer_name' => null,
+                'reference_number' => null,
+            ],
+            [
+                'name' => 'Office Fit Out',
+                'customer_name' => 'Example Customer',
+                'reference_number' => 'LQ-001',
+            ],
+        ));
+    }
+
+    public function test_project_create_modal_submit_enables_when_required_fields_are_populated(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $component = Livewire::test(ListProjects::class)
+            ->mountAction('create');
+
+        $this->assertTrue(ProjectForm::createActionIsDisabled($component->instance()->mountedActions[0]['data'] ?? null));
+
+        $component
+            ->setActionData([
+                'name' => 'Office Fit Out',
+                'customer_name' => 'Example Customer',
+                'reference_number' => 'LQ-001',
+            ]);
+
+        $this->assertFalse(ProjectForm::createActionIsDisabled($component->instance()->mountedActions[0]['data'] ?? null));
+        $this->assertTrue($component->instance()->getMountedAction()->getModalSubmitAction()->isEnabled());
+    }
+
+    public function test_salesforce_project_names_are_normalised_to_title_case(): void
+    {
+        $this->assertSame(
+            'Hartwest Primary School',
+            ProjectForm::titleCaseProjectName('HARTWEST PRIMARY SCHOOL'),
+        );
+    }
 
     public function test_admin_can_validate_the_active_project_revision(): void
     {
@@ -80,7 +139,7 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('2 unresolved issues')
             ->assertSee('SKU "VALID-SKU" appears 2 times in this area.')
             ->assertSee('SKU "MISSING-SKU" was not found in the product catalogue.')
-            ->assertSee('Area: Ground Floor')
+            ->assertDontSee('Area: Ground Floor')
             ->assertDontSee('Area: First Floor');
     }
 
@@ -166,6 +225,7 @@ class AdminProjectResourceTest extends TestCase
             'description' => 'Priced Product Visual Description',
             'qty' => 2,
             'unit_price' => '24.50',
+            'status' => 'Pending',
         ]);
     }
 
@@ -207,12 +267,14 @@ class AdminProjectResourceTest extends TestCase
 
         $this->assertCount(3, $lines);
         $this->assertSame($existingLine->id, $lines[0]->id);
+        $this->assertSame('Unpriced', $lines[0]->status);
 
         $this->assertSame($tabProduct->id, $lines[1]->product_id);
         $this->assertSame('TAB-SKU', $lines[1]->code);
         $this->assertSame('Tab Product Visual Description', $lines[1]->description);
         $this->assertSame(2, $lines[1]->qty);
         $this->assertSame('12.50', $lines[1]->unit_price);
+        $this->assertSame('Priced', $lines[1]->status);
         $this->assertSame(ProjectLineType::Standard, $lines[1]->type);
 
         $this->assertSame($commaProduct->id, $lines[2]->product_id);
@@ -220,7 +282,179 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame('Second Product Visual Description', $lines[2]->description);
         $this->assertSame(3, $lines[2]->qty);
         $this->assertSame('24.75', $lines[2]->unit_price);
+        $this->assertSame('Priced', $lines[2]->status);
         $this->assertSame(ProjectLineType::Standard, $lines[2]->type);
+    }
+
+    public function test_paste_products_updates_matching_lines_in_one_area(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->first();
+        $otherArea = ProjectArea::create([
+            'project_id' => $project->id,
+            'project_revision_id' => $project->active_revision_id,
+            'name' => 'Other Area',
+            'sort_order' => 1,
+        ]);
+        $existingLine = $area->lines()->create([
+            'code' => 'MATCH-SKU',
+            'description' => 'Old description',
+            'qty' => 5,
+            'type' => ProjectLineType::Custom->value,
+            'unit_price' => 1.00,
+            'status' => 'Pending',
+            'sort_order' => 0,
+        ]);
+        $otherAreaLine = $otherArea->lines()->create([
+            'code' => 'MATCH-SKU',
+            'description' => 'Other area description',
+            'qty' => 7,
+            'type' => ProjectLineType::Custom->value,
+            'unit_price' => 2.00,
+            'status' => 'Pending',
+            'sort_order' => 0,
+        ]);
+        $product = Product::factory()->create([
+            'sku' => 'MATCH-SKU',
+            'product_name' => 'Matched Product',
+            'description' => 'Matched Product Description',
+            'price' => 99.99,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('openPasteProductsModal', $area->id)
+            ->set('pasteAcrossAllAreas', false)
+            ->set('pastedProductData', "2\tMATCH-SKU\tDiscarded description\t12.50")
+            ->call('addPastedProducts')
+            ->assertSet('pasteProductsModalOpen', false);
+
+        $this->assertSame(1, $area->lines()->count());
+
+        $existingLine->refresh();
+        $this->assertSame($product->id, $existingLine->product_id);
+        $this->assertSame('Matched Product Description', $existingLine->description);
+        $this->assertSame(2, $existingLine->qty);
+        $this->assertSame('12.50', $existingLine->unit_price);
+        $this->assertSame('Priced', $existingLine->status);
+        $this->assertSame(ProjectLineType::Standard, $existingLine->type);
+
+        $otherAreaLine->refresh();
+        $this->assertSame('Other area description', $otherAreaLine->description);
+        $this->assertSame(7, $otherAreaLine->qty);
+        $this->assertSame('2.00', $otherAreaLine->unit_price);
+        $this->assertSame('Pending', $otherAreaLine->status);
+    }
+
+    public function test_paste_products_across_all_areas_updates_without_changing_existing_quantities(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->first();
+        $otherArea = ProjectArea::create([
+            'project_id' => $project->id,
+            'project_revision_id' => $project->active_revision_id,
+            'name' => 'Other Area',
+            'sort_order' => 1,
+        ]);
+        $firstLine = $area->lines()->create([
+            'code' => 'SHARED-SKU',
+            'description' => 'First old description',
+            'qty' => 4,
+            'type' => ProjectLineType::Custom->value,
+            'unit_price' => 1.00,
+            'status' => 'Pending',
+            'sort_order' => 0,
+        ]);
+        $secondLine = $otherArea->lines()->create([
+            'code' => 'SHARED-SKU',
+            'description' => 'Second old description',
+            'qty' => 9,
+            'type' => ProjectLineType::Custom->value,
+            'unit_price' => 2.00,
+            'status' => 'Pending',
+            'sort_order' => 0,
+        ]);
+        $missingFromPaste = $otherArea->lines()->create([
+            'code' => 'OLD-SKU',
+            'description' => 'Missing from paste',
+            'qty' => 1,
+            'type' => ProjectLineType::Custom->value,
+            'unit_price' => 3.00,
+            'status' => 'Pending',
+            'sort_order' => 1,
+        ]);
+        Product::factory()->create([
+            'sku' => 'SHARED-SKU',
+            'product_name' => 'Shared Product',
+            'description' => 'Shared Product Description',
+            'price' => 99.99,
+        ]);
+        $newProduct = Product::factory()->create([
+            'sku' => 'NEW-SKU',
+            'product_name' => 'New Product',
+            'description' => 'New Product Description',
+            'price' => 88.88,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('openPasteProductsModal', $area->id)
+            ->assertSet('pasteAcrossAllAreas', true)
+            ->set('pastedProductData', "2\tSHARED-SKU\tDiscarded description\t12.50\n3\tNEW-SKU\tDiscarded description\t24.75")
+            ->call('addPastedProducts')
+            ->assertSet('pasteProductsModalOpen', false);
+
+        $firstLine->refresh();
+        $secondLine->refresh();
+        $missingFromPaste->refresh();
+
+        $this->assertSame(4, $firstLine->qty);
+        $this->assertSame(9, $secondLine->qty);
+        $this->assertSame('12.50', $firstLine->unit_price);
+        $this->assertSame('12.50', $secondLine->unit_price);
+        $this->assertSame('Priced', $firstLine->status);
+        $this->assertSame('Priced', $secondLine->status);
+        $this->assertSame('Unpriced', $missingFromPaste->status);
+
+        $this->assertDatabaseHas('project_lines', [
+            'project_area_id' => $area->id,
+            'product_id' => $newProduct->id,
+            'code' => 'NEW-SKU',
+            'description' => 'New Product Description',
+            'qty' => 3,
+            'unit_price' => '24.75',
+            'status' => 'Priced',
+        ]);
+    }
+
+    public function test_project_line_status_shows_approved_when_line_is_approved(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->first();
+
+        $area->lines()->create([
+            'code' => 'APPROVED-SKU',
+            'description' => 'Approved product',
+            'qty' => 1,
+            'type' => ProjectLineType::Standard->value,
+            'unit_price' => 10.00,
+            'status' => 'Priced',
+            'approved' => true,
+            'approved_at' => now(),
+            'approved_by' => $admin->id,
+            'sort_order' => 0,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->assertSee('Approved')
+            ->assertDontSee('Priced');
     }
 
     public function test_admin_can_paste_products_with_optional_description_and_price_columns(): void

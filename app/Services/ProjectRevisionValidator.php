@@ -41,6 +41,7 @@ class ProjectRevisionValidator
 
         return $areas
             ->flatMap(fn (ProjectArea $area): array => [
+                ...$this->manualFlaggedIssues($area),
                 ...$this->duplicateSkuIssues($area),
                 ...$this->missingProductIssues($area, $productsBySku),
                 ...$this->priceMismatchIssues($area, $productsBySku),
@@ -112,6 +113,36 @@ class ProjectRevisionValidator
     {
         return ProjectLine::query()
             ->whereHas('area', fn (Builder $query) => $query->where('project_revision_id', $revision->id));
+    }
+
+    /**
+     * @return array<int, array{
+     *     key: string,
+     *     type: string,
+     *     area: string,
+     *     code: string,
+     *     description: string,
+     *     message: string,
+     *     line_ids: array<int, int>,
+     *     approved: bool,
+     *     rrp?: string|null,
+     *     quote_price?: string|null
+     * }>
+     */
+    private function manualFlaggedIssues(ProjectArea $area): array
+    {
+        return $area->lines
+            ->filter(fn (ProjectLine $line): bool => $line->validation_flagged)
+            ->map(fn (ProjectLine $line): array => $this->issue(
+                key: "manual-flag-{$line->id}",
+                type: 'manual_flag',
+                area: $area,
+                line: $line,
+                lines: collect([$line]),
+                message: "SKU \"{$line->code}\" has been manually flagged for review.",
+            ))
+            ->values()
+            ->all();
     }
 
     /**

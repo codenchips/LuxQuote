@@ -1,17 +1,24 @@
 <x-filament-panels::page>
     @php
-        $issues = $this->validationIssues;
-        $unresolvedCount = collect($issues)->where('approved', false)->count();
+        $issues = collect($this->validationIssues)->where('approved', false)->values();
+        $validatedLines = $this->validatedLines;
+        $unresolvedCount = $issues->count();
         $isValidated = $this->activeRevisionValidated;
+        $isApproved = $this->activeRevisionApproved;
     @endphp
 
     <div class="space-y-6">
         <div class="flex justify-end gap-2">
+            @if($isApproved)
+                <div class="rounded-xl border border-green-300 bg-green-50 px-4 py-2 text-sm font-semibold text-green-900 dark:border-green-800 dark:bg-green-950/30 dark:text-green-100">
+                    Project is approved and locked
+                </div>
+            @else
             <x-filament::button
-                wire:click="approveRevision"
+                wire:click="openApproveRevisionModal"
                 wire:loading.attr="disabled"
-                wire:target="approveRevision"
-                color="success"
+                wire:target="openApproveRevisionModal"
+                color="{{ $isValidated ? 'success' : 'gray' }}"
                 icon="heroicon-o-check-badge"
                 :disabled="! $isValidated"
             >
@@ -26,6 +33,7 @@
                 <span wire:loading.remove wire:target="runValidation">Run Validation</span>
                 <span wire:loading wire:target="runValidation">Running Validation...</span>
             </x-filament::button>
+            @endif
         </div>
 
         <div
@@ -44,10 +52,10 @@
 
                 <div>
                     <p class="font-semibold">
-                        {{ $unresolvedCount ? $unresolvedCount.' unresolved '.Str::plural('issue', $unresolvedCount) : ($isValidated ? 'Revision validated' : 'No unresolved issues') }}
+                        {{ $isApproved ? 'Project is approved and locked' : ($unresolvedCount ? $unresolvedCount.' unresolved '.Str::plural('issue', $unresolvedCount) : ($isValidated ? 'Ready to approve' : 'No unresolved issues')) }}
                     </p>
                     <p class="text-sm text-gray-600 dark:text-gray-400">
-                        {{ $unresolvedCount ? 'Resolve or approve each warning before proceeding.' : ($isValidated ? 'This revision is locked against further editing.' : 'Run validation to validate and lock this revision.') }}
+                        {{ $isApproved ? 'This revision is locked against further editing.' : ($unresolvedCount ? 'Resolve or approve each warning before proceeding.' : ($isValidated ? 'Click Approve Revision to lock this revision.' : 'Run validation to check this revision.')) }}
                     </p>
                 </div>
             </div>
@@ -55,7 +63,7 @@
 
         <div class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
             <div class="border-b border-gray-200 px-5 py-3 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
-                Validation issues ({{ count($issues) }})
+                Issues ({{ count($issues) }})
             </div>
 
             @forelse($issues as $issue)
@@ -70,16 +78,9 @@
                             <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                                 <span class="font-mono font-medium text-gray-950 dark:text-white">{{ $issue['code'] }}</span>
                                 <span class="text-gray-500 dark:text-gray-400">{{ $issue['description'] }}</span>
-                                <span
-                                    @class([
-                                        'rounded-md px-2 py-0.5 text-xs font-medium',
-                                        'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' => $issue['approved'],
-                                        'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' => ! $issue['approved'],
-                                    ])
-                                >
-                                    {{ $issue['approved'] ? 'Approved' : 'Warning' }}
+                                <span class="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                    Warning
                                 </span>
-                                <span class="text-xs text-gray-500 dark:text-gray-400">Area: {{ $issue['area'] }}</span>
                             </div>
 
                             <p class="mt-2 text-sm text-gray-950 dark:text-white">{{ $issue['message'] }}</p>
@@ -119,49 +120,38 @@
                                 'self-start pt-5' => $issue['type'] === 'price_mismatch',
                             ])
                         >
-                            @if($issue['approved'])
+                            @if($issue['type'] === 'duplicate_sku')
                                 <x-filament::button
-                                    wire:click="undoIssueApproval({{ \Illuminate\Support\Js::from($issue['key']) }})"
+                                    wire:click="mergeIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
                                     color="gray"
                                     size="sm"
+                                    icon="heroicon-o-arrows-pointing-in"
                                     class="h-[34px] min-h-[34px]"
                                 >
-                                    Undo
-                                </x-filament::button>
-                            @else
-                                @if($issue['type'] === 'duplicate_sku')
-                                    <x-filament::button
-                                        wire:click="mergeIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
-                                        color="gray"
-                                        size="sm"
-                                        icon="heroicon-o-arrows-pointing-in"
-                                        class="h-[34px] min-h-[34px]"
-                                    >
-                                        Merge
-                                    </x-filament::button>
-                                @endif
-
-                                @if($issue['type'] === 'price_mismatch')
-                                    <x-filament::button
-                                        wire:click="matchIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }})"
-                                        color="gray"
-                                        size="sm"
-                                        icon="heroicon-o-arrows-right-left"
-                                        class="h-[34px] min-h-[34px]"
-                                    >
-                                        Match
-                                    </x-filament::button>
-                                @endif
-
-                                <x-filament::button
-                                    wire:click="approveIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
-                                    size="sm"
-                                    icon="heroicon-o-hand-thumb-up"
-                                    class="h-[34px] min-h-[34px]"
-                                >
-                                    Approve
+                                    Merge
                                 </x-filament::button>
                             @endif
+
+                            @if($issue['type'] === 'price_mismatch')
+                                <x-filament::button
+                                    wire:click="matchIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }})"
+                                    color="gray"
+                                    size="sm"
+                                    icon="heroicon-o-arrows-right-left"
+                                    class="h-[34px] min-h-[34px]"
+                                >
+                                    Match
+                                </x-filament::button>
+                            @endif
+
+                            <x-filament::button
+                                wire:click="approveIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
+                                size="sm"
+                                icon="heroicon-o-hand-thumb-up"
+                                class="h-[34px] min-h-[34px]"
+                            >
+                                Approve
+                            </x-filament::button>
                         </div>
                     </div>
                 </div>
@@ -171,5 +161,108 @@
                 </div>
             @endforelse
         </div>
+
+        <div class="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+            <div class="border-b border-gray-200 px-5 py-3 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
+                Validated ({{ count($validatedLines) }})
+            </div>
+
+            <div class="grid gap-3 border-b border-gray-100 bg-gray-50 px-5 py-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:border-gray-800 dark:bg-gray-800/40 dark:text-gray-400" style="grid-template-columns: 130px 1fr 70px 95px 95px 1.4fr 110px">
+                <div>SKU</div>
+                <div>Description</div>
+                <div class="text-center">Qty</div>
+                <div class="text-right">Quote</div>
+                <div>Status</div>
+                <div>Note</div>
+                <div></div>
+            </div>
+
+            @forelse($validatedLines as $line)
+                <div
+                    wire:key="validated-line-{{ $line['id'] }}"
+                    class="grid items-center gap-3 border-b border-gray-100 px-5 py-3 text-sm last:border-b-0 dark:border-gray-800"
+                    style="grid-template-columns: 130px 1fr 70px 95px 95px 1.4fr 110px"
+                >
+                    <div class="truncate font-mono font-medium text-gray-950 dark:text-white">{{ $line['code'] ?: '—' }}</div>
+                    <div class="truncate text-gray-600 dark:text-gray-300">{{ $line['description'] }}</div>
+                    <div class="text-center text-gray-600 dark:text-gray-300">{{ $line['qty'] }}</div>
+                    <div class="text-right text-gray-600 dark:text-gray-300">
+                        {{ $line['unit_price'] !== null ? '£'.number_format((float) $line['unit_price'], 2) : '—' }}
+                    </div>
+                    <div>
+                        <span
+                            @class([
+                                'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium',
+                                'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' => $line['status'] === 'Approved',
+                                'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' => $line['status'] !== 'Approved',
+                            ])
+                        >
+                            {{ $line['status'] }}
+                        </span>
+                    </div>
+                    <div class="text-gray-500 dark:text-gray-400">{{ $line['note'] }}</div>
+                    <div class="flex justify-end">
+                        @if(! $isApproved)
+                        <x-filament::button
+                            wire:click="flagValidatedLine({{ $line['id'] }})"
+                            color="gray"
+                            size="sm"
+                            icon="heroicon-o-flag"
+                            class="h-[34px] min-h-[34px]"
+                        >
+                            Flag Issue
+                        </x-filament::button>
+                        @endif
+                    </div>
+                </div>
+            @empty
+                <div class="px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                    No validated product lines yet.
+                </div>
+            @endforelse
+        </div>
+
+        @if($approveRevisionModalOpen)
+        <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Approve and lock this revision?"
+            class="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        >
+            <div
+                class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                wire:click="closeApproveRevisionModal"
+            ></div>
+
+            <div class="relative z-10 w-full max-w-md rounded-xl bg-white shadow-2xl ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
+                <div class="flex items-center gap-3 border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+                    <x-heroicon-o-lock-closed class="h-5 w-5 text-green-600 dark:text-green-400" />
+                    <h2 class="text-base font-semibold text-gray-900 dark:text-white">Approve and lock this revision?</h2>
+                </div>
+
+                <div class="px-6 py-5 text-sm text-gray-600 dark:text-gray-300">
+                    This revision will be locked against further editing.
+                </div>
+
+                <div class="flex items-center justify-end gap-3 rounded-b-xl border-t border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-900">
+                    <x-filament::button
+                        wire:click="closeApproveRevisionModal"
+                        color="gray"
+                    >
+                        Cancel
+                    </x-filament::button>
+
+                    <x-filament::button
+                        wire:click="approveRevision"
+                        wire:loading.attr="disabled"
+                        wire:target="approveRevision"
+                        color="success"
+                    >
+                        OK
+                    </x-filament::button>
+                </div>
+            </div>
+        </div>
+        @endif
     </div>
 </x-filament-panels::page>

@@ -10,6 +10,8 @@ use Filament\Auth\MultiFactor\App\Concerns\InteractsWithAppAuthentication;
 use Filament\Auth\MultiFactor\App\Concerns\InteractsWithAppAuthenticationRecovery;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthenticationRecovery;
+use Filament\Models\Contracts\FilamentUser; // <-- 1. ADDED THIS IMPORT
+use Filament\Panel; // <-- 2. ADDED THIS IMPORT
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,7 +20,7 @@ use Illuminate\Notifications\Notifiable;
 
 #[Fillable(['name', 'email', 'password', 'role', 'area_code', 'job_role'])]
 #[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable implements HasAppAuthentication, HasAppAuthenticationRecovery
+class User extends Authenticatable implements FilamentUser, HasAppAuthentication, HasAppAuthenticationRecovery // <-- 3. APPENDED FilamentUser HERE
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, InteractsWithAppAuthentication, InteractsWithAppAuthenticationRecovery, Notifiable;
@@ -36,5 +38,11 @@ class User extends Authenticatable implements HasAppAuthentication, HasAppAuthen
             'role' => UserRole::class,
             'job_role' => JobRole::class,
         ];
+    }
+
+    public function canAccessPanel(Panel $panel): bool
+    {
+        // Since this is a front-end app panel, allow all authenticated users in
+        return true;
     }
 }

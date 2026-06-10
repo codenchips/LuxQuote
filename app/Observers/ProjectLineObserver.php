@@ -41,7 +41,7 @@ class ProjectLineObserver
 
     public function updating(ProjectLine $line): void
     {
-        $trackedFields = ['code', 'ref', 'description', 'qty', 'unit_price', 'notes', 'type', 'status'];
+        $trackedFields = ['code', 'ref', 'description', 'qty', 'unit_price', 'notes', 'type', 'status', 'validation_flagged', 'validation_note'];
 
         $changes = [];
         foreach ($trackedFields as $field) {

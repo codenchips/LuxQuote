@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ProjectRevisionStatus;
 use App\Models\Product;
 use App\Models\Project;
 use App\Services\ProductImportService;
@@ -137,10 +138,33 @@ class ProductImportTest extends TestCase
         $this->assertSame('99.99', $manualPricedLine->fresh()->unit_price);
     }
 
-    public function test_import_does_not_populate_prices_on_validated_revisions(): void
+    public function test_import_populates_prices_on_validated_unapproved_revisions(): void
     {
         $project = Project::factory()->create();
         $project->activeRevision->update(['validated' => true]);
+
+        $line = $project->activeRevision->areas()->first()->lines()->create([
+            'code' => 'XC-001',
+            'description' => 'Locked line',
+            'qty' => 1,
+            'unit_price' => null,
+            'sort_order' => 0,
+        ]);
+
+        Http::fake(['*' => Http::response($this->apiResponse(), 200)]);
+
+        app(ProductImportService::class)->import();
+
+        $this->assertSame('12.34', $line->fresh()->unit_price);
+    }
+
+    public function test_import_does_not_populate_prices_on_approved_revisions(): void
+    {
+        $project = Project::factory()->create();
+        $project->activeRevision->update([
+            'validated' => true,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
 
         $line = $project->activeRevision->areas()->first()->lines()->create([
             'code' => 'XC-001',

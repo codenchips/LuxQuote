@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Projects\Pages;
 
 use App\Enums\ProjectLineType;
+use App\Enums\ProjectRevisionStatus;
 use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Filament\Resources\Projects\Schemas\ProjectForm;
@@ -32,6 +33,12 @@ use Throwable;
 class ViewProject extends ViewRecord
 {
     use HasProjectSubNav;
+
+    private const LineStatusPending = 'Pending';
+
+    private const LineStatusPriced = 'Priced';
+
+    private const LineStatusUnpriced = 'Unpriced';
 
     protected static string $resource = ProjectResource::class;
 
@@ -71,6 +78,8 @@ class ViewProject extends ViewRecord
     public string $pastedProductData = '';
 
     public ?string $pasteProductsError = null;
+
+    public bool $pasteAcrossAllAreas = true;
 
     public function mount(int|string $record): void
     {
@@ -132,7 +141,7 @@ class ViewProject extends ViewRecord
         }
 
         if ($this->isViewingRevisionValidated) {
-            $parts[] = 'Validated (locked)';
+            $parts[] = 'Approved (locked)';
         }
 
         return new HtmlString(implode(' &middot; ', $parts));
@@ -299,7 +308,8 @@ class ViewProject extends ViewRecord
 
         return ProjectRevision::where('project_id', $this->record->id)
             ->whereKey($this->viewingRevisionId)
-            ->value('validated') ?? false;
+            ->where('status', ProjectRevisionStatus::Approved->value)
+            ->exists();
     }
 
     public function setActiveRevision(int $revisionId): void
@@ -473,6 +483,7 @@ class ViewProject extends ViewRecord
                 'qty' => $selection['qty'],
                 'type' => ProjectLineType::Standard->value,
                 'unit_price' => $product->price,
+                'status' => self::LineStatusPending,
                 'sort_order' => $maxSort,
             ]);
         }
@@ -489,6 +500,7 @@ class ViewProject extends ViewRecord
         $this->pasteProductsAreaId = $areaId;
         $this->pastedProductData = '';
         $this->pasteProductsError = null;
+        $this->pasteAcrossAllAreas = true;
         $this->pasteProductsModalOpen = true;
     }
 
@@ -498,6 +510,7 @@ class ViewProject extends ViewRecord
         $this->pasteProductsAreaId = null;
         $this->pastedProductData = '';
         $this->pasteProductsError = null;
+        $this->pasteAcrossAllAreas = true;
     }
 
     public function addPastedProducts(): void
@@ -523,18 +536,56 @@ class ViewProject extends ViewRecord
             return;
         }
 
+        $rowsBySku = collect($rows)
+            ->keyBy(fn (array $row): string => $this->normaliseSku($row['sku']));
+
         $productsBySku = Product::query()
-            ->whereIn('sku', collect($rows)->pluck('sku')->unique())
+            ->whereIn(DB::raw('upper(sku)'), $rowsBySku->keys())
             ->get()
-            ->keyBy(fn (Product $product): string => strtoupper($product->sku));
+            ->keyBy(fn (Product $product): string => $this->normaliseSku($product->sku));
 
         $maxSort = $area->lines()->max('sort_order') ?? -1;
 
         try {
-            DB::transaction(function () use ($area, $productsBySku, $rows, &$maxSort): void {
-                foreach ($rows as $row) {
+            DB::transaction(function () use ($area, $productsBySku, $rowsBySku, &$maxSort): void {
+                $scopedLines = $this->pasteAcrossAllAreas
+                    ? ProjectLine::query()
+                        ->whereHas('area', fn ($query) => $query
+                            ->where('project_id', $this->record->id)
+                            ->where('project_revision_id', $this->viewingRevisionId))
+                        ->get()
+                    : $area->lines()->get();
+
+                $linesBySku = $scopedLines
+                    ->filter(fn (ProjectLine $line): bool => filled($line->code))
+                    ->groupBy(fn (ProjectLine $line): string => $this->normaliseSku((string) $line->code));
+
+                foreach ($linesBySku as $sku => $lines) {
+                    if (! $rowsBySku->has($sku)) {
+                        foreach ($lines as $line) {
+                            $line->update($this->unpricedLineUpdateData());
+                        }
+
+                        continue;
+                    }
+
+                    /** @var array{qty: int, sku: string, unit_price: ?string} $row */
+                    $row = $rowsBySku->get($sku);
                     /** @var Product|null $product */
-                    $product = $productsBySku->get(strtoupper($row['sku']));
+                    $product = $productsBySku->get($sku);
+
+                    foreach ($lines as $line) {
+                        $line->update($this->pastedLineUpdateData($row, $product));
+                    }
+                }
+
+                foreach ($rowsBySku as $sku => $row) {
+                    if ($linesBySku->has($sku)) {
+                        continue;
+                    }
+
+                    /** @var Product|null $product */
+                    $product = $productsBySku->get($sku);
                     $maxSort++;
 
                     $area->lines()->create([
@@ -544,6 +595,7 @@ class ViewProject extends ViewRecord
                         'qty' => $row['qty'],
                         'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
                         'unit_price' => $row['unit_price'] ?? $product?->price,
+                        'status' => self::LineStatusPriced,
                         'sort_order' => $maxSort,
                     ]);
                 }
@@ -565,6 +617,53 @@ class ViewProject extends ViewRecord
                 ->warning()
                 ->send();
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function unpricedLineUpdateData(): array
+    {
+        return [
+            'status' => self::LineStatusUnpriced,
+            'approved' => false,
+            'approved_at' => null,
+            'approved_by' => null,
+            'validation_flagged' => false,
+            'validation_note' => null,
+        ];
+    }
+
+    /**
+     * @param  array{qty: int, sku: string, unit_price: ?string}  $row
+     * @return array<string, mixed>
+     */
+    private function pastedLineUpdateData(array $row, ?Product $product): array
+    {
+        $data = [
+            'product_id' => $product?->id,
+            'code' => $product?->sku ?? $row['sku'],
+            'description' => $product?->displayDescription() ?? '',
+            'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
+            'unit_price' => $row['unit_price'] ?? $product?->price,
+            'status' => self::LineStatusPriced,
+            'approved' => false,
+            'approved_at' => null,
+            'approved_by' => null,
+            'validation_flagged' => false,
+            'validation_note' => null,
+        ];
+
+        if (! $this->pasteAcrossAllAreas) {
+            $data['qty'] = $row['qty'];
+        }
+
+        return $data;
+    }
+
+    private function normaliseSku(string $sku): string
+    {
+        return strtoupper(trim($sku));
     }
 
     /**
@@ -705,6 +804,8 @@ class ViewProject extends ViewRecord
                 'approved' => false,
                 'approved_at' => null,
                 'approved_by' => null,
+                'validation_flagged' => false,
+                'validation_note' => null,
             ]);
 
             return;
@@ -715,6 +816,8 @@ class ViewProject extends ViewRecord
             'approved' => false,
             'approved_at' => null,
             'approved_by' => null,
+            'validation_flagged' => false,
+            'validation_note' => null,
         ]);
 
         if (in_array($field, ['code', 'description'], true) && $line->product_id !== null) {
@@ -773,6 +876,8 @@ class ViewProject extends ViewRecord
         $copy->approved = false;
         $copy->approved_at = null;
         $copy->approved_by = null;
+        $copy->validation_flagged = false;
+        $copy->validation_note = null;
         $copy->save();
 
         $pos = array_search($lineId, $siblings);
@@ -827,6 +932,6 @@ class ViewProject extends ViewRecord
 
     private function ensureViewingRevisionIsEditable(): void
     {
-        abort_if($this->isViewingRevisionValidated, 403, 'Validated revisions are locked against editing.');
+        abort_if($this->isViewingRevisionValidated, 403, 'Approved revisions are locked against editing.');
     }
 }

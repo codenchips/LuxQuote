@@ -36,6 +36,7 @@ class ProjectFactory extends Factory
             'status' => ProjectStatus::Draft->value,
             'branch_name' => null,
             'cover_percentage' => null,
+            'value' => null,
             'quote_notes' => null,
             'internal_notes' => null,
             'general_notes' => null,

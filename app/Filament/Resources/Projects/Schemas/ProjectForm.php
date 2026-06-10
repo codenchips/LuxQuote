@@ -14,9 +14,11 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\ToggleButtons;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Illuminate\Support\Str;
 
 class ProjectForm
 {
@@ -28,13 +30,14 @@ class ProjectForm
                 Toggle::make('salesforce_project')
                     ->label('Salesforce Project')
                     ->live()
-                    ->default(false)
+                    ->default(true)
                     ->disabled(fn (?Project $record): bool => $record !== null)
                     ->columnSpanFull(),
 
                 TextInput::make('name')
                     ->label('Project Name')
                     ->placeholder('e.g. Office Fit-Out 2026')
+                    ->live()
                     ->required()
                     ->unique(ignoreRecord: true)
                     ->hidden(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true && $record === null)
@@ -73,19 +76,33 @@ class ProjectForm
                             return;
                         }
 
-                        $set('name', $record['Name'] ?? '');
+                        $set('name', self::titleCaseProjectName($record['Name'] ?? ''));
                         $set('salesforce_id', $record['Id'] ?? null);
                         $set('salesforce_pending_data', json_encode($record));
                     })
                     ->visible(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true && $record === null)
                     ->columnSpanFull(),
 
+                Html::make(<<<'HTML'
+                    <div
+                        wire:loading.delay
+                        wire:loading.class.remove="hidden"
+                        wire:loading.class="flex"
+                        class="hidden items-center justify-end gap-2 text-sm text-gray-500 dark:text-gray-400"
+                    >
+                        <span class="h-4 w-4 animate-spin rounded-full border-2 border-warning-500 border-t-transparent"></span>
+                        <span>Fetching Salesforce project...</span>
+                    </div>
+                    HTML)
+                    ->columnSpanFull()
+                    ->visible(fn (Get $get, ?Project $record): bool => $record === null && $get('salesforce_project') === true),
+
                 Hidden::make('salesforce_pending_data'),
 
                 Actions::make([
                     Action::make('confirm_salesforce')
                         ->label('Confirm & Populate Form')
-                        ->color('success')
+                        ->color('warning')
                         ->icon('heroicon-o-check-circle')
                         ->action(function (Get $get, Set $set): void {
                             $raw = $get('salesforce_pending_data');
@@ -103,24 +120,27 @@ class ProjectForm
                             $set('reference_number', $data['Project_Reference_Number__c'] ?? '');
                             $set('customer_name', $data['Account']['Name'] ?? '');
                             $set('owner_email', str_replace('.invalid', '', $data['Owner']['Email'] ?? ''));
+                            $set('cover_percentage', $data['CEF_Cover__c'] ?? '');
+                            $set('value', $data['Amount'] ?? null);
                         }),
-                ])->visible(fn (Get $get, ?Project $record): bool => $record === null && $get('salesforce_project') === true && filled($get('salesforce_id'))),
+                ])
+                    ->alignStart()
+                    ->columnSpanFull()
+                    ->visible(fn (Get $get, ?Project $record): bool => $record === null && $get('salesforce_project') === true && filled($get('salesforce_id'))),
 
                 TextInput::make('reference_number')
                     ->label('Reference Number')
                     ->placeholder('e.g. LQ-2026-001')
+                    ->live()
+                    ->required()
                     ->unique(ignoreRecord: true)
                     ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
 
                 TextInput::make('customer_name')
                     ->label('Customer Name')
                     ->placeholder('Customer')
+                    ->live()
                     ->required()
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
-
-                TextInput::make('contractor')
-                    ->label('Contractor')
-                    ->placeholder('Contractor')
                     ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
 
                 TextInput::make('site_location')
@@ -142,28 +162,10 @@ class ProjectForm
                     ->default(fn (): ?string => auth()->user()?->email)
                     ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
 
-                Select::make('department')
-                    ->label('Department')
-                    ->placeholder('Select department...')
-                    ->options([
-                        'sales' => 'Sales',
-                        'design' => 'Design',
-                        'operations' => 'Operations',
-                        'finance' => 'Finance',
-                    ])
-                    ->disabled(fn (Get $get): bool => $get('salesforce_project') === true),
-
                 DatePicker::make('date')
                     ->label('Date')
                     ->default(now())
                     ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
-
-                TextInput::make('revision')
-                    ->label('Revision Number')
-                    ->numeric()
-                    ->default(1)
-                    ->readOnly()
-                    ->helperText('Managed via the Revisions action on the project page.'),
 
                 ToggleButtons::make('visibility')
                     ->label('Project Visibility')
@@ -174,7 +176,6 @@ class ProjectForm
                     ->options(ProjectVisibility::class)
                     ->default(ProjectVisibility::Open)
                     ->inline()
-                    ->disabled(fn (Get $get): bool => $get('salesforce_project') === true)
                     ->columnSpanFull(),
 
                 TextInput::make('branch_name')
@@ -183,33 +184,59 @@ class ProjectForm
                     ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
 
                 TextInput::make('cover_percentage')
-                    ->label('Cover Percentage (%)')
-                    ->placeholder('e.g. 15')
+                    ->label('Cover')
+                    ->placeholder('Cover')
+                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
+
+                TextInput::make('value')
+                    ->label('Value')
+                    ->placeholder('0.00')
                     ->numeric()
-                    ->helperText('Applied to quote total only — not per line.')
-                    ->suffix('%')
+                    ->prefix('£')
                     ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
 
                 Textarea::make('quote_notes')
                     ->label('Quote Notes (shown on quote document)')
                     ->placeholder('Notes visible on the quote PDF...')
                     ->rows(3)
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true)
                     ->columnSpanFull(),
 
                 Textarea::make('internal_notes')
                     ->label('Internal Notes (not shown on documents)')
                     ->placeholder('Internal team notes...')
                     ->rows(3)
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true)
                     ->columnSpanFull(),
 
                 Textarea::make('general_notes')
                     ->label('General Notes')
                     ->placeholder('Project notes...')
                     ->rows(3)
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true)
                     ->columnSpanFull(),
             ]);
+    }
+
+    public static function titleCaseProjectName(?string $name): string
+    {
+        return Str::of((string) $name)
+            ->lower()
+            ->title()
+            ->toString();
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $state
+     * @param  array<string, mixed>|null  $fallbackState
+     */
+    public static function createActionIsDisabled(?array $state, ?array $fallbackState = null): bool
+    {
+        $requiredFields = ['name', 'customer_name', 'reference_number'];
+
+        foreach ($requiredFields as $field) {
+            if (blank($state[$field] ?? null) && blank($fallbackState[$field] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\ProjectRevisionStatus;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -84,7 +85,7 @@ class ProductImportService
             ->join('products', 'project_lines.code', '=', 'products.sku')
             ->whereNull('project_lines.unit_price')
             ->whereNotNull('products.price')
-            ->where('project_revisions.validated', false)
+            ->where('project_revisions.status', '!=', ProjectRevisionStatus::Approved->value)
             ->update([
                 'project_lines.unit_price' => DB::raw('products.price'),
                 'project_lines.updated_at' => now(),

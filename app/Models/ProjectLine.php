@@ -8,13 +8,14 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['project_area_id', 'product_id', 'code', 'ref', 'description', 'qty', 'type', 'unit_price', 'notes', 'status', 'approved', 'approved_at', 'approved_by', 'sort_order'])]
+#[Fillable(['project_area_id', 'product_id', 'code', 'ref', 'description', 'qty', 'type', 'unit_price', 'notes', 'status', 'approved', 'approved_at', 'approved_by', 'validation_flagged', 'validation_note', 'sort_order'])]
 class ProjectLine extends Model
 {
     use HasFactory;
 
     protected $attributes = [
         'approved' => false,
+        'validation_flagged' => false,
     ];
 
     protected function casts(): array
@@ -25,6 +26,7 @@ class ProjectLine extends Model
             'unit_price' => 'decimal:2',
             'approved' => 'boolean',
             'approved_at' => 'datetime',
+            'validation_flagged' => 'boolean',
             'sort_order' => 'integer',
         ];
     }

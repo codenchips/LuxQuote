@@ -167,7 +167,7 @@ class ProjectsTable
                         $attributes = $record->only([
                             'user_id', 'name', 'customer_name', 'contractor', 'site_location',
                             'owner_email', 'created_by_email', 'department', 'date', 'revision',
-                            'visibility', 'status', 'branch_name', 'cover_percentage',
+                            'visibility', 'status', 'branch_name', 'cover_percentage', 'value',
                             'quote_notes', 'internal_notes', 'general_notes',
                         ]);
 
