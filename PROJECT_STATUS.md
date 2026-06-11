@@ -154,7 +154,7 @@ A **Revisions** header button opens a modal listing all revisions. From there us
 - **Select** any revision — activates it by updating `projects.active_revision_id`, updates the project `revision` number, and refreshes `$viewingRevisionId`
 - **Create New Revision** — copies all areas and lines from the current revision into a new `ProjectRevision`, then makes that revision active
 
-New revisions always start **unvalidated** and copied lines start **unapproved**, even when cloned from a validated or approved revision.
+New revisions always start **unvalidated** and copied lines keep their approval metadata when cloned. This preserves explicit approval decisions for accepted warnings, such as missing SKUs.
 
 Approved revisions are locked against schedule editing. All mutating area/line methods call `ensureViewingRevisionIsEditable()` server-side, and visible inline controls are disabled. Users can create a new revision from an approved revision and continue editing the new copy.
 
@@ -224,7 +224,7 @@ SKU comparison for validation is case-insensitive and trims surrounding whitespa
 ### Validation lifecycle
 
 - New revisions default to `validated = false`.
-- New or cloned lines default to `approved = false`.
+- New lines default to `approved = false`; cloned lines keep their existing approval state, approver, timestamps, and validation notes.
 - **Run Validation** re-evaluates all current rules.
 - Lines with no warnings are automatically approved with `approved_by = null`.
 - Warning lines remain unresolved until an admin explicitly approves the warning or resolves it by merging duplicates.
@@ -518,7 +518,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - **Revision validation and approval workflow**: Active revisions can be checked from `/projects/{id}/validation`. Current rules flag duplicate SKUs within an Area and SKUs missing from the product catalogue.
 - **Persistent validation state**: `project_revisions` now stores `validated`, `validated_at`, and `validated_by`. `project_lines` stores `approved`, `approved_at`, and `approved_by`.
 - **Warning actions**: Admins can explicitly **Approve** warnings, **Undo** approval, or **Merge** duplicate-SKU lines by summing quantities and deleting duplicates.
-- **Validated revision locking**: Validated revisions reject schedule mutations server-side and disable inline editing controls. Creating a new revision produces an editable, unvalidated copy with line approvals reset.
+- **Validated revision locking**: Validated revisions reject schedule mutations server-side and disable inline editing controls. Creating a new revision produces an editable, unvalidated copy while preserving line approval decisions.
 - **Validation service and tests**: Rule evaluation is centralized in `ProjectRevisionValidator`; focused validation coverage lives in `AdminProjectValidationTest.php`. Full suite: 46 tests / 125 assertions.
 
 ---

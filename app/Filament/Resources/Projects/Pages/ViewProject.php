@@ -398,6 +398,8 @@ class ViewProject extends ViewRecord
                 $newArea->lines()->create($line->only([
                     'product_id', 'code', 'ref', 'description', 'qty',
                     'type', 'unit_price', 'notes', 'status', 'sort_order',
+                    'approved', 'approved_at', 'approved_by',
+                    'validation_flagged', 'validation_note',
                 ]));
             }
         }

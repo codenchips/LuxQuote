@@ -17,11 +17,11 @@
         </div>
 
         {{-- Right side: project sub-links + page actions --}}
-        <div class="flex flex-col items-end gap-5 shrink-0">
+        <div class="flex flex-col items-end gap-10 shrink-0">
 
             {{-- Sub-page text links --}}
             @if(isset($subLinks) && count($subLinks))
-                <nav class="flex items-center gap-3 text-sm">
+                <nav class="flex items-center gap-6 text-sm">
                     @foreach($subLinks as $link)
                         @if(! $loop->first)
                             <span class="text-gray-600 dark:text-gray-600" aria-hidden="true">|</span>

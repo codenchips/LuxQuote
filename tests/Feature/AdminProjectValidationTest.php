@@ -357,12 +357,47 @@ class AdminProjectValidationTest extends TestCase
         $newLine = $newRevision->areas()->first()->lines()->first();
 
         $this->assertFalse($newRevision->validated);
-        $this->assertFalse($newLine->approved);
+        $this->assertTrue($newLine->approved);
+        $this->assertNull($newLine->approved_by);
 
         Livewire::test(ViewProject::class, ['record' => $project->id])
             ->call('updateLineField', $newLine->id, 'qty', 10);
 
         $this->assertSame(10, $newLine->fresh()->qty);
+    }
+
+    public function test_new_revision_keeps_explicitly_approved_missing_product_lines_approved(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $line = $this->createLine($project, 'UNKNOWN-SKU');
+        $issueKey = "missing-product-{$line->id}";
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->call('approveIssue', $issueKey)
+            ->call('approveRevision');
+
+        $this->assertTrue($line->fresh()->approved);
+        $this->assertSame($admin->id, $line->fresh()->approved_by);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('createNewRevision');
+
+        $project->refresh();
+        $newRevision = $project->activeRevision;
+        $newLine = $newRevision->areas()->first()->lines()->first();
+
+        $this->assertFalse($newRevision->validated);
+        $this->assertTrue($newLine->approved);
+        $this->assertSame($admin->id, $newLine->approved_by);
+        $this->assertStringContainsString('Approved: SKU "UNKNOWN-SKU"', (string) $newLine->validation_note);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertSee('Issues (0)')
+            ->assertSee('Validated (1)')
+            ->assertSee('Approved: SKU "UNKNOWN-SKU" was not found in the product catalogue.');
     }
 
     public function test_price_mismatch_is_a_validation_issue_that_can_be_approved_and_undone(): void
