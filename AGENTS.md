@@ -223,6 +223,8 @@ Authorization is enforced via `getEloquentQuery()` with role checks, not Gates/P
 - Enum values are stored as their `.value` string in the database.
 - `ProjectLine.product_id` is nullable origin tracking for product-backed lines; `code` stores the copied product SKU and `description` stores the copied product name used for display/PDF output.
 - `ProjectArea` has computed accessors `line_total_qty` and `line_total` (sum of qty × unit_price).
+- `ProjectLine.status` is used for schedule/pricing state badges (`Pending`, `Priced`, `Unpriced`, or displayed as `Approved` when the line is approved).
+- `ProjectLine.validation_flagged` and `validation_note` support manual validation review and approved/resolved line notes.
 
 ## Observer Notes
 
@@ -242,3 +244,4 @@ Authorization is enforced via `getEloquentQuery()` with role checks, not Gates/P
 - **`updateQuietly()` bypasses observers**: changes made this way won't be visible inside observer callbacks.
 - **Revision scoping**: All area and line queries in `ViewProject` must be scoped to `viewingRevisionId`, not just the project's `active_revision_id`.
 - **Line ownership**: Mutating line actions must verify the line belongs to both the current project and `viewingRevisionId`; cross-project or cross-revision IDs from Livewire requests must fail.
+- **Approval locking**: Approved revisions (`project_revisions.status = approved`) are locked against editing. Validated-but-unapproved revisions are still editable and must be revalidated after changes.

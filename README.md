@@ -2,6 +2,15 @@
 
 A Laravel + Filament application for managing quotes and projects.
 
+## Current Project Workflow
+
+- Projects are built from Areas and schedule lines, with the Filament panel served at `/`.
+- Schedule lines can be added from the product picker or pasted from tab-delimited pricing data.
+- Pasted pricing can update one Area or all Areas in the active revision, marking lines as `Priced` or `Unpriced`.
+- Admin validation separates unresolved **Issues** from **Validated** lines.
+- Running validation marks a revision ready to approve; clicking **Approve Revision** locks the revision.
+- Salesforce project creation is the default create mode and can populate reference, customer, owner email, cover, and value from the selected Opportunity.
+
 ## Stack
 
 - PHP 8.5 / Laravel 13
@@ -82,4 +91,3 @@ vendor/bin/sail artisan test --compact --filter=testName
 | List routes | `vendor/bin/sail artisan route:list --except-vendor` |
 | Fix code style | `vendor/bin/sail bin pint --dirty` |
 | Tinker | `vendor/bin/sail artisan tinker` |
-

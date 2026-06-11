@@ -1,6 +1,6 @@
 # Company App — Project Status
 
-_Last updated: 8 June 2026_
+_Last updated: 11 June 2026_
 
 ---
 
@@ -48,7 +48,8 @@ projects
   id, user_id (FK), name, reference_number, customer_name, contractor
   site_location, owner_email, created_by_email, department
   date, revision, visibility (open|private), status (draft|in_progress|complete|cancelled|archived)
-  branch_name, cover_percentage, quote_notes, internal_notes, general_notes
+  branch_name, cover_percentage (string, nullable), value (decimal, nullable)
+  quote_notes, internal_notes, general_notes
   active_revision_id (FK → project_revisions, nullOnDelete)
   last_edited_at (nullable timestamp)
   last_edited_by (FK → users, nullable, nullOnDelete)
@@ -70,6 +71,7 @@ project_lines
   id, project_area_id (FK), product_id (nullable FK → products, nullOnDelete)
   code, ref, description, qty, type (standard|modified|custom)
   unit_price, notes, status
+  validation_flagged (bool), validation_note (nullable string)
   approved (bool), approved_at (nullable timestamp), approved_by (nullable FK → users)
   sort_order
 
@@ -152,9 +154,9 @@ A **Revisions** header button opens a modal listing all revisions. From there us
 - **Select** any revision — activates it by updating `projects.active_revision_id`, updates the project `revision` number, and refreshes `$viewingRevisionId`
 - **Create New Revision** — copies all areas and lines from the current revision into a new `ProjectRevision`, then makes that revision active
 
-New revisions always start **unvalidated** and copied lines start **unapproved**, even when cloned from a validated revision.
+New revisions always start **unvalidated** and copied lines start **unapproved**, even when cloned from a validated or approved revision.
 
-Validated revisions are locked against schedule editing. All mutating area/line methods call `ensureViewingRevisionIsEditable()` server-side, and visible inline controls are disabled. Users can create a new revision from a validated revision and continue editing the new copy.
+Approved revisions are locked against schedule editing. All mutating area/line methods call `ensureViewingRevisionIsEditable()` server-side, and visible inline controls are disabled. Users can create a new revision from an approved revision and continue editing the new copy.
 
 All area/line operations (add, edit, delete, duplicate, sort) are scoped to `$viewingRevisionId` and must also verify project ownership. Cross-project or cross-revision Livewire IDs must fail server-side.
 
@@ -191,7 +193,7 @@ The outer `<div>` has `wire:poll.30s="heartbeat"`. On each poll (and on `mount`)
 | `openPasteProductsModal(areaId)` | Opens the paste-products modal for an Area |
 | `closePasteProductsModal()` | Closes the paste modal and clears paste state |
 | `addPastedProducts()` | Parses pasted rows and creates `ProjectLine` records |
-| `ensureViewingRevisionIsEditable()` | Private guard; aborts mutating calls against validated revisions |
+| `ensureViewingRevisionIsEditable()` | Private guard; aborts mutating calls against approved revisions |
 
 ### `#[Computed]` properties
 
@@ -202,7 +204,7 @@ The outer `<div>` has `wire:poll.30s="heartbeat"`. On each poll (and on `mount`)
 | `productPickerProducts` | Paginated products (15/page) filtered by search + site + type |
 | `productSiteOptions` | Distinct non-null `site` values for the site filter dropdown |
 | `productTypeOptions` | Distinct non-null `type_name` values for the type filter dropdown, scoped by selected site |
-| `isViewingRevisionValidated` | Whether `$viewingRevisionId` is validated and locked |
+| `isViewingRevisionValidated` | Whether `$viewingRevisionId` is approved and locked |
 
 ---
 
@@ -215,6 +217,7 @@ The admin-only validation page is available at `/projects/{id}/validation`. It v
 1. A SKU should be unique within an Area. Repeating the same SKU in different Areas is allowed.
 2. Every non-empty line SKU should exist in the local `products` catalogue.
 3. Product-backed quote prices should match the product catalogue RRP unless explicitly approved.
+4. Manually flagged lines should be reviewed before approval.
 
 SKU comparison for validation is case-insensitive and trims surrounding whitespace.
 
@@ -226,10 +229,10 @@ SKU comparison for validation is case-insensitive and trims surrounding whitespa
 - Lines with no warnings are automatically approved with `approved_by = null`.
 - Warning lines remain unresolved until an admin explicitly approves the warning or resolves it by merging duplicates.
 - A revision becomes validated only when no unresolved warnings remain and every line is approved.
-- Validating records `validated_at` and `validated_by`, then locks the revision against editing.
-- If a later validation run discovers a new warning, the revision becomes unvalidated and editable again.
-- Once a revision is validated, admins can click **Approve Revision**. This sets `project_revisions.status = approved`.
-- If a later validation run finds new warnings, an approved revision status resets to `draft`.
+- Validating records `validated_at` and `validated_by`, then marks the revision **Ready to approve**.
+- Validated-but-unapproved revisions remain editable and can be revalidated after edits.
+- Once a revision is validated, admins can click **Approve Revision**, confirm the lock modal, and set `project_revisions.status = approved`.
+- Approved revisions reject validation and schedule mutation actions server-side.
 
 ### Warning actions
 
@@ -239,8 +242,19 @@ SKU comparison for validation is case-insensitive and trims surrounding whitespa
 | **Undo** | Removes explicit approval for the warning; the revision becomes unvalidated if the warning is unresolved |
 | **Merge** | Available for duplicate-SKU warnings; keeps the first line, sums quantities, deletes the other duplicates, and approves the remaining line |
 | **Match** | Available for price mismatch warnings; updates the quote price to the catalogue RRP and re-runs validation |
+| **Flag Issue** | Moves a validated line back into the Issues list for admin review |
 
 Explicit warning approval is distinguished from automatic clean-line approval by `approved_by`: explicit approval has a user ID; automatic approval uses null.
+
+### Validated lines table
+
+The validation page now separates unresolved warnings from resolved lines:
+
+- **Issues** shows only unresolved validation warnings.
+- **Validated** shows clean lines and explicitly approved warning lines.
+- Each validated row includes status (`Resolved` or `Approved`), quote price, note text, and **Flag Issue** when the revision is not approved.
+- Resolution and approval notes are stored on `project_lines.validation_note`.
+- Manual flags are stored with `project_lines.validation_flagged = true` and generate a validation issue until resolved.
 
 ### Key files
 
@@ -299,6 +313,11 @@ Rules:
 - `price` is imported into `ProjectLine.unit_price` and overrides any product catalogue price for that pasted line.
 - When the SKU exists in `products`, `product_id` is set and `ProjectLine.description` is copied from `Product::displayDescription()`.
 - When the SKU does not exist, the line is still added with blank description and `Custom` type so validation can flag the missing SKU.
+- Product-picker additions start with `ProjectLine.status = Pending`.
+- Pasted rows that match or create lines set `ProjectLine.status = Priced`.
+- Existing lines that are missing from the pasted SKU set are marked `Unpriced`.
+- **Paste across all areas** is enabled by default. In this mode, matching SKUs across the whole revision are repriced without changing their existing quantities, and new pasted SKUs are added to the target Area.
+- Turning **Paste across all areas** off scopes updates to the selected Area and updates existing line quantities from the pasted rows.
 - The modal's **Add Products** button enables immediately when text is pasted, via Alpine state, without waiting for a Livewire re-render.
 
 ---
@@ -308,6 +327,7 @@ Rules:
 - Data source: external API `POST https://tcms.tamlite.co.uk/api/product_data`
 - Import handled by `App\Services\ProductImportService`
 - Import **deletes** all existing products then bulk-inserts in chunks of 500 (DELETE used over TRUNCATE to respect FK constraints)
+- Import backfills blank project line prices from matching SKUs unless the parent revision status is `approved`.
 - API field `SKU` is mapped to local `sku`
 - API field `v_description` is stored separately and also used to build local `description`
 - Local `description` is derived during import:
@@ -324,15 +344,15 @@ Rules:
 |---|---|
 | `Feature/AuthenticationTest.php` | Login / auth flows |
 | `Feature/AdminProductResourceTest.php` | Filament Products list page (admin) |
-| `Feature/AdminProjectResourceTest.php` | ViewProject server-side revision/project scoping for line actions; paste products; Activity Logs revision display |
-| `Feature/AdminProjectValidationTest.php` | Revision validation, automatic/explicit approval, Undo, Merge, revalidation, and locking |
+| `Feature/AdminProjectResourceTest.php` | ViewProject server-side revision/project scoping for line actions; paste products, create form gating, status badges, Activity Logs revision display |
+| `Feature/AdminProjectValidationTest.php` | Revision validation, validated-lines table, manual flagging, automatic/explicit approval, Undo, Merge, revalidation, and approval locking |
 | `Feature/AdminUserResourceTest.php` | Filament Users CRUD (admin) |
 | `Feature/FrontEndProductsTest.php` | Products list for non-admin |
 | `Feature/ProductImportTest.php` | `ProductImportService` — happy path, API failure, structure error |
 | `Feature/ExampleTest.php` | Smoke test |
 | `Unit/ExampleTest.php` | Smoke test |
 
-**Remaining project test gaps:** product picker UI flow, revision activation UI, presence heartbeat, validation UI browser coverage, PDF generation, and Salesforce project creation.
+**Remaining project test gaps:** product picker UI flow, revision activation UI, presence heartbeat, validation browser coverage, PDF generation, and full Salesforce API/service coverage.
 
 ---
 
@@ -353,6 +373,8 @@ Three model observers automatically update `projects.last_edited_at` and `projec
 | `ProjectObserver` | Any meaningful change to the `projects` row (skips `last_edited_at`, `last_edited_by`, `active_revision_id`, timestamps) |
 | `ProjectAreaObserver` | Area saved or deleted — only if the area belongs to the **active revision** |
 | `ProjectLineObserver` | Line saved or deleted — only if its area belongs to the **active revision** |
+
+Line update history includes validation flags and validation notes, so manual validation review changes appear in activity logs.
 
 ---
 
@@ -405,7 +427,7 @@ SALESFORCE_BASE_URL=          # e.g. https://your-org.my.salesforce.com
 | `soqlQuery(array $auth, string $soql): ?array` | Private — runs an authenticated SOQL query against API v65.0 and returns decoded JSON or null |
 | `getOpportunities(int $page, int $perPage, ?string $search, ?string $sortColumn, ?string $sortDirection, array $fields): LengthAwarePaginator` | SOQL Opportunity table query with pagination, search, allowlisted sort columns, and `ORDER BY CreatedDate DESC` fallback |
 | `searchOpportunities(string $query, int $limit = 10): array` | Typeahead — `WHERE Name LIKE '%…%' ORDER BY Name ASC`; returns `[Id => 'Name (Reference)']` for Select options |
-| `getOpportunityById(string $id): ?array` | Fetches a single Opportunity by Id; returns `[Id, Name, Project_Reference_Number__c, Owner.Name, Owner.Email, Account.Name]` or null |
+| `getOpportunityById(string $id): ?array` | Fetches a single Opportunity by Id; returns `[Id, Name, Project_Reference_Number__c, CEF_Cover__c, Amount, Owner.Name, Owner.Email, Account.Name]` or null |
 | `fetchProjects(): array` | Simple Opportunity fetch used by the Artisan interrogator command |
 | `fetchAllOpportunityFields(int $limit = 25): array` | Describes Opportunity fields dynamically, then fetches all fields for interrogation/debugging |
 
@@ -421,14 +443,17 @@ SALESFORCE_BASE_URL=          # e.g. https://your-org.my.salesforce.com
 
 When creating a project, a **Salesforce Project** toggle is available:
 
-- **Toggle OFF** (default): normal free-text project creation
-- **Toggle ON**: hides the `name` field and shows a live Salesforce search Select
+- **Toggle ON** (default): hides the `name` field and shows a live Salesforce search Select
+- **Toggle OFF**: normal free-text project creation
   - Typeahead searches Opportunity names in real time via `searchOpportunities()`
   - Selecting an Opportunity stores its data as JSON in a hidden `salesforce_pending_data` field
-  - A **Confirm & Populate Form** button appears — clicking it populates `reference_number`, `customer_name`, and `owner_email` from the Opportunity data
-  - All other form fields become read-only while SF mode is on
+  - Opportunity names are normalised to title case before saving
+  - A loading indicator appears while the selected Opportunity is fetched
+  - A **Confirm & Populate Form** button appears — clicking it populates `reference_number`, `customer_name`, `owner_email`, `cover_percentage`, and `value` from the Opportunity data
+  - Salesforce-derived fields become read-only while SF mode is on, while notes and visibility remain editable
   - `name` is extracted from the Opportunity JSON in `mutateFormDataUsing` (because the `name` TextInput is hidden and therefore not dehydrated by Filament)
   - `salesforce_project = true` is saved to the DB via the `projects.salesforce_project` column
+  - The create action is visually disabled until name, customer, and reference fields are populated
 
 ### `salesforce_project` DB flag (added 29 May 2026)
 
@@ -448,9 +473,9 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 8 June 2026)
+## Known Gaps / Next Steps (as of 11 June 2026)
 
-- [ ] `ProjectLine.status` column exists but is a placeholder (`–`) in the UI — no logic yet
+- [x] ~~`ProjectLine.status` column exists but is a placeholder (`–`) in the UI — no logic yet~~ — status badges now show Pending, Priced, Unpriced, or Approved
 - [ ] Project tests cover server-side line/revision scoping, but still need browser/UI coverage for product picker, revision activation, presence, and PDF generation
 - [ ] No Artisan command yet to trigger `ProductImportService` (needs `make:command`)
 - [ ] Project totals (across all areas) not shown at the page level
@@ -458,7 +483,24 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [ ] Bearer token for Salesforce is fetched fresh on every call — should be cached for its ~1 hour lifetime
 - [ ] No tests covering the Salesforce service (`Http::fake()` for auth success, auth failure, query failure)
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
-- [ ] Validation currently covers duplicate SKU, missing SKU, and price mismatch; output-readiness and other approval rules remain to be added
+- [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
+
+---
+
+## Features completed — 10 June 2026
+
+- **Validation page split into Issues and Validated tables**: unresolved warnings now stay in **Issues**, while clean lines and approved/resolved warning lines move to **Validated** with status, quote price, and notes.
+- **Manual validation flagging**: admins can use **Flag Issue** on a validated line to send it back for review. Manual flags are stored on `project_lines.validation_flagged`, and review/resolution text is stored in `project_lines.validation_note`.
+- **Approval is now the lock boundary**: running validation marks a revision **Ready to approve**, but does not lock editing. The **Approve Revision** action opens a confirmation modal and then locks the revision by setting `project_revisions.status = approved`. Approved revisions reject validation and schedule edits server-side.
+- **Schedule line statuses**: project lines now show status badges in the schedule (`Pending`, `Priced`, `Unpriced`, or `Approved`). Product-picker additions start as `Pending`; paste pricing sets matching/new rows to `Priced`; rows missing from a paste pass become `Unpriced`.
+- **Paste pricing across all areas**: the paste modal gained **Paste across all areas**. When enabled, matching SKUs across the whole revision are repriced without changing existing quantities, missing pasted SKUs are created in the target Area, and existing SKUs absent from the paste are marked `Unpriced`. Turning it off limits updates to the selected Area and updates quantities from the pasted data.
+- **Salesforce project form improvements**: Salesforce is now the default create mode. Selected Opportunity names are title-cased, a loading indicator appears while fetching, required create fields gate the submit action, and Salesforce data now populates cover and value.
+- **Project value and cover changes**: `projects.value` was added as a nullable decimal, and `cover_percentage` is now nullable text to support Salesforce cover values. Project copy actions carry `value` forward.
+- **Salesforce Opportunity fetch expanded**: `getOpportunityById()` now fetches `CEF_Cover__c` and `Amount` for create-form population.
+- **Product import respects approved locks**: catalogue import can still backfill blank line prices on validated-but-unapproved revisions, but skips revisions whose status is `approved`.
+- **Production URL hardening**: production boots with `URL::forceRootUrl(config('app.url'))` and `URL::forceScheme('https')`.
+- **Panel access contract added**: `User` now implements Filament's `FilamentUser` contract and allows authenticated users to access the panel.
+- **Focused tests expanded**: `AdminProjectResourceTest`, `AdminProjectValidationTest`, and `ProductImportTest` now cover create form gating, title-case Salesforce names, paste repricing modes, status badges, validated-line display, manual flagging, approval locking, and import behavior around approved revisions.
 
 ---
 
