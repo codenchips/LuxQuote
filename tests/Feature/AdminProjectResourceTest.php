@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Enums\ProjectLineType;
+use App\Enums\ProjectVisibility;
 use App\Filament\Resources\ActivityLogs\Pages\ListActivityLogs;
 use App\Filament\Resources\Projects\Pages\ListProjects;
+use App\Filament\Resources\Projects\Pages\ProjectHistory;
 use App\Filament\Resources\Projects\Pages\ValidationProject;
 use App\Filament\Resources\Projects\Pages\ViewProject;
 use App\Filament\Resources\Projects\Schemas\ProjectForm;
@@ -14,7 +16,9 @@ use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectRevision;
 use App\Models\User;
+use App\Services\ProjectSchedulePdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -457,6 +461,57 @@ class AdminProjectResourceTest extends TestCase
             ->assertDontSee('Priced');
     }
 
+    public function test_schedule_pdf_generation_is_recorded_in_activity_logs(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'PDF-REF',
+        ]);
+        $revision = $project->activeRevision;
+
+        $this->instance(ProjectSchedulePdfService::class, new class
+        {
+            public function filename(Project $project, ProjectRevision $revision): string
+            {
+                return 'schedule-PDF-REF-R1.pdf';
+            }
+
+            public function builder(Project $project, ProjectRevision $revision): object
+            {
+                return new class
+                {
+                    public function inline(string $filename): self
+                    {
+                        return $this;
+                    }
+
+                    public function toResponse($request)
+                    {
+                        return response('fake pdf');
+                    }
+                };
+            }
+        });
+
+        $this->get(route('projects.pdf.schedule', [
+            'project' => $project,
+            'revision' => $revision->id,
+        ]))->assertOk();
+
+        $this->assertDatabaseHas('activity_logs', [
+            'user_id' => $admin->id,
+            'project_id' => $project->id,
+            'action_type' => 'schedule_pdf.generated',
+            'revision_number' => 1,
+        ]);
+
+        Livewire::test(ProjectHistory::class, ['record' => $project->id])
+            ->assertSee('Generated schedule PDF')
+            ->assertSee('schedule-PDF-REF-R1.pdf');
+    }
+
     public function test_admin_can_paste_products_with_optional_description_and_price_columns(): void
     {
         $admin = User::factory()->admin()->create();
@@ -482,17 +537,42 @@ class AdminProjectResourceTest extends TestCase
             'description' => 'Four Column Product Description',
             'price' => 90.12,
         ]);
+        $fiveColumnProduct = Product::factory()->create([
+            'sku' => 'FIVE-COL',
+            'product_name' => 'Five Column Product',
+            'description' => 'Five Column Product Description',
+            'price' => 10.00,
+        ]);
+        $sixColumnProduct = Product::factory()->create([
+            'sku' => 'SIX-COL',
+            'product_name' => 'Six Column Product',
+            'description' => 'Six Column Product Description',
+            'price' => 20.00,
+        ]);
+        $sevenColumnProduct = Product::factory()->create([
+            'sku' => 'SEVEN-COL',
+            'product_name' => 'Seven Column Product',
+            'description' => 'Seven Column Product Description',
+            'price' => 30.00,
+        ]);
 
         Livewire::test(ViewProject::class, ['record' => $project->id])
             ->call('openPasteProductsModal', $area->id)
-            ->set('pastedProductData', "1\tTWO-COL\n2\tTHREE-COL\tDiscarded description\n3\tFOUR-COL\tDiscarded description\t44.44")
+            ->set('pastedProductData', implode("\n", [
+                "1\tTWO-COL",
+                "2\tTHREE-COL\tDiscarded description",
+                "3\tFOUR-COL\tDiscarded description\t44.44",
+                "4\tFIVE-COL\tDiscarded description\t55.55\t10%",
+                "5\tSIX-COL\tDiscarded description\t66.66\t20%\t11.11",
+                "6\tSEVEN-COL\tDiscarded description\t77.77\t30%\t22.22\t133.32",
+            ]))
             ->call('addPastedProducts')
             ->assertSet('pasteProductsModalOpen', false)
             ->assertSet('pasteProductsError', null);
 
         $lines = $area->lines()->orderBy('sort_order')->get();
 
-        $this->assertCount(3, $lines);
+        $this->assertCount(6, $lines);
 
         $this->assertSame($twoColumnProduct->id, $lines[0]->product_id);
         $this->assertSame('TWO-COL', $lines[0]->code);
@@ -511,6 +591,43 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame('Four Column Product Description', $lines[2]->description);
         $this->assertSame(3, $lines[2]->qty);
         $this->assertSame('44.44', $lines[2]->unit_price);
+
+        $this->assertSame($fiveColumnProduct->id, $lines[3]->product_id);
+        $this->assertSame('FIVE-COL', $lines[3]->code);
+        $this->assertSame('Five Column Product Description', $lines[3]->description);
+        $this->assertSame(4, $lines[3]->qty);
+        $this->assertSame('55.55', $lines[3]->unit_price);
+
+        $this->assertSame($sixColumnProduct->id, $lines[4]->product_id);
+        $this->assertSame('SIX-COL', $lines[4]->code);
+        $this->assertSame('Six Column Product Description', $lines[4]->description);
+        $this->assertSame(5, $lines[4]->qty);
+        $this->assertSame('11.11', $lines[4]->unit_price);
+
+        $this->assertSame($sevenColumnProduct->id, $lines[5]->product_id);
+        $this->assertSame('SEVEN-COL', $lines[5]->code);
+        $this->assertSame('Seven Column Product Description', $lines[5]->description);
+        $this->assertSame(6, $lines[5]->qty);
+        $this->assertSame('22.22', $lines[5]->unit_price);
+    }
+
+    public function test_paste_products_rejects_single_column_rows(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->first();
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('openPasteProductsModal', $area->id)
+            ->set('pastedProductData', 'ONLY-QTY')
+            ->call('addPastedProducts')
+            ->assertSet('pasteProductsModalOpen', true)
+            ->assertSet('pasteProductsError', '1 pasted row could not be imported. Check that each row has Qty and SKU columns.')
+            ->assertSee('1 pasted row could not be imported.');
+
+        $this->assertSame(0, $area->lines()->count());
     }
 
     public function test_paste_products_warns_when_no_rows_can_be_imported(): void
@@ -671,6 +788,111 @@ class AdminProjectResourceTest extends TestCase
 
         Http::assertNothingSent();
         $this->assertSame('Empty Salesforce Project Updated', $project->fresh()->name);
+        $this->assertDatabaseHas('activity_logs', [
+            'project_id' => $project->id,
+            'action_type' => 'project.details_saved',
+        ]);
+    }
+
+    public function test_salesforce_project_details_save_logs_uploaded_pdf_url(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Salesforce Project',
+            'customer_name' => 'Example Customer',
+            'reference_number' => '22600',
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+        ]);
+        $project->activeRevision->areas()->first()->lines()->create([
+            'code' => 'PDF-SKU',
+            'description' => 'PDF line',
+            'qty' => 1,
+            'type' => ProjectLineType::Standard->value,
+            'sort_order' => 0,
+        ]);
+
+        $this->instance(ProjectSchedulePdfService::class, new class
+        {
+            public function filename(Project $project, ProjectRevision $revision): string
+            {
+                return 'schedule-22600-R1.pdf';
+            }
+
+            public function content(Project $project, ProjectRevision $revision): string
+            {
+                return '%PDF-1.4 test content';
+            }
+        });
+
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                $query = (string) ($request->data()['q'] ?? '');
+
+                if (str_contains($query, 'FROM ContentDocumentLink')) {
+                    return Http::response(['records' => []]);
+                }
+
+                if (str_contains($query, 'FROM ContentVersion')) {
+                    return Http::response([
+                        'records' => [
+                            ['ContentDocumentId' => '069000000000001AAA'],
+                        ],
+                    ]);
+                }
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/sobjects/ContentVersion')) {
+                return Http::response(['id' => '068000000000001AAA'], 201);
+            }
+
+            return Http::response([], 500);
+        });
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->callAction('editProject', [
+                'name' => 'Salesforce Project Updated',
+                'reference_number' => '22600',
+                'customer_name' => 'Example Customer',
+                'contractor' => null,
+                'site_location' => null,
+                'owner_email' => $project->owner_email,
+                'created_by_email' => $project->created_by_email,
+                'department' => null,
+                'date' => $project->date->format('Y-m-d'),
+                'revision' => $project->revision,
+                'visibility' => $project->visibility->value,
+                'branch_name' => null,
+                'cover_percentage' => null,
+                'quote_notes' => null,
+                'internal_notes' => null,
+                'general_notes' => null,
+            ]);
+
+        $log = ActivityLog::where('project_id', $project->id)
+            ->where('action_type', 'project.details_saved')
+            ->latest()
+            ->firstOrFail();
+
+        $this->assertSame(
+            'https://example.my.salesforce.com/lightning/r/ContentDocument/069000000000001AAA/view',
+            $log->payload['salesforce_pdf_url'] ?? null,
+        );
+        $this->assertSame('schedule-22600-R1.pdf', $log->payload['salesforce_pdf_filename'] ?? null);
+
+        Livewire::test(ProjectHistory::class, ['record' => $project->id])
+            ->assertSee('Saved project details and uploaded', false)
+            ->assertSee('View file')
+            ->assertSee('https://example.my.salesforce.com/lightning/r/ContentDocument/069000000000001AAA/view', false);
     }
 
     public function test_lines_cannot_be_sorted_into_an_area_from_another_project(): void
@@ -825,7 +1047,10 @@ class AdminProjectResourceTest extends TestCase
         $admin = User::factory()->admin()->create();
         $this->actingAs($admin);
 
-        $project = Project::factory()->for($admin)->create(['revision' => 3]);
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'REF-003',
+            'revision' => 3,
+        ]);
 
         ActivityLog::create([
             'user_id' => $admin->id,
@@ -837,7 +1062,69 @@ class AdminProjectResourceTest extends TestCase
         ]);
 
         Livewire::test(ListActivityLogs::class)
+            ->assertSee('REF-003')
             ->assertSee('R3');
+    }
+
+    public function test_project_history_only_shows_activity_for_the_current_project(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Visible Project',
+            'reference_number' => 'VISIBLE-REF',
+            'visibility' => ProjectVisibility::Private,
+            'revision' => 3,
+        ]);
+        $otherProject = Project::factory()->for($admin)->create([
+            'name' => 'Hidden Project',
+            'reference_number' => 'HIDDEN-REF',
+            'revision' => 9,
+        ]);
+
+        ActivityLog::create([
+            'user_id' => $admin->id,
+            'project_id' => $project->id,
+            'action_type' => 'project.updated',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $project->name,
+            'payload' => [
+                'customer_name' => [
+                    'old' => 'Old Customer',
+                    'new' => 'New Customer',
+                ],
+            ],
+        ]);
+
+        ActivityLog::create([
+            'user_id' => $admin->id,
+            'project_id' => $otherProject->id,
+            'action_type' => 'project.updated',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $otherProject->name,
+            'payload' => [
+                'customer_name' => [
+                    'old' => 'Other Old Customer',
+                    'new' => 'Other New Customer',
+                ],
+            ],
+        ]);
+
+        Livewire::test(ProjectHistory::class, ['record' => $project->id])
+            ->assertSee('Visible Project')
+            ->assertSee('Private')
+            ->assertSee('VISIBLE-REF')
+            ->assertSee('R3')
+            ->assertSee('New Customer')
+            ->assertDontSee('Hidden Project')
+            ->assertDontSee('HIDDEN-REF')
+            ->assertDontSee('R9')
+            ->assertDontSee('Other New Customer');
+
+        Livewire::test(ListActivityLogs::class)
+            ->assertSee('VISIBLE-REF')
+            ->assertSee('HIDDEN-REF');
     }
 
     /**

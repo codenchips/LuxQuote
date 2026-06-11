@@ -6,7 +6,7 @@ use App\Enums\ProjectVisibility;
 use App\Enums\UserRole;
 use App\Filament\Resources\Projects\Pages\ListProjects;
 use App\Filament\Resources\Projects\Pages\OutputProject;
-use App\Filament\Resources\Projects\Pages\PricingProject;
+use App\Filament\Resources\Projects\Pages\ProjectHistory;
 use App\Filament\Resources\Projects\Pages\ValidationProject;
 use App\Filament\Resources\Projects\Pages\ViewProject;
 use App\Filament\Resources\Projects\Schemas\ProjectForm;
@@ -67,7 +67,7 @@ class ProjectResource extends Resource
             'index' => ListProjects::route('/'),
             'view' => ViewProject::route('/{record}'),
             'validation' => ValidationProject::route('/{record}/validation'),
-            'pricing' => PricingProject::route('/{record}/pricing'),
+            'history' => ProjectHistory::route('/{record}/history'),
             'output' => OutputProject::route('/{record}/output'),
         ];
     }

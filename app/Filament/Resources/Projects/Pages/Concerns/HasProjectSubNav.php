@@ -4,7 +4,7 @@ namespace App\Filament\Resources\Projects\Pages\Concerns;
 
 use App\Enums\UserRole;
 use App\Filament\Resources\Projects\Pages\OutputProject;
-use App\Filament\Resources\Projects\Pages\PricingProject;
+use App\Filament\Resources\Projects\Pages\ProjectHistory;
 use App\Filament\Resources\Projects\Pages\ValidationProject;
 use App\Filament\Resources\Projects\ProjectResource;
 use Illuminate\Contracts\View\View;
@@ -36,7 +36,7 @@ trait HasProjectSubNav
         $links = [
             ['label' => 'Edit',       'url' => ProjectResource::getUrl('view', ['record' => $recordId])],
             ['label' => 'Validation', 'url' => ValidationProject::getUrl(['record' => $recordId])],
-            ['label' => 'Pricing',    'url' => PricingProject::getUrl(['record' => $recordId])],
+            ['label' => 'Project History', 'url' => ProjectHistory::getUrl(['record' => $recordId])],
             ['label' => 'Output',     'url' => OutputProject::getUrl(['record' => $recordId])],
         ];
 

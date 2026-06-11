@@ -38,6 +38,7 @@ class AdminPanelProvider extends PanelProvider
                     ->recoverable(),
             ])
             ->defaultThemeMode(ThemeMode::Dark)
+            ->breadcrumbs(false)
             ->sidebarWidth('13rem')
             ->maxContentWidth(Width::Full)
             ->assets([

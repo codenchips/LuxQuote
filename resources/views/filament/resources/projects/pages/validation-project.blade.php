@@ -8,34 +8,6 @@
     @endphp
 
     <div class="space-y-6">
-        <div class="flex justify-end gap-2">
-            @if($isApproved)
-                <div class="rounded-xl border border-green-300 bg-green-50 px-4 py-2 text-sm font-semibold text-green-900 dark:border-green-800 dark:bg-green-950/30 dark:text-green-100">
-                    Project is approved and locked
-                </div>
-            @else
-            <x-filament::button
-                wire:click="openApproveRevisionModal"
-                wire:loading.attr="disabled"
-                wire:target="openApproveRevisionModal"
-                color="{{ $isValidated ? 'success' : 'gray' }}"
-                icon="heroicon-o-check-badge"
-                :disabled="! $isValidated"
-            >
-                Approve Revision
-            </x-filament::button>
-
-            <x-filament::button
-                wire:click="runValidation"
-                wire:loading.attr="disabled"
-                icon="heroicon-o-arrow-path"
-            >
-                <span wire:loading.remove wire:target="runValidation">Run Validation</span>
-                <span wire:loading wire:target="runValidation">Running Validation...</span>
-            </x-filament::button>
-            @endif
-        </div>
-
         <div
             @class([
                 'rounded-xl border px-5 py-4',

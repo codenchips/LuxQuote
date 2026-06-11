@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Enums\UserRole;
+use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
@@ -11,8 +12,10 @@ use App\Observers\ProjectAreaObserver;
 use App\Observers\ProjectLineObserver;
 use App\Observers\ProjectObserver;
 use App\Services\SalesforceService;
+use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
@@ -38,6 +41,17 @@ class AppServiceProvider extends ServiceProvider
             URL::forceRootUrl(config('app.url'));
             URL::forceScheme('https');
         }
+
+        Event::listen(Login::class, function (Login $event): void {
+            ActivityLog::create([
+                'user_id' => $event->user->id,
+                'project_id' => null,
+                'action_type' => 'user.login',
+                'user_email_snapshot' => $event->user->email,
+                'project_name_snapshot' => null,
+                'payload' => null,
+            ]);
+        });
 
         Project::observe(ProjectObserver::class);
         ProjectArea::observe(ProjectAreaObserver::class);

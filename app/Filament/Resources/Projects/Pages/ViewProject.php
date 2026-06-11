@@ -206,6 +206,8 @@ class ViewProject extends ViewRecord
         $this->record->refresh();
 
         if (! $this->record->salesforce_project) {
+            $this->logProjectDetailsSaved();
+
             return;
         }
 
@@ -219,10 +221,14 @@ class ViewProject extends ViewRecord
                 ->warning()
                 ->send();
 
+            $this->logProjectDetailsSaved();
+
             return;
         }
 
         if (! $this->revisionHasScheduleProducts($revision)) {
+            $this->logProjectDetailsSaved();
+
             return;
         }
 
@@ -241,6 +247,8 @@ class ViewProject extends ViewRecord
                 ->danger()
                 ->send();
 
+            $this->logProjectDetailsSaved();
+
             return;
         }
 
@@ -250,6 +258,8 @@ class ViewProject extends ViewRecord
                 ->body($result['message'] ?? 'The schedule PDF could not be uploaded to Salesforce.')
                 ->danger()
                 ->send();
+
+            $this->logProjectDetailsSaved();
 
             return;
         }
@@ -266,6 +276,31 @@ class ViewProject extends ViewRecord
             ] : [])
             ->success()
             ->send();
+
+        $this->logProjectDetailsSaved($salesforceUrl, $filename);
+    }
+
+    private function logProjectDetailsSaved(?string $salesforceUrl = null, ?string $filename = null): void
+    {
+        $payload = [];
+
+        if ($salesforceUrl) {
+            $payload['salesforce_pdf_url'] = $salesforceUrl;
+        }
+
+        if ($filename) {
+            $payload['salesforce_pdf_filename'] = $filename;
+        }
+
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'project_id' => $this->record->id,
+            'action_type' => 'project.details_saved',
+            'user_email_snapshot' => auth()->user()?->email ?? '',
+            'project_name_snapshot' => $this->record->name,
+            'revision_number' => $this->record->revision,
+            'payload' => $payload === [] ? null : $payload,
+        ]);
     }
 
     private function revisionHasScheduleProducts(ProjectRevision $revision): bool
@@ -685,7 +720,7 @@ class ViewProject extends ViewRecord
         while (($columns = fgetcsv($handle, 0, "\t", '"', '')) !== false) {
             $qty = trim((string) ($columns[0] ?? ''));
             $sku = trim((string) ($columns[1] ?? ''));
-            $price = trim((string) ($columns[3] ?? ''));
+            $price = $this->pastedProductPrice($columns);
 
             if ($qty === '' && $sku === '' && $price === '') {
                 continue;
@@ -711,6 +746,22 @@ class ViewProject extends ViewRecord
         fclose($handle);
 
         return ['rows' => $rows, 'rejected' => $rejected];
+    }
+
+    /**
+     * @param  array<int, string|null>  $columns
+     */
+    private function pastedProductPrice(array $columns): string
+    {
+        if (count($columns) >= 6) {
+            return trim((string) ($columns[5] ?? ''));
+        }
+
+        if (count($columns) >= 4) {
+            return trim((string) ($columns[3] ?? ''));
+        }
+
+        return '';
     }
 
     private function isPastedProductHeader(string $qty, string $sku): bool

@@ -46,6 +46,59 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         $this->assertSame([
             '006000000000001AAA' => 'Hartest Primary School (22600)',
         ], $options);
+
+        Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), 'IsClosed = false')
+            && str_contains((string) ($request->data()['q'] ?? ''), 'IsWon = false')
+            && str_contains((string) ($request->data()['q'] ?? ''), "Name LIKE '%Hartest%'"));
+    }
+
+    public function test_opportunity_listing_excludes_closed_and_won_projects(): void
+    {
+        config(['services.salesforce.url' => 'https://example.my.salesforce.com']);
+
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                $query = (string) ($request->data()['q'] ?? '');
+
+                if (str_contains($query, 'COUNT()')) {
+                    return Http::response(['totalSize' => 1]);
+                }
+
+                return Http::response([
+                    'records' => [
+                        [
+                            'Id' => '006000000000001AAA',
+                            'Name' => 'Open Project',
+                            'Amount' => 100,
+                        ],
+                    ],
+                ]);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $records = app(SalesforceService::class)->getOpportunities(
+            search: 'Open',
+            fields: ['Id', 'Name', 'Amount'],
+        );
+
+        $this->assertSame(1, $records->total());
+        $this->assertSame('Open Project', $records->items()[0]['Name']);
+
+        $queries = Http::recorded()
+            ->map(fn (array $record): string => (string) ($record[0]->data()['q'] ?? ''))
+            ->filter();
+
+        $this->assertTrue($queries->every(fn (string $query): bool => str_contains($query, 'IsClosed = false')
+            && str_contains($query, 'IsWon = false')));
     }
 
     public function test_schedule_pdf_upload_creates_a_salesforce_file_on_the_opportunity(): void

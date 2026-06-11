@@ -520,7 +520,10 @@
                     <span class="text-green-600 dark:text-green-400">qty</span> [tab] 
                     <span class="text-green-600 dark:text-green-400">sku</span> [tab] 
                     <span class="text-green-600 dark:text-green-400">description</span> [tab] 
-                    <span class="text-green-600 dark:text-green-400">unit price</span>                                       
+                    <span class="text-green-600 dark:text-green-400">price</span> [tab]
+                    <span class="text-green-600 dark:text-green-400">discount</span> [tab]
+                    <span class="text-green-600 dark:text-green-400">nett each</span> [tab]
+                    <span class="text-green-600 dark:text-green-400">line total</span>
                 </label>
                 <textarea
                     id="pasted-product-data"

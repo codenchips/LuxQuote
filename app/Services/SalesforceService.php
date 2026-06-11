@@ -106,9 +106,9 @@ class SalesforceService
             return new LengthAwarePaginator([], 0, $perPage, $page);
         }
 
-        $where = filled($search)
-            ? " WHERE Name LIKE '%".$this->soqlEscape($search)."%'"
-            : '';
+        $where = $this->openOpportunityWhereClause(
+            filled($search) ? "Name LIKE '%".$this->soqlEscape($search)."%'" : null,
+        );
 
         // Allowlisted sort columns to prevent SOQL injection
         $allowedColumns = ['Name', 'StageName', 'CreatedDate', 'Amount', 'Project_Reference_Number__c', 'Owner.Name'];
@@ -148,9 +148,10 @@ class SalesforceService
         }
 
         $escaped = $this->soqlEscape($query);
+        $where = $this->openOpportunityWhereClause("Name LIKE '%{$escaped}%'");
         $result = $this->soqlQuery(
             $auth,
-            "SELECT Id, Name, Project_Reference_Number__c FROM Opportunity WHERE Name LIKE '%{$escaped}%' ORDER BY Name ASC LIMIT {$limit}",
+            "SELECT Id, Name, Project_Reference_Number__c FROM Opportunity{$where} ORDER BY Name ASC LIMIT {$limit}",
         );
 
         $options = [];
@@ -182,12 +183,52 @@ class SalesforceService
         }
 
         $escaped = $this->soqlEscape($id);
+        $where = $this->openOpportunityWhereClause("Id = '{$escaped}'");
         $result = $this->soqlQuery(
             $auth,
-            "SELECT Id, Name, Project_Reference_Number__c, CEF_Cover__c, Amount, Owner.Name, Owner.Email, Account.Name FROM Opportunity WHERE Id = '{$escaped}' LIMIT 1",
+            "SELECT Id, Name, Project_Reference_Number__c, CEF_Cover__c, Amount, Owner.Name, Owner.Email, Account.Name FROM Opportunity{$where} LIMIT 1",
         );
 
         return ($result['records'] ?? [])[0] ?? null;
+    }
+
+    public function updateOpportunityAmount(Project $project, float $amount): array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return ['success' => false, 'message' => 'Salesforce authentication failed.'];
+        }
+
+        $opportunityId = $this->findOpportunityIdForProjectUsingAuth($project, $auth);
+
+        if (blank($opportunityId)) {
+            return ['success' => false, 'message' => 'No matching Salesforce Opportunity was found for this project.'];
+        }
+
+        $response = Http::withToken($auth['token'])
+            ->acceptJson()
+            ->patch("{$auth['instanceUrl']}/services/data/".self::API_VERSION."/sobjects/Opportunity/{$opportunityId}", [
+                'Amount' => round($amount, 2),
+            ]);
+
+        if ($response->failed()) {
+            Log::error('Salesforce Opportunity amount update failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'project_id' => $project->id,
+                'opportunity_id' => $opportunityId,
+                'amount' => $amount,
+            ]);
+
+            return ['success' => false, 'message' => $this->salesforceErrorMessage($response->json(), 'Salesforce Opportunity amount update failed')];
+        }
+
+        return [
+            'success' => true,
+            'opportunityId' => $opportunityId,
+            'amount' => round($amount, 2),
+        ];
     }
 
     public function findOpportunityIdForProject(Project $project): ?string
@@ -264,7 +305,7 @@ class SalesforceService
                 'opportunity_id' => $opportunityId,
             ]);
 
-            return ['success' => false, 'message' => $this->salesforceErrorMessage($response->json())];
+            return ['success' => false, 'message' => $this->salesforceErrorMessage($response->json(), 'Salesforce file upload failed')];
         }
 
         $contentVersionId = (string) $response->json('id');
@@ -280,13 +321,27 @@ class SalesforceService
         ];
     }
 
-    private function salesforceErrorMessage(mixed $errors): string
+    private function salesforceErrorMessage(mixed $errors, string $fallback): string
     {
         if (is_array($errors) && isset($errors[0]['message'])) {
-            return 'Salesforce file upload failed: '.$errors[0]['message'];
+            return $fallback.': '.$errors[0]['message'];
         }
 
-        return 'Salesforce file upload failed.';
+        return $fallback.'.';
+    }
+
+    private function openOpportunityWhereClause(?string $extraCondition = null): string
+    {
+        $conditions = [
+            'IsClosed = false',
+            'IsWon = false',
+        ];
+
+        if (filled($extraCondition)) {
+            $conditions[] = $extraCondition;
+        }
+
+        return ' WHERE '.implode(' AND ', $conditions);
     }
 
     /**

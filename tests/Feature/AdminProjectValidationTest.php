@@ -11,6 +11,8 @@ use App\Models\Project;
 use App\Models\ProjectLine;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -211,6 +213,57 @@ class AdminProjectValidationTest extends TestCase
             ->assertDontSee('Run Validation');
 
         $this->assertSame(ProjectRevisionStatus::Approved, $project->activeRevision->fresh()->status);
+    }
+
+    public function test_approving_salesforce_revision_updates_opportunity_amount(): void
+    {
+        config(['services.salesforce.url' => 'https://example.my.salesforce.com']);
+
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+        ]);
+        $firstProduct = Product::factory()->create([
+            'sku' => 'VALUE-ONE',
+            'price' => 10.00,
+        ]);
+        $secondProduct = Product::factory()->create([
+            'sku' => 'VALUE-TWO',
+            'price' => 5.50,
+        ]);
+
+        $this->createLine($project, $firstProduct->sku, qty: 2, unitPrice: 10.00);
+        $this->createLine($project, $secondProduct->sku, qty: 3, sortOrder: 1, unitPrice: 5.50);
+
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                ]);
+            }
+
+            if (
+                $request->method() === 'PATCH'
+                && str_contains($request->url(), '/services/data/v65.0/sobjects/Opportunity/006000000000001AAA')
+            ) {
+                return Http::response([], 204);
+            }
+
+            return Http::response([], 500);
+        });
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->call('runValidation')
+            ->call('approveRevision')
+            ->assertNotified('Salesforce value updated');
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH'
+            && str_contains($request->url(), '/services/data/v65.0/sobjects/Opportunity/006000000000001AAA')
+            && $request->data()['Amount'] === 36.5);
     }
 
     public function test_approved_revision_rejects_validation_actions(): void

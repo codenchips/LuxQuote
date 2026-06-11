@@ -18,8 +18,9 @@ class ActivityLogsTable
                     ->placeholder(fn (ActivityLog $record): string => $record->user_email_snapshot)
                     ->searchable(),
 
-                TextColumn::make('project_name_snapshot')
-                    ->label('Project')
+                TextColumn::make('project.reference_number')
+                    ->label('Reference')
+                    ->placeholder('No project')
                     ->searchable()
                     ->sortable(),
 
@@ -33,6 +34,11 @@ class ActivityLogsTable
                 TextColumn::make('action_performed')
                     ->label('Action Performed')
                     ->html()
+                    ->wrap()
+                    ->width('136ch')
+                    ->extraCellAttributes([
+                        'class' => 'max-w-[136ch] whitespace-normal break-words',
+                    ])
                     ->getStateUsing(function (ActivityLog $record): string {
                         $payload = $record->payload ?? [];
 
@@ -57,6 +63,19 @@ class ActivityLogsTable
                             })(),
 
                             'project.created' => 'Created the project structure',
+
+                            'project.details_saved' => (function () use ($payload): string {
+                                $url = $payload['salesforce_pdf_url'] ?? null;
+                                $filename = e((string) ($payload['salesforce_pdf_filename'] ?? 'schedule PDF'));
+
+                                if (blank($url)) {
+                                    return 'Saved project details';
+                                }
+
+                                $href = e((string) $url);
+
+                                return "Saved project details and uploaded <strong>{$filename}</strong> to Salesforce: <a href=\"{$href}\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-primary-600 underline dark:text-primary-400\">View file</a>";
+                            })(),
 
                             'project.updated' => (function () use ($payload): string {
                                 if (empty($payload)) {
@@ -83,6 +102,10 @@ class ActivityLogsTable
                             'project.deleted' => 'Permanently <strong>deleted</strong> the project',
 
                             'revision.created' => 'Created a new snapshot: <strong>Revision #'.e((string) ($payload['revision_number'] ?? '?')).'</strong>',
+
+                            'schedule_pdf.generated' => 'Generated schedule PDF <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
+
+                            'user.login' => 'Logged in',
 
                             'product.added' => (function () use ($payload): string {
                                 $qty = e((string) ($payload['qty'] ?? '1'));
@@ -150,7 +173,11 @@ class ActivityLogsTable
                 TextColumn::make('created_at')
                     ->label('Date & Time')
                     ->dateTime('d M Y H:i')
-                    ->sortable(),
+                    ->sortable()
+                    ->width('11rem')
+                    ->extraCellAttributes([
+                        'class' => 'whitespace-nowrap',
+                    ]),
             ])
             ->filters([
                 SelectFilter::make('action_type')
@@ -159,9 +186,12 @@ class ActivityLogsTable
                         'area.created' => 'Area Created',
                         'area.deleted' => 'Area Deleted',
                         'project.created' => 'Project Created',
+                        'project.details_saved' => 'Project Details Saved',
                         'project.updated' => 'Project Updated',
                         'project.deleted' => 'Project Deleted',
                         'revision.created' => 'Revision Created',
+                        'schedule_pdf.generated' => 'Schedule PDF Generated',
+                        'user.login' => 'User Login',
                         'product.added' => 'Product Added',
                         'line.updated' => 'Line Updated',
                         'line.qty_updated' => 'Quantity / Price Updated (legacy)',

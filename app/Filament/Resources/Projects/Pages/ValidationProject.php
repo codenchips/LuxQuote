@@ -9,6 +9,9 @@ use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
 use App\Services\ProjectRevisionValidator;
+use App\Services\SalesforceService;
+use Filament\Actions\Action;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Builder;
@@ -49,6 +52,27 @@ class ValidationProject extends ViewRecord
         }
 
         return new HtmlString(implode(' &middot; ', $parts));
+    }
+
+    protected function getHeaderActions(): array
+    {
+        if ($this->activeRevisionApproved) {
+            return [];
+        }
+
+        return [
+            Action::make('openApproveRevisionModal')
+                ->label('Approve Revision')
+                ->icon('heroicon-o-check-badge')
+                ->color(fn (): string => $this->activeRevisionValidated ? 'success' : 'gray')
+                ->disabled(fn (): bool => ! $this->activeRevisionValidated)
+                ->action('openApproveRevisionModal'),
+
+            Action::make('runValidation')
+                ->label('Run Validation')
+                ->icon('heroicon-o-arrow-path')
+                ->action('runValidation'),
+        ];
     }
 
     /**
@@ -159,10 +183,13 @@ class ValidationProject extends ViewRecord
             'status' => ProjectRevisionStatus::Approved,
         ]);
 
+        $this->syncApprovedRevisionValueToSalesforce($revision);
+
         $this->approveRevisionModalOpen = false;
         unset($this->activeRevisionApproved);
         unset($this->activeRevisionValidated);
         $this->record->load('activeRevision');
+        $this->refreshHeaderActions();
     }
 
     public function approveIssue(string $issueKey): void
@@ -405,6 +432,47 @@ class ValidationProject extends ViewRecord
         unset($this->activeRevisionValidated);
         unset($this->activeRevisionApproved);
         $this->record->load('activeRevision');
+    }
+
+    private function syncApprovedRevisionValueToSalesforce(ProjectRevision $revision): void
+    {
+        if (! $this->record->salesforce_project) {
+            return;
+        }
+
+        $total = $this->revisionTotal($revision);
+        $result = app(SalesforceService::class)->updateOpportunityAmount($this->record, $total);
+
+        if (! $result['success']) {
+            Notification::make()
+                ->title('Salesforce value update failed')
+                ->body($result['message'] ?? 'The Opportunity amount could not be updated.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->title('Salesforce value updated')
+            ->body('Opportunity Amount updated to £'.number_format($total, 2).'.')
+            ->success()
+            ->send();
+    }
+
+    private function revisionTotal(ProjectRevision $revision): float
+    {
+        return (float) $revision->areas()
+            ->with('lines')
+            ->get()
+            ->flatMap->lines
+            ->sum(fn (ProjectLine $line): float => (float) ($line->qty ?? 0) * (float) ($line->unit_price ?? 0));
+    }
+
+    private function refreshHeaderActions(): void
+    {
+        $this->cachedHeaderActions = [];
+        $this->cacheInteractsWithHeaderActions();
     }
 
     private function validator(): ProjectRevisionValidator

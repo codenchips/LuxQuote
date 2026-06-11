@@ -1,12 +1,8 @@
-<header class="fi-header fi-header-has-breadcrumbs">
+<header class="fi-header">
     <div class="flex w-full items-start justify-between gap-4">
 
-        {{-- Breadcrumbs + heading block (left side) --}}
+        {{-- Heading block (left side) --}}
         <div class="min-w-0">
-            @if ($breadcrumbs)
-                <x-filament::breadcrumbs :breadcrumbs="$breadcrumbs" />
-            @endif
-
             @if (filled($heading))
                 <h1 class="fi-header-heading">
                     {{ $heading }}
@@ -20,13 +16,17 @@
             @endif
         </div>
 
-        {{-- Right side: project sub-links (same row as breadcrumbs) + page actions --}}
-        <div class="flex flex-col items-end gap-3 shrink-0">
+        {{-- Right side: project sub-links + page actions --}}
+        <div class="flex flex-col items-end gap-5 shrink-0">
 
             {{-- Sub-page text links --}}
             @if(isset($subLinks) && count($subLinks))
-                <nav class="flex items-center gap-5 text-sm">
+                <nav class="flex items-center gap-3 text-sm">
                     @foreach($subLinks as $link)
+                        @if(! $loop->first)
+                            <span class="text-gray-600 dark:text-gray-600" aria-hidden="true">|</span>
+                        @endif
+
                         <a
                             href="{{ $link['url'] }}"
                             @class([
