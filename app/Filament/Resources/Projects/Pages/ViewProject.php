@@ -639,7 +639,7 @@ class ViewProject extends ViewRecord
 
                     $area->lines()->create([
                         'product_id' => $product?->id,
-                        'code' => $product?->sku ?? $row['sku'],
+                        'code' => $product?->sku ?? $this->normaliseSku($row['sku']),
                         'description' => $product?->displayDescription() ?? '',
                         'qty' => $row['qty'],
                         'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
@@ -691,7 +691,7 @@ class ViewProject extends ViewRecord
     {
         $data = [
             'product_id' => $product?->id,
-            'code' => $product?->sku ?? $row['sku'],
+            'code' => $product?->sku ?? $this->normaliseSku($row['sku']),
             'description' => $product?->displayDescription() ?? '',
             'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
             'unit_price' => $row['unit_price'] ?? $product?->price,
@@ -899,6 +899,10 @@ class ViewProject extends ViewRecord
 
         if ($field === 'qty') {
             return max(1, (int) $value);
+        }
+
+        if ($field === 'code') {
+            return $this->normaliseSku((string) $value);
         }
 
         if ($field === 'unit_price') {

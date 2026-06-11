@@ -265,13 +265,13 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(ViewProject::class, ['record' => $project->id])
             ->call('openPasteProductsModal', $area->id)
             ->assertSet('pasteProductsModalOpen', true)
-            ->set('pastedProductData', "2\tTAB-SKU\t\"Discarded quoted\nmultiline description\"\t12.50\n3\tSECOND-SKU\tDiscarded description\t24.75")
+            ->set('pastedProductData', "2\tTAB-SKU\t\"Discarded quoted\nmultiline description\"\t12.50\n3\tSECOND-SKU\tDiscarded description\t24.75\n1\tcustom-lower\tUnknown product\t5.00")
             ->call('addPastedProducts')
             ->assertSet('pasteProductsModalOpen', false);
 
         $lines = $area->lines()->orderBy('sort_order')->get();
 
-        $this->assertCount(3, $lines);
+        $this->assertCount(4, $lines);
         $this->assertSame($existingLine->id, $lines[0]->id);
         $this->assertSame('Unpriced', $lines[0]->status);
 
@@ -290,6 +290,10 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame('24.75', $lines[2]->unit_price);
         $this->assertSame('Priced', $lines[2]->status);
         $this->assertSame(ProjectLineType::Standard, $lines[2]->type);
+
+        $this->assertNull($lines[3]->product_id);
+        $this->assertSame('CUSTOM-LOWER', $lines[3]->code);
+        $this->assertSame(ProjectLineType::Custom, $lines[3]->type);
     }
 
     public function test_paste_products_updates_matching_lines_in_one_area(): void
@@ -923,6 +927,25 @@ class AdminProjectResourceTest extends TestCase
         });
 
         $this->assertSame('Active revision line', $activeRevisionLine->fresh()->description);
+    }
+
+    public function test_free_typed_line_code_is_stored_uppercase(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $line = $project->activeRevision->areas()->first()->lines()->create([
+            'description' => 'Manual line',
+            'qty' => 1,
+            'type' => ProjectLineType::Custom->value,
+            'sort_order' => 0,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('updateLineField', $line->id, 'code', 'abc123x');
+
+        $this->assertSame('ABC123X', $line->fresh()->code);
     }
 
     public function test_line_fields_can_be_cleared_for_spacing_rows(): void

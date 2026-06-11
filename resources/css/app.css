@@ -11,3 +11,22 @@
 
     --color-primary-blue: #192542;
 }
+
+@media (min-width: 1024px) {
+    .fi-body.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar:not(.fi-sidebar-open) {
+        width: 4.5rem;
+    }
+
+    .fi-body.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar:not(.fi-sidebar-open) .fi-sidebar-nav {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }
+
+    .fi-body.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar:not(.fi-sidebar-open) .fi-sidebar-nav-groups {
+        row-gap: 0.5rem;
+    }
+
+    .fi-body.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar:not(.fi-sidebar-open) .fi-sidebar-item-btn {
+        width: 3rem;
+    }
+}

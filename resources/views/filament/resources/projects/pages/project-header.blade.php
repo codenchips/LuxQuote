@@ -1,4 +1,4 @@
-<header class="fi-header">
+<header class="fi-header sticky top-0 z-30 border-b border-gray-200 bg-white/95 py-4 backdrop-blur dark:border-white/10 dark:bg-gray-950/95">
     <div class="flex w-full items-start justify-between gap-4">
 
         {{-- Heading block (left side) --}}
@@ -21,7 +21,7 @@
 
             {{-- Sub-page text links --}}
             @if(isset($subLinks) && count($subLinks))
-                <nav class="flex items-center gap-6 text-sm">
+                <nav class="flex items-center gap-6 text-base font-medium">
                     @foreach($subLinks as $link)
                         @if(! $loop->first)
                             <span class="text-gray-600 dark:text-gray-600" aria-hidden="true">|</span>
@@ -29,12 +29,18 @@
 
                         <a
                             href="{{ $link['url'] }}"
+                            @if($link['active'])
+                                style="color: #f59e0b;"
+                            @endif
                             @class([
-                                'transition-colors duration-150 whitespace-nowrap',
-                                'text-gray-400 hover:text-gray-200 dark:text-gray-400 dark:hover:text-gray-200' => !$link['active'],
-                                'text-white font-semibold underline underline-offset-4 decoration-primary-500' => $link['active'],
+                                'inline-flex items-center gap-1.5 transition-colors duration-150 whitespace-nowrap',
+                                'text-white hover:text-amber-300 dark:text-white dark:hover:text-amber-300' => !$link['active'],
+                                'font-semibold' => $link['active'],
                             ])
-                        >{{ $link['label'] }}</a>
+                        >
+                            <x-dynamic-component :component="$link['icon']" class="h-4 w-4" />
+                            <span>{{ $link['label'] }}</span>
+                        </a>
                     @endforeach
                 </nav>
             @endif

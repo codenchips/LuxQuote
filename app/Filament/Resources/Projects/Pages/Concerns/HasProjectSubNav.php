@@ -27,23 +27,24 @@ trait HasProjectSubNav
         ]);
     }
 
-    /** @return array<array{label: string, url: string, active: bool}> */
+    /** @return array<array{label: string, url: string, icon: string, active: bool}> */
     private function buildProjectSubLinks(): array
     {
         $recordId = $this->record->getKey();
         $currentUrl = request()->url();
 
         $links = [
-            ['label' => 'Edit',       'url' => ProjectResource::getUrl('view', ['record' => $recordId])],
-            ['label' => 'Validation', 'url' => ValidationProject::getUrl(['record' => $recordId])],
-            ['label' => 'Project History', 'url' => ProjectHistory::getUrl(['record' => $recordId])],
-            ['label' => 'Output',     'url' => OutputProject::getUrl(['record' => $recordId])],
+            ['label' => 'Edit', 'icon' => 'heroicon-o-pencil-square', 'url' => ProjectResource::getUrl('view', ['record' => $recordId])],
+            ['label' => 'Validation', 'icon' => 'heroicon-o-shield-check', 'url' => ValidationProject::getUrl(['record' => $recordId])],
+            ['label' => 'Output', 'icon' => 'heroicon-o-arrow-down-tray', 'url' => OutputProject::getUrl(['record' => $recordId])],
+            ['label' => 'Project History', 'icon' => 'heroicon-o-clock', 'url' => ProjectHistory::getUrl(['record' => $recordId])],
         ];
 
         return array_map(function (array $item) use ($currentUrl): array {
             return [
                 'label' => $item['label'],
                 'url' => $item['url'],
+                'icon' => $item['icon'],
                 'active' => rtrim($currentUrl, '/') === rtrim($item['url'], '/'),
             ];
         }, $links);

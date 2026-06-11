@@ -14,6 +14,7 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Assets\Css;
 use Filament\Support\Enums\Width;
+use Filament\View\PanelsRenderHook;
 use Filament\Widgets\AccountWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -40,7 +41,12 @@ class AdminPanelProvider extends PanelProvider
             ->defaultThemeMode(ThemeMode::Dark)
             ->breadcrumbs(false)
             ->sidebarWidth('13rem')
+            ->sidebarCollapsibleOnDesktop()
             ->maxContentWidth(Width::Full)
+            ->renderHook(
+                PanelsRenderHook::BODY_START,
+                fn (): string => view('filament.partials.sidebar-default-collapsed')->render(),
+            )
             ->assets([
                 Css::make('app-styles', Vite::asset('resources/css/app.css')),
             ])
