@@ -201,6 +201,18 @@ class ViewProject extends ViewRecord
             ->get();
     }
 
+    /** @return array{qty: int, items: int, value: float} */
+    public function getRevisionTotals(): array
+    {
+        $areas = $this->getAreas();
+
+        return [
+            'qty' => $areas->sum(fn (ProjectArea $area): int => $area->line_total_qty),
+            'items' => $areas->sum(fn (ProjectArea $area): int => $area->lines->count()),
+            'value' => $areas->sum(fn (ProjectArea $area): float => $area->line_total),
+        ];
+    }
+
     private function afterProjectDetailsSaved(): void
     {
         $this->record->refresh();

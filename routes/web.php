@@ -9,6 +9,15 @@ use Spatie\LaravelPdf\Facades\Pdf;
 Route::middleware('auth')->group(function (): void {
     Route::get('/projects/{project}/pdf/schedule', [ProjectPdfController::class, 'schedule'])
         ->name('projects.pdf.schedule');
+
+    Route::get('/projects/{project}/pdf/quote', [ProjectPdfController::class, 'quote'])
+        ->name('projects.pdf.quote');
+
+    Route::get('/projects/{project}/export/csv', [ProjectPdfController::class, 'csv'])
+        ->name('projects.export.csv');
+
+    Route::get('/projects/{project}/export/unpriced-csv', [ProjectPdfController::class, 'unpricedCsv'])
+        ->name('projects.export.unpriced-csv');
 });
 
 Route::get('/test-pdf', function () {

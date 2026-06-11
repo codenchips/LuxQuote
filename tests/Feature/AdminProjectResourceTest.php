@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Enums\ProjectLineType;
+use App\Enums\ProjectRevisionStatus;
 use App\Enums\ProjectVisibility;
 use App\Filament\Resources\ActivityLogs\Pages\ListActivityLogs;
 use App\Filament\Resources\Projects\Pages\ListProjects;
+use App\Filament\Resources\Projects\Pages\OutputProject;
 use App\Filament\Resources\Projects\Pages\ProjectHistory;
 use App\Filament\Resources\Projects\Pages\ValidationProject;
 use App\Filament\Resources\Projects\Pages\ViewProject;
@@ -510,6 +512,211 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(ProjectHistory::class, ['record' => $project->id])
             ->assertSee('Generated schedule PDF')
             ->assertSee('schedule-PDF-REF-R1.pdf');
+    }
+
+    public function test_project_page_displays_revision_totals(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Totals Project',
+        ]);
+        $area = $project->activeRevision->areas()->first();
+        $area->lines()->createMany([
+            [
+                'code' => 'TOTAL-1',
+                'description' => 'First total line',
+                'qty' => 2,
+                'type' => ProjectLineType::Standard->value,
+                'unit_price' => 10.00,
+                'sort_order' => 0,
+            ],
+            [
+                'code' => 'TOTAL-2',
+                'description' => 'Second total line',
+                'qty' => 3,
+                'type' => ProjectLineType::Standard->value,
+                'unit_price' => 7.50,
+                'sort_order' => 1,
+            ],
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->assertSee('Total Qty')
+            ->assertSee('5')
+            ->assertSee('Line Items')
+            ->assertSee('2')
+            ->assertSee('Project Total')
+            ->assertSee('42.50');
+    }
+
+    public function test_admin_can_view_output_options_for_the_active_revision(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Output Project',
+            'reference_number' => 'OUT-001',
+        ]);
+
+        Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->assertSee('Output Project')
+            ->assertSee('Open')
+            ->assertSee('Rev 1')
+            ->assertSee('Quote Approval')
+            ->assertSee('Approval Not Requested')
+            ->assertSee('Validation must pass before requesting approval')
+            ->assertSee('Quote PDF requires')
+            ->assertSee('Quote PDF')
+            ->assertSee('Priced Schedule')
+            ->assertSee('Unpriced Schedule')
+            ->assertSee(route('projects.pdf.schedule', [
+                'project' => $project,
+                'revision' => $project->active_revision_id,
+            ]), false)
+            ->assertSee(route('projects.export.unpriced-csv', [
+                'project' => $project,
+                'revision' => $project->active_revision_id,
+            ]), false);
+    }
+
+    public function test_admin_can_export_the_active_revision_as_csv_with_prices(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'CSV-001',
+        ]);
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
+        ]);
+        $area = $project->activeRevision->areas()->first();
+        $area->lines()->create([
+            'code' => 'CSV-SKU',
+            'ref' => 'A1',
+            'description' => 'CSV product',
+            'qty' => 3,
+            'type' => ProjectLineType::Standard->value,
+            'unit_price' => 12.50,
+            'notes' => 'CSV notes',
+            'status' => 'Approved',
+            'sort_order' => 0,
+        ]);
+
+        $response = $this->get(route('projects.export.csv', [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+        ]));
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+        $csv = $response->streamedContent();
+
+        $this->assertStringContainsString('Area,Code,Ref,Description,Qty,Type,"Unit Price","Line Total",Notes,Status', $csv);
+        $this->assertStringContainsString('CSV-SKU', $csv);
+        $this->assertStringContainsString('12.50', $csv);
+        $this->assertStringContainsString('37.50', $csv);
+    }
+
+    public function test_quote_pdf_can_be_generated_for_the_active_revision(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'QUOTE-REF',
+        ]);
+        $revision = $project->activeRevision;
+        $revision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        $this->instance(ProjectSchedulePdfService::class, new class
+        {
+            public function quoteFilename(Project $project, ProjectRevision $revision): string
+            {
+                return 'quote-QUOTE-REF-R1.pdf';
+            }
+
+            public function quoteBuilder(Project $project, ProjectRevision $revision): object
+            {
+                return new class
+                {
+                    public function inline(string $filename): self
+                    {
+                        return $this;
+                    }
+
+                    public function toResponse($request)
+                    {
+                        return response('fake quote pdf');
+                    }
+                };
+            }
+        });
+
+        $this->get(route('projects.pdf.quote', [
+            'project' => $project,
+            'revision' => $revision->id,
+        ]))
+            ->assertOk()
+            ->assertSee('fake quote pdf');
+    }
+
+    public function test_priced_quote_template_displays_totals(): void
+    {
+        $admin = User::factory()->admin()->create(['name' => 'Quote User']);
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Quote Totals Project',
+            'reference_number' => 'QT-001',
+        ]);
+        $revision = $project->activeRevision;
+        $area = $revision->areas()->first();
+        $area->lines()->createMany([
+            [
+                'code' => 'QUOTE-1',
+                'description' => 'First quote line',
+                'qty' => 4,
+                'type' => ProjectLineType::Standard->value,
+                'unit_price' => 11.25,
+                'sort_order' => 0,
+            ],
+            [
+                'code' => 'QUOTE-2',
+                'description' => 'Second quote line',
+                'qty' => 2,
+                'type' => ProjectLineType::Standard->value,
+                'unit_price' => 20.00,
+                'sort_order' => 1,
+            ],
+        ]);
+
+        $areas = ProjectArea::where('project_revision_id', $revision->id)
+            ->with('lines')
+            ->orderBy('sort_order')
+            ->get();
+
+        $html = view('pdfs.schedule', [
+            'project' => $project->load('user'),
+            'revision' => $revision,
+            'areas' => $areas,
+            'documentTitle' => 'Lighting Quote',
+            'showPrices' => true,
+        ])->render();
+
+        $this->assertStringContainsString('Quote total', $html);
+        $this->assertStringContainsString('&pound;85.00', $html);
+        $this->assertStringContainsString('Total quantity', $html);
+        $this->assertStringContainsString('Line items', $html);
     }
 
     public function test_admin_can_paste_products_with_optional_description_and_price_columns(): void

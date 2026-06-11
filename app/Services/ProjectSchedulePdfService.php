@@ -19,12 +19,21 @@ class ProjectSchedulePdfService
         ])->implode('-').'.pdf';
     }
 
+    public function quoteFilename(Project $project, ProjectRevision $revision): string
+    {
+        return collect([
+            'quote',
+            $project->reference_number ?? 'proj-'.$project->id,
+            'R'.$revision->revision_number,
+        ])->implode('-').'.pdf';
+    }
+
     public function content(Project $project, ProjectRevision $revision): string
     {
         return base64_decode($this->builder($project, $revision)->base64(), true) ?: '';
     }
 
-    public function builder(Project $project, ProjectRevision $revision): PdfBuilder
+    public function builder(Project $project, ProjectRevision $revision, string $documentType = 'schedule'): PdfBuilder
     {
         $areas = ProjectArea::where('project_revision_id', $revision->id)
             ->with([
@@ -60,6 +69,9 @@ class ProjectSchedulePdfService
             'project' => $project->load('user'),
             'revision' => $revision,
             'areas' => $areas,
+            'documentType' => $documentType,
+            'documentTitle' => $documentType === 'quote' ? 'Lighting Quote' : 'Lighting Schedule',
+            'showPrices' => $documentType === 'quote',
         ])
             ->withBrowsershot(function ($browsershot) use ($footerHtml): void {
                 $browsershot->noSandbox();
@@ -68,5 +80,10 @@ class ProjectSchedulePdfService
                 $browsershot->footerHtml($footerHtml);
             })
             ->format('A4');
+    }
+
+    public function quoteBuilder(Project $project, ProjectRevision $revision): PdfBuilder
+    {
+        return $this->builder($project, $revision, 'quote');
     }
 }

@@ -43,6 +43,22 @@
     </div>
     @endif
 
+    @php $revisionTotals = $this->getRevisionTotals(); @endphp
+    <div class="mb-4 grid gap-3 sm:grid-cols-3">
+        <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
+            <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Qty</div>
+            <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{{ number_format($revisionTotals['qty']) }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
+            <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Line Items</div>
+            <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{{ number_format($revisionTotals['items']) }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
+            <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Project Total</div>
+            <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">&pound;{{ number_format($revisionTotals['value'], 2) }}</div>
+        </div>
+    </div>
+
     {{-- Areas accordion list --}}
     <div class="space-y-3">
         @forelse($this->getAreas() as $area)

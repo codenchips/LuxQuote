@@ -1,5 +1,5 @@
 {{--
-    Tamlite Lighting Schedule PDF
+    Tamlite Lighting Schedule / Quote PDF
     Standalone template — does not extend master.
     Position:fixed header + footer repeat on every printed page via headless Chrome.
 --}}
@@ -11,6 +11,9 @@
 
     $grandQty   = $areas->sum(fn ($a) => $a->lines->sum('qty'));
     $grandItems = $areas->sum(fn ($a) => $a->lines->count());
+    $grandTotal = $areas->sum(fn ($a) => $a->lines->sum(fn ($line) => ((int) ($line->qty ?? 0)) * (float) ($line->unit_price ?? 0)));
+    $showPrices = $showPrices ?? false;
+    $documentTitle = $documentTitle ?? 'Lighting Schedule';
 
     // Build a set of SKUs that actually exist in the products table,
     // so custom/edited codes never get a datasheet link.
@@ -23,7 +26,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Lighting Schedule &mdash; {{ $project->reference_number ?? $project->name }}</title>
+    <title>{{ $documentTitle }} &mdash; {{ $project->reference_number ?? $project->name }}</title>
     <style>
         /* ── Page & reset ───────────────────────────────────────────────── */
         @page          { size: A4 portrait; margin: 12mm 0 20mm; }
@@ -164,6 +167,40 @@
             margin-bottom: 5mm;
         }
 
+        .quote-summary {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 5mm;
+        }
+
+        .quote-summary-table {
+            width: 58mm;
+            border-collapse: collapse;
+            font-size: 8.5pt;
+            break-inside: avoid;
+        }
+
+        .quote-summary-table td {
+            padding: 1.5mm 2mm;
+            border-bottom: 0.5pt solid #e5e7eb;
+        }
+
+        .quote-summary-table .label {
+            color: #666;
+        }
+
+        .quote-summary-table .value {
+            text-align: right;
+            font-weight: 700;
+            color: #192542;
+        }
+
+        .quote-summary-table .grand td {
+            border-top: 1pt solid #192542;
+            border-bottom: none;
+            font-size: 10pt;
+        }
+
         /* ── Area block ──────────────────────────────────────────────────── */
         .area-block {
             margin-bottom: 7mm;
@@ -232,8 +269,10 @@
         .col-qty  { width: 6%;  text-align: center; }
         .col-note { width: 32%; font-size: 8pt; color: #555; }
         .col-ds   { width: 8%;  text-align: center; }
+        .col-money { width: 9%; text-align: right; white-space: nowrap; }
 
         th.col-qty { text-align: center; }
+        th.col-money { text-align: right; }
 
         .ds-link {
             color: #1a56db;
@@ -289,7 +328,7 @@
 
         {{-- Right: document title + reference meta --}}
         <div class="header-meta">
-            <div class="doc-title">Lighting Schedule</div>
+            <div class="doc-title">{{ $documentTitle }}</div>
             <div class="ref-lines">
                 <div><span class="ref-label">Ref: </span><span class="ref-val">{{ $project->reference_number ?? '-' }}</span></div>
                 <div><span class="ref-label">Rev: </span><span class="ref-val">R{{ $revision->revision_number }}</span></div>
@@ -327,21 +366,47 @@
 
     <h2 class="section-heading">Schedule by Area</h2>
 
+    @if($showPrices)
+    <div class="quote-summary">
+        <table class="quote-summary-table">
+            <tr>
+                <td class="label">Total quantity</td>
+                <td class="value">{{ number_format($grandQty) }}</td>
+            </tr>
+            <tr>
+                <td class="label">Line items</td>
+                <td class="value">{{ number_format($grandItems) }}</td>
+            </tr>
+            <tr class="grand">
+                <td class="label">Quote total</td>
+                <td class="value">&pound;{{ number_format($grandTotal, 2) }}</td>
+            </tr>
+        </table>
+    </div>
+    @endif
+
     @foreach ($areas as $area)
         @if($area->lines->isNotEmpty())
-        @php $areaQty = $area->lines->sum('qty'); @endphp
+        @php
+            $areaQty = $area->lines->sum('qty');
+            $areaTotal = $area->lines->sum(fn ($line) => ((int) ($line->qty ?? 0)) * (float) ($line->unit_price ?? 0));
+        @endphp
         <div class="area-block">
 
             <table class="line-table">
                 <thead>
                     <tr>
-                        <td colspan="6" class="area-header-cell">
+                        <td colspan="{{ $showPrices ? 8 : 6 }}" class="area-header-cell">
                             <div class="area-header-content">
                                 <span class="area-name">{{ $area->name }}</span>
                                 <span class="area-summary">
                                     {{ $area->lines->count() }} {{ Str::plural('item', $area->lines->count()) }}
                                     &nbsp;&middot;&nbsp;
                                     qty {{ number_format($areaQty) }}
+                                    @if($showPrices)
+                                        &nbsp;&middot;&nbsp;
+                                        &pound;{{ number_format($areaTotal, 2) }}
+                                    @endif
                                 </span>
                             </div>
                         </td>
@@ -351,6 +416,10 @@
                         <th class="col-ref">Ref</th>
                         <th class="col-desc">Description</th>
                         <th class="col-qty">Qty</th>
+                        @if($showPrices)
+                            <th class="col-money">Unit Price</th>
+                            <th class="col-money">Line Total</th>
+                        @endif
                         <th class="col-note">Notes</th>
                         <th class="col-ds">Datasheet</th>
                     </tr>
@@ -369,6 +438,14 @@
                         <td class="col-code">{{ $line->ref ?? '' }}</td>
                         <td class="col-desc">{{ $line->description ?? '' }}</td>
                         <td class="col-qty">{{ $line->qty ?? '' }}</td>
+                        @if($showPrices)
+                            @php
+                                $unitPrice = (float) ($line->unit_price ?? 0);
+                                $lineTotal = ((int) ($line->qty ?? 0)) * $unitPrice;
+                            @endphp
+                            <td class="col-money">&pound;{{ number_format($unitPrice, 2) }}</td>
+                            <td class="col-money">&pound;{{ number_format($lineTotal, 2) }}</td>
+                        @endif
                         <td class="col-note">{{ $line->notes ?? '' }}</td>
                         <td class="col-ds">
                             @if($line->code && isset($existingSkus[$line->code]))
