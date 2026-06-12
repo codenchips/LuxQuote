@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\AvatarProviders\SkyBlueUiAvatarsProvider;
 use App\Filament\Pages\Auth\EditProfile;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Enums\ThemeMode;
@@ -39,6 +40,7 @@ class AdminPanelProvider extends PanelProvider
                     ->recoverable(),
             ])
             ->defaultThemeMode(ThemeMode::Dark)
+            ->defaultAvatarProvider(SkyBlueUiAvatarsProvider::class)
             ->breadcrumbs(false)
             ->sidebarWidth('13rem')
             ->sidebarCollapsibleOnDesktop()

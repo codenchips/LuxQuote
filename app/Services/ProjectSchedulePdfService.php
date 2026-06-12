@@ -12,25 +12,22 @@ class ProjectSchedulePdfService
 {
     public function filename(Project $project, ProjectRevision $revision): string
     {
-        return collect([
-            'schedule',
-            $project->reference_number ?? 'proj-'.$project->id,
-            'R'.$revision->revision_number,
-        ])->implode('-').'.pdf';
+        return $this->documentFilename('Lighting Schedule', $project, $revision);
     }
 
     public function quoteFilename(Project $project, ProjectRevision $revision): string
     {
-        return collect([
-            'quote',
-            $project->reference_number ?? 'proj-'.$project->id,
-            'R'.$revision->revision_number,
-        ])->implode('-').'.pdf';
+        return $this->documentFilename('Lighting Quote', $project, $revision);
     }
 
     public function content(Project $project, ProjectRevision $revision): string
     {
-        return base64_decode($this->builder($project, $revision)->base64(), true) ?: '';
+        return $this->contentFromBuilder($this->builder($project, $revision));
+    }
+
+    public function contentFromBuilder(PdfBuilder $builder): string
+    {
+        return base64_decode($builder->base64(), true) ?: '';
     }
 
     public function builder(Project $project, ProjectRevision $revision, string $documentType = 'schedule'): PdfBuilder
@@ -85,5 +82,22 @@ class ProjectSchedulePdfService
     public function quoteBuilder(Project $project, ProjectRevision $revision): PdfBuilder
     {
         return $this->builder($project, $revision, 'quote');
+    }
+
+    private function documentFilename(string $title, Project $project, ProjectRevision $revision): string
+    {
+        return collect([
+            $title,
+            $project->reference_number ?? 'proj-'.$project->id,
+            'R'.$revision->revision_number,
+            now()->format('Ymd-His'),
+        ])
+            ->map(fn (string $part): string => $this->filenamePart($part))
+            ->implode('-').'.pdf';
+    }
+
+    private function filenamePart(string $part): string
+    {
+        return trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-');
     }
 }

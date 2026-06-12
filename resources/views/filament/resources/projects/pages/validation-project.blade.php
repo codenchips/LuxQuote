@@ -113,7 +113,7 @@
                                 </x-filament::button>
                             @endif
 
-                            @if($issue['type'] === 'price_mismatch' && $canEditPrices && $canUpdateValidationLines)
+                            @if($issue['type'] === 'price_mismatch' && $canEditPrices && $canUpdateValidationLines && ($issue['rrp'] ?? null) !== null)
                                 <x-filament::button
                                     wire:click="matchIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }})"
                                     color="gray"

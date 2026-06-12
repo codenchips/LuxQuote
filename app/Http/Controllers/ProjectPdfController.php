@@ -8,6 +8,9 @@ use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectRevision;
 use App\Services\ProjectSchedulePdfService;
+use App\Services\SalesforceService;
+use Filament\Actions\Action;
+use Filament\Notifications\Notification;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -27,6 +30,17 @@ class ProjectPdfController extends Controller
 
         $pdf = app(ProjectSchedulePdfService::class);
         $filename = $pdf->filename($project, $revision);
+        $builder = $pdf->builder($project, $revision);
+
+        if ($this->shouldUploadPdfToSalesforce($project)) {
+            $this->uploadPdfToSalesforce(
+                project: $project,
+                revision: $revision,
+                filename: $filename,
+                pdfContent: $pdf->contentFromBuilder($builder),
+                documentLabel: 'Lighting Schedule',
+            );
+        }
 
         ActivityLog::create([
             'user_id' => $user->id,
@@ -40,7 +54,7 @@ class ProjectPdfController extends Controller
             ],
         ]);
 
-        return $pdf->builder($project, $revision)
+        return $builder
             ->inline($filename)
             ->toResponse($request);
     }
@@ -66,8 +80,31 @@ class ProjectPdfController extends Controller
 
         $pdf = app(ProjectSchedulePdfService::class);
         $filename = $pdf->quoteFilename($project, $revision);
+        $builder = $pdf->quoteBuilder($project, $revision);
 
-        return $pdf->quoteBuilder($project, $revision)
+        if ($this->shouldUploadPdfToSalesforce($project)) {
+            $this->uploadPdfToSalesforce(
+                project: $project,
+                revision: $revision,
+                filename: $filename,
+                pdfContent: $pdf->contentFromBuilder($builder),
+                documentLabel: 'Lighting Quote',
+            );
+        }
+
+        ActivityLog::create([
+            'user_id' => $request->user()->id,
+            'project_id' => $project->id,
+            'action_type' => 'quote_pdf.generated',
+            'user_email_snapshot' => $request->user()->email,
+            'project_name_snapshot' => $project->name,
+            'revision_number' => $revision->revision_number,
+            'payload' => [
+                'filename' => $filename,
+            ],
+        ]);
+
+        return $builder
             ->inline($filename)
             ->toResponse($request);
     }
@@ -189,5 +226,61 @@ class ProjectPdfController extends Controller
 
         return ProjectRevision::where('project_id', $project->id)
             ->findOrFail($revisionId);
+    }
+
+    private function uploadPdfToSalesforce(
+        Project $project,
+        ProjectRevision $revision,
+        string $filename,
+        string $pdfContent,
+        string $documentLabel,
+    ): void {
+        $result = app(SalesforceService::class)->uploadPdf(
+            project: $project,
+            pdfContent: $pdfContent,
+            filename: $filename,
+        );
+
+        if (! $result['success']) {
+            Notification::make()
+                ->title($documentLabel.' upload failed')
+                ->body($result['message'] ?? 'The PDF could not be uploaded to Salesforce.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $salesforceUrl = $result['url'] ?? null;
+
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'project_id' => $project->id,
+            'action_type' => 'salesforce_pdf.uploaded',
+            'user_email_snapshot' => auth()->user()?->email ?? '',
+            'project_name_snapshot' => $project->name,
+            'revision_number' => $revision->revision_number,
+            'payload' => [
+                'document_label' => $documentLabel,
+                'filename' => $filename,
+                'salesforce_pdf_url' => $salesforceUrl,
+            ],
+        ]);
+
+        Notification::make()
+            ->title($documentLabel.' uploaded to Salesforce')
+            ->body($salesforceUrl ? 'The PDF is available on the Salesforce Opportunity.' : 'The PDF was uploaded to the Salesforce Opportunity.')
+            ->actions($salesforceUrl ? [
+                Action::make('viewSalesforceFile')
+                    ->label('View in Salesforce')
+                    ->url($salesforceUrl, shouldOpenInNewTab: true),
+            ] : [])
+            ->success()
+            ->send();
+    }
+
+    private function shouldUploadPdfToSalesforce(Project $project): bool
+    {
+        return $project->salesforce_project || filled($project->salesforce_id);
     }
 }

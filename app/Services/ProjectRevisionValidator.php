@@ -43,8 +43,7 @@ class ProjectRevisionValidator
             ->flatMap(fn (ProjectArea $area): array => [
                 ...$this->manualFlaggedIssues($area),
                 ...$this->duplicateSkuIssues($area),
-                ...$this->missingProductIssues($area, $productsBySku),
-                ...$this->priceMismatchIssues($area, $productsBySku),
+                ...$this->priceReviewIssues($area, $productsBySku),
             ])
             ->values()
             ->all();
@@ -197,39 +196,7 @@ class ProjectRevisionValidator
      *     quote_price?: string|null
      * }>
      */
-    private function missingProductIssues(ProjectArea $area, Collection $productsBySku): array
-    {
-        return $area->lines
-            ->filter(fn (ProjectLine $line): bool => filled($line->code))
-            ->reject(fn (ProjectLine $line): bool => $productsBySku->has($this->normaliseSku($line->code)))
-            ->map(fn (ProjectLine $line): array => $this->issue(
-                key: "missing-product-{$line->id}",
-                type: 'missing_product',
-                area: $area,
-                line: $line,
-                lines: collect([$line]),
-                message: "SKU \"{$line->code}\" was not found in the product catalogue.",
-            ))
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @param  Collection<string, Product>  $productsBySku
-     * @return array<int, array{
-     *     key: string,
-     *     type: string,
-     *     area: string,
-     *     code: string,
-     *     description: string,
-     *     message: string,
-     *     line_ids: array<int, int>,
-     *     approved: bool,
-     *     rrp: string|null,
-     *     quote_price: string|null
-     * }>
-     */
-    private function priceMismatchIssues(ProjectArea $area, Collection $productsBySku): array
+    private function priceReviewIssues(ProjectArea $area, Collection $productsBySku): array
     {
         return $area->lines
             ->filter(fn (ProjectLine $line): bool => filled($line->code))
@@ -237,7 +204,7 @@ class ProjectRevisionValidator
                 /** @var Product|null $product */
                 $product = $productsBySku->get($this->normaliseSku($line->code));
 
-                if ($product === null || $product->price === null || $this->pricesMatch($line->unit_price, $product->price)) {
+                if ($product !== null && $product->price !== null && $this->pricesMatch($line->unit_price, $product->price)) {
                     return null;
                 }
 
@@ -247,9 +214,9 @@ class ProjectRevisionValidator
                     area: $area,
                     line: $line,
                     lines: collect([$line]),
-                    message: "Quote price for SKU \"{$line->code}\" does not match the product RRP.",
+                    message: $this->priceReviewMessage($line, $product),
                     extra: [
-                        'rrp' => $product->price,
+                        'rrp' => $product?->price,
                         'quote_price' => $line->unit_price,
                     ],
                 );
@@ -300,6 +267,27 @@ class ProjectRevisionValidator
     private function normaliseSku(string $sku): string
     {
         return mb_strtoupper(trim($sku));
+    }
+
+    private function priceReviewMessage(ProjectLine $line, ?Product $product): string
+    {
+        if ($product === null) {
+            return $line->unit_price === null
+                ? "SKU \"{$line->code}\" was not found in the product catalogue and has no quote price."
+                : "SKU \"{$line->code}\" was not found in the product catalogue. Review the quote price before approving.";
+        }
+
+        if ($product->price === null) {
+            return $line->unit_price === null
+                ? "SKU \"{$line->code}\" has no product RRP and no quote price."
+                : "SKU \"{$line->code}\" has no product RRP. Review the quote price before approving.";
+        }
+
+        if ($line->unit_price === null) {
+            return "SKU \"{$line->code}\" has no quote price.";
+        }
+
+        return "Quote price for SKU \"{$line->code}\" does not match the product RRP.";
     }
 
     private function pricesMatch(string|float|int|null $quotePrice, string|float|int|null $rrp): bool

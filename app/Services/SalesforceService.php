@@ -247,11 +247,11 @@ class SalesforceService
     }
 
     /**
-     * Upload a schedule PDF as a Salesforce file version attached to the project's Opportunity.
+     * Upload a PDF as a Salesforce file version attached to the project's Opportunity.
      *
      * @return array{success: bool, url?: string, contentVersionId?: string, contentDocumentId?: string, message?: string}
      */
-    public function uploadSchedulePdf(Project $project, string $pdfContent, string $filename): array
+    public function uploadPdf(Project $project, string $pdfContent, string $filename): array
     {
         $auth = $this->authenticate();
 
@@ -319,6 +319,14 @@ class SalesforceService
             'contentVersionId' => $contentVersionId,
             'contentDocumentId' => $contentDocumentId,
         ];
+    }
+
+    /**
+     * @return array{success: bool, url?: string, contentVersionId?: string, contentDocumentId?: string, message?: string}
+     */
+    public function uploadSchedulePdf(Project $project, string $pdfContent, string $filename): array
+    {
+        return $this->uploadPdf($project, $pdfContent, $filename);
     }
 
     private function salesforceErrorMessage(mixed $errors, string $fallback): string

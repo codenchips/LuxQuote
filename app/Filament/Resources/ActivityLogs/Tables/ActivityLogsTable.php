@@ -105,6 +105,10 @@ class ActivityLogsTable
 
                             'schedule_pdf.generated' => 'Generated schedule PDF <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
 
+                            'quote_pdf.generated' => 'Generated quote PDF <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
+
+                            'salesforce_pdf.uploaded' => 'Uploaded '.e((string) ($payload['document_label'] ?? 'PDF')).' to Salesforce <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
+
                             'user.login' => 'Logged in',
 
                             'product.added' => (function () use ($payload): string {
@@ -191,6 +195,8 @@ class ActivityLogsTable
                         'project.deleted' => 'Project Deleted',
                         'revision.created' => 'Revision Created',
                         'schedule_pdf.generated' => 'Schedule PDF Generated',
+                        'quote_pdf.generated' => 'Quote PDF Generated',
+                        'salesforce_pdf.uploaded' => 'Salesforce PDF Uploaded',
                         'user.login' => 'User Login',
                         'product.added' => 'Product Added',
                         'line.updated' => 'Line Updated',
