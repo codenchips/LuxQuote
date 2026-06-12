@@ -94,4 +94,9 @@ class AdminPermissionResourceTest extends TestCase
         $this->assertFalse(PermissionResource::canEdit($permission));
         $this->assertFalse(PermissionResource::canDelete($permission));
     }
+
+    public function test_permissions_catalog_is_hidden_from_navigation(): void
+    {
+        $this->assertFalse(PermissionResource::shouldRegisterNavigation());
+    }
 }

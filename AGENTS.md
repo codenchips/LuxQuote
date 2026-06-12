@@ -209,7 +209,7 @@ app/Filament/Resources/{Name}/
     └── {Name}sTable.php        # Table schema extracted into dedicated class
 ```
 
-Authorization is enforced via `getEloquentQuery()` with role checks, not Gates/Policies.
+Authorization is enforced with Laravel Gates backed by permission groups. Project visibility is still scoped in `ProjectResource::getEloquentQuery()`. See [PERMISSIONS.md](PERMISSIONS.md) before adding or changing user-visible functionality.
 
 ## Filament 5 — Critical Namespace Rules
 
@@ -237,6 +237,16 @@ Authorization is enforced via `getEloquentQuery()` with role checks, not Gates/P
 - All feature tests use `RefreshDatabase` and test Filament pages via `Livewire::test(PageClass::class)`.
 - Test methods follow `test_{action}_{entity}()` naming (e.g. `test_admin_can_list_products`).
 - Factory states are used heavily — check for existing states before setting attributes manually (e.g. `User::factory()->admin()->create()`).
+
+## Permission System
+
+- Activate `skills/permissions/SKILL.md` whenever work touches pages, actions, routes, exports, pricing, project mutations, validation, user management, or any new user-facing feature.
+- Permission keys are fixed in `App\Enums\PermissionKey`; groups are editable bundles assigned to users.
+- Use dotted permission gates such as `pricing.view`, `projects.update-lines`, and `revisions.approve`.
+- Hide UI with permission checks, but also enforce server-side guards for actions, Livewire methods, and routes.
+- Treat `pricing.view` as the global switch for seeing prices and price-based outputs.
+- Treat `pricing.update` as the separate ability to change prices.
+- Keep `PERMISSIONS.md` and focused permission tests updated whenever capabilities or group defaults change.
 
 ## Known Pitfalls
 
