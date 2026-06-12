@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Enums\ProjectRevisionStatus;
 use App\Enums\ProjectVisibility;
-use App\Enums\UserRole;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectRevision;
@@ -21,6 +20,7 @@ class ProjectPdfController extends Controller
     public function schedule(Request $request, Project $project): Response
     {
         $this->authorizeProjectAccess($request, $project);
+        abort_unless($request->user()->can('output.produce-unpriced-schedule'), 403);
 
         $user = $request->user();
         $revision = $this->resolveRevision($request, $project);
@@ -51,6 +51,10 @@ class ProjectPdfController extends Controller
     public function quote(Request $request, Project $project): Response
     {
         $this->authorizeProjectAccess($request, $project);
+        abort_unless(
+            $request->user()->can('pricing.view') && $request->user()->can('output.produce-quote'),
+            403,
+        );
 
         $revision = $this->resolveRevision($request, $project);
 
@@ -84,6 +88,12 @@ class ProjectPdfController extends Controller
     private function streamCsv(Request $request, Project $project, bool $includePrices): StreamedResponse
     {
         $this->authorizeProjectAccess($request, $project);
+        abort_unless(
+            $includePrices
+                ? $request->user()->can('pricing.view') && $request->user()->can('output.produce-priced-schedule')
+                : $request->user()->can('output.produce-unpriced-schedule'),
+            403,
+        );
 
         $revision = $this->resolveRevision($request, $project);
 
@@ -161,7 +171,7 @@ class ProjectPdfController extends Controller
     {
         $user = $request->user();
 
-        if ($user->role === UserRole::Admin) {
+        if ($user->isAdministrator()) {
             return;
         }
 

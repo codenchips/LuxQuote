@@ -163,6 +163,7 @@ class ProjectsTable
                     ->icon('heroicon-o-document-duplicate')
                     ->iconButton()
                     ->tooltip('Copy project')
+                    ->visible(fn (): bool => auth()->user()?->can('projects.create') ?? false)
                     ->action(function (Project $record): void {
                         $attributes = $record->only([
                             'user_id', 'name', 'customer_name', 'contractor', 'site_location',
@@ -219,6 +220,7 @@ class ProjectsTable
                         ->label('Archive')
                         ->icon('heroicon-o-archive-box')
                         ->color('warning')
+                        ->visible(fn (): bool => auth()->user()?->can('projects.update-details') ?? false)
                         ->action(fn (Project $record) => $record->update(['status' => ProjectStatus::Archived])),
 
                     Action::make('delete')
@@ -226,6 +228,7 @@ class ProjectsTable
                         ->icon('heroicon-o-trash')
                         ->color('danger')
                         ->requiresConfirmation()
+                        ->visible(fn (): bool => auth()->user()?->isAdministrator() ?? false)
                         ->modalHeading('Delete project permanently?')
                         ->modalDescription('This will permanently delete the project and all its areas and lines. This cannot be undone.')
                         ->modalSubmitActionLabel('Yes, delete permanently')
@@ -233,7 +236,8 @@ class ProjectsTable
                 ])
                     ->icon('heroicon-o-trash')
                     ->color('gray')
-                    ->tooltip('Delete / Archive'),
+                    ->tooltip('Delete / Archive')
+                    ->visible(fn (): bool => (auth()->user()?->can('projects.update-details') ?? false) || (auth()->user()?->isAdministrator() ?? false)),
             ])
             ->defaultSort('created_at', 'desc')
             ->poll('60s')

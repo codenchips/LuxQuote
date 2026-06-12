@@ -18,6 +18,7 @@ class ListProjects extends ListRecords
         return [
             CreateAction::make()
                 ->label('New Project')
+                ->visible(fn (): bool => auth()->user()?->can('projects.create') ?? false)
                 ->slideOver()
                 ->createAnother(false)
                 ->modalSubmitAction(fn (Action $action): Action => $action

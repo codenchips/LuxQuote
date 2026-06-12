@@ -28,7 +28,7 @@ class Salesforce extends Page implements HasTable
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->can('view-salesforce') ?? false;
+        return auth()->user()?->can('salesforce.view') ?? false;
     }
 
     public function table(Table $table): Table

@@ -2,7 +2,7 @@
 
 namespace App\Filament\Resources\Users\Schemas;
 
-use App\Enums\UserRole;
+use App\Models\PermissionGroup;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
@@ -26,14 +26,13 @@ class UserForm
                             ->unique(ignoreRecord: true)
                             ->required()
                             ->maxLength(255),
-                        Select::make('role')
-                            ->label('Role')
-                            ->options([
-                                UserRole::Admin->value => 'Admin',
-                                UserRole::Users->value => 'User',
-                            ])
+                        Select::make('permission_group_id')
+                            ->label('Group')
+                            ->relationship('permissionGroup', 'name')
+                            ->preload()
+                            ->searchable()
                             ->required()
-                            ->default(UserRole::Users->value),
+                            ->default(fn (): ?int => PermissionGroup::where('slug', 'user')->value('id')),
                     ]),
                 Section::make('Password')
                     ->description('Leave blank when editing to keep the current password.')

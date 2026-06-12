@@ -4,10 +4,14 @@
         $quoteApproved = $this->quoteApproved();
         $validationStatus = $this->validationStatusLabel();
         $validationStatusText = $validationPassed ? 'Valid' : 'Not valid';
+        $canProduceUnpricedSchedule = $this->canProduceUnpricedSchedule();
+        $canProducePricedSchedule = $this->canProducePricedSchedule();
+        $canProduceQuote = $this->canProduceQuote();
     @endphp
 
     <div class="space-y-6">
-        <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
+        @if($canProduceQuote || $canProducePricedSchedule)
+            <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
             <div class="flex flex-col gap-3">
                 <div>
                     <h2 class="text-base font-semibold text-gray-950 dark:text-white">Quote Approval</h2>
@@ -35,10 +39,16 @@
                     <span>Quote PDF requires <strong>validation passed</strong> + <strong>quote approved</strong>. Unpriced outputs are always available. Priced CSV requires <strong>validation passed</strong>.</span>
                 </div>
             </div>
-        </section>
+            </section>
+        @endif
 
-        <div class="grid gap-5 lg:grid-cols-3">
-            <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
+        <div @class([
+            'grid gap-5',
+            'lg:grid-cols-3' => $canProduceQuote && $canProducePricedSchedule,
+            'lg:grid-cols-2' => ($canProduceQuote xor $canProducePricedSchedule),
+        ])>
+            @if($canProduceQuote)
+                <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
                 <div class="flex items-start gap-3">
                     <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500 dark:bg-white/5 dark:text-gray-400">
                         <x-heroicon-o-document-text class="h-5 w-5" />
@@ -76,9 +86,11 @@
                         </button>
                     @endif
                 </div>
-            </section>
+                </section>
+            @endif
 
-            <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
+            @if($canProducePricedSchedule)
+                <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
                 <div class="flex items-start gap-3">
                     <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500 dark:bg-white/5 dark:text-gray-400">
                         <x-heroicon-o-table-cells class="h-5 w-5" />
@@ -112,9 +124,11 @@
                         </button>
                     @endif
                 </div>
-            </section>
+                </section>
+            @endif
 
-            <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
+            @if($canProduceUnpricedSchedule)
+                <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
                 <div class="flex items-start gap-3">
                     <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500 dark:bg-white/5 dark:text-gray-400">
                         <x-heroicon-o-clipboard-document-list class="h-5 w-5" />
@@ -135,7 +149,8 @@
                         Unpriced CSV
                     </a>
                 </div>
-            </section>
+                </section>
+            @endif
         </div>
     </div>
 </x-filament-panels::page>

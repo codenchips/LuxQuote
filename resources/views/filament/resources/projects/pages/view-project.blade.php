@@ -1,4 +1,13 @@
 <x-filament-panels::page>
+@php
+    $canViewPrices = $this->canViewPrices();
+    $canEditLines = $this->canEditLines();
+    $canEditPrices = $this->canEditPrices();
+    $canCreateRevisions = $this->canCreateRevisions();
+    $lineGridColumns = $canViewPrices
+        ? '20px 110px 65px 1fr 60px 90px 95px 1fr 84px 60px'
+        : '20px 110px 65px 1fr 60px 90px 1fr 84px 60px';
+@endphp
 <div x-data="{ confirmDeleteLineId: null }" wire:poll.30s="heartbeat">
 
     {{-- Concurrent editors banner --}}
@@ -44,7 +53,11 @@
     @endif
 
     @php $revisionTotals = $this->getRevisionTotals(); @endphp
-    <div class="mb-4 grid gap-3 sm:grid-cols-3">
+    <div @class([
+        'mb-4 grid gap-3',
+        'sm:grid-cols-3' => $canViewPrices,
+        'sm:grid-cols-2' => ! $canViewPrices,
+    ])>
         <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
             <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Qty</div>
             <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{{ number_format($revisionTotals['qty']) }}</div>
@@ -53,10 +66,12 @@
             <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Line Items</div>
             <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{{ number_format($revisionTotals['items']) }}</div>
         </div>
-        <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
-            <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Project Total</div>
-            <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">&pound;{{ number_format($revisionTotals['value'], 2) }}</div>
-        </div>
+        @if($canViewPrices)
+            <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
+                <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Project Total</div>
+                <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">&pound;{{ number_format($revisionTotals['value'], 2) }}</div>
+            </div>
+        @endif
     </div>
 
     {{-- Areas accordion list --}}
@@ -81,10 +96,12 @@
                 <div class="flex-1"></div>
 
                 @if($area->lines->isNotEmpty())
-                <span class="text-sm text-gray-500 dark:text-gray-400 mr-3">Qty: {{ $area->line_total_qty }}</span>
-                <span class="text-sm font-medium text-gray-900 dark:text-white mr-4">
-                    £{{ number_format($area->line_total, 2) }}
-                </span>
+                    <span class="text-sm text-gray-500 dark:text-gray-400 mr-3">Qty: {{ $area->line_total_qty }}</span>
+                    @if($canViewPrices)
+                        <span class="text-sm font-medium text-gray-900 dark:text-white mr-4">
+                            £{{ number_format($area->line_total, 2) }}
+                        </span>
+                    @endif
                 @endif
 
                 {{-- Area actions (stop accordion toggle) --}}
@@ -92,7 +109,7 @@
 
                     <button
                         wire:click="addProduct({{ $area->id }})"
-                        @disabled($this->isViewingRevisionValidated)
+                        @disabled(! $canEditLines || $this->isViewingRevisionValidated)
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
                     >
                         <x-heroicon-o-plus class="w-3 h-3" /> Product 
@@ -100,7 +117,7 @@
 
                     <button
                         wire:click="openPasteProductsModal({{ $area->id }})"
-                        @disabled($this->isViewingRevisionValidated)
+                        @disabled(! $canEditLines || $this->isViewingRevisionValidated)
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
                     >
                         <x-heroicon-o-plus class="w-3 h-3" /> Paste
@@ -108,7 +125,7 @@
 
                     <button
                         wire:click="addBlankLine({{ $area->id }})"
-                        @disabled($this->isViewingRevisionValidated)
+                        @disabled(! $canEditLines || $this->isViewingRevisionValidated)
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
                     >
                         <x-heroicon-o-plus class="w-3 h-3" /> Blank 
@@ -126,7 +143,7 @@
                 {{-- Column headers --}}
                 <div
                     class="grid items-center gap-2 px-4 py-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/40"
-                    style="grid-template-columns: 20px 110px 65px 1fr 60px 90px 95px 1fr 84px 60px"
+                    style="grid-template-columns: {{ $lineGridColumns }}"
                 >
                     <div></div>
                     <div>Code</div>
@@ -134,7 +151,9 @@
                     <div>Description</div>
                     <div class="text-center">Qty</div>
                     <div>Type</div>
-                    <div class="text-center">Unit Price</div>
+                    @if($canViewPrices)
+                        <div class="text-center">Unit Price</div>
+                    @endif
                     <div>Notes</div>
                     <div>Status</div>
                     <div></div>
@@ -143,7 +162,7 @@
                 {{-- Sortable lines --}}
                 <div
                     x-sort="(id, pos) => $wire.sortLine(parseInt(id), pos, {{ $area->id }})"
-                    x-sort:config="{ group: 'projectLines', animation: 150, disabled: {{ $this->isViewingRevisionValidated ? 'true' : 'false' }} }"
+                    x-sort:config="{ group: 'projectLines', animation: 150, disabled: {{ (! $canEditLines || $this->isViewingRevisionValidated) ? 'true' : 'false' }} }"
                     class="divide-y divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800"
                 >
                     @foreach($area->lines as $line)
@@ -155,7 +174,7 @@
                             \App\Enums\ProjectLineType::Custom   => 'bg-blue-50/60 dark:bg-blue-900/10',
                             default => '',
                         } }}"
-                        style="grid-template-columns: 20px 110px 65px 1fr 60px 90px 95px 1fr 84px 60px"
+                        style="grid-template-columns: {{ $lineGridColumns }}"
                     >
                         {{-- Drag handle --}}
                         <div
@@ -168,7 +187,7 @@
                         {{-- Code --}}
                         <input
                             value="{{ $line->code }}"
-                            @disabled($this->isViewingRevisionValidated)
+                            @disabled(! $canEditLines || $this->isViewingRevisionValidated)
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'code', $el.value)"
                             placeholder="–"
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm font-mono hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white {{ match($line->type) {
@@ -181,7 +200,7 @@
                         {{-- Ref --}}
                         <input
                             value="{{ $line->ref }}"
-                            @disabled($this->isViewingRevisionValidated)
+                            @disabled(! $canEditLines || $this->isViewingRevisionValidated)
                             maxlength="6"
                             placeholder="–"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'ref', $el.value.toUpperCase().slice(0, 6))"
@@ -192,7 +211,7 @@
                         {{-- Description --}}
                         <input
                             value="{{ $line->description }}"
-                            @disabled($this->isViewingRevisionValidated)
+                            @disabled(! $canEditLines || $this->isViewingRevisionValidated)
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'description', $el.value)"
                             placeholder="Description..."
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
@@ -202,7 +221,7 @@
                         <input
                             type="number"
                             value="{{ $line->qty }}"
-                            @disabled($this->isViewingRevisionValidated)
+                            @disabled(! $canEditLines || $this->isViewingRevisionValidated)
                             min="1"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'qty', parseInt($el.value) || 1)"
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
@@ -217,21 +236,23 @@
                             {{ $line->type->label() }}
                         </span>
 
-                        {{-- Unit Price --}}
-                        <input
-                            type="number"
-                            step="0.01"
-                            value="{{ $line->unit_price }}"
-                            @disabled($this->isViewingRevisionValidated)
-                            x-on:blur="$wire.updateLineField({{ $line->id }}, 'unit_price', $el.value)"
-                            placeholder="0.00"
-                            class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
-                        />
+                        @if($canViewPrices)
+                            {{-- Unit Price --}}
+                            <input
+                                type="number"
+                                step="0.01"
+                                value="{{ $line->unit_price }}"
+                                @disabled(! $canEditPrices || $this->isViewingRevisionValidated)
+                                x-on:blur="$wire.updateLineField({{ $line->id }}, 'unit_price', $el.value)"
+                                placeholder="0.00"
+                                class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
+                            />
+                        @endif
 
                         {{-- Notes --}}
                         <input
                             value="{{ $line->notes }}"
-                            @disabled($this->isViewingRevisionValidated)
+                            @disabled(! $canEditLines || $this->isViewingRevisionValidated)
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'notes', $el.value)"
                             placeholder=""
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-500 dark:text-gray-400"
@@ -259,7 +280,7 @@
                         <div class="flex items-center justify-end gap-0.5">
                             <button
                                 wire:click="duplicateLine({{ $line->id }})"
-                                @disabled($this->isViewingRevisionValidated)
+                                @disabled(! $canEditLines || $this->isViewingRevisionValidated)
                                 title="Duplicate row"
                                 class="rounded p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             >
@@ -267,7 +288,7 @@
                             </button>
                             <button
                                 @click.stop="confirmDeleteLineId = {{ $line->id }}"
-                                @disabled($this->isViewingRevisionValidated)
+                                @disabled(! $canEditLines || $this->isViewingRevisionValidated)
                                 title="Delete row"
                                 class="rounded p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700"
                             >
@@ -279,16 +300,20 @@
 
                     @if($area->lines->isEmpty())
                     <div class="px-8 py-6 text-center text-sm text-gray-400 dark:text-gray-500">
-                        No items in this area. Add a
-                        <button
-                            wire:click="addBlankLine({{ $area->id }})"
-                            class="text-primary-500 hover:underline">
-                            blank row
-                        </button> or a <button
-                            wire:click="addProduct({{ $area->id }})"
-                            class="text-primary-500 hover:underline">
-                            product
-                        </button>                                        
+                        @if($canEditLines && ! $this->isViewingRevisionValidated)
+                            No items in this area. Add a
+                            <button
+                                wire:click="addBlankLine({{ $area->id }})"
+                                class="text-primary-500 hover:underline">
+                                blank row
+                            </button> or a <button
+                                wire:click="addProduct({{ $area->id }})"
+                                class="text-primary-500 hover:underline">
+                                product
+                            </button>
+                        @else
+                            No items in this area.
+                        @endif
                     </div>
                     @endif
                 </div>
@@ -532,14 +557,17 @@
             <div class="px-6 py-5">
                 <label for="pasted-product-data" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Paste product data<br>
-                    Format: 
-                    <span class="text-green-600 dark:text-green-400">qty</span> [tab] 
-                    <span class="text-green-600 dark:text-green-400">sku</span> [tab] 
-                    <span class="text-green-600 dark:text-green-400">description</span> [tab] 
-                    <span class="text-green-600 dark:text-green-400">price</span> [tab]
-                    <span class="text-green-600 dark:text-green-400">discount</span> [tab]
-                    <span class="text-green-600 dark:text-green-400">nett each</span> [tab]
-                    <span class="text-green-600 dark:text-green-400">line total</span>
+                    Format:
+                    <span class="text-green-600 dark:text-green-400">qty</span> [tab]
+                    <span class="text-green-600 dark:text-green-400">sku</span> [tab]
+                    <span class="text-green-600 dark:text-green-400">description</span>
+                    @if($canEditPrices)
+                        [tab]
+                        <span class="text-green-600 dark:text-green-400">price</span> [tab]
+                        <span class="text-green-600 dark:text-green-400">discount</span> [tab]
+                        <span class="text-green-600 dark:text-green-400">nett each</span> [tab]
+                        <span class="text-green-600 dark:text-green-400">line total</span>
+                    @endif
                 </label>
                 <textarea
                     id="pasted-product-data"
@@ -637,7 +665,7 @@
                         </div>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
-                        @if(!$isViewing)
+                        @if(!$isViewing && $canCreateRevisions)
                         <button
                             wire:click="setActiveRevision({{ $revision->id }})"
                             class="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
@@ -651,20 +679,22 @@
             </div>
 
             {{-- Footer --}}
-            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 shrink-0">
-                <button
-                    wire:click="createNewRevision"
-                    wire:loading.attr="disabled"
-                    class="w-full flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 transition-colors"
-                >
-                    <x-heroicon-o-plus class="w-4 h-4" />
-                    <span wire:loading.remove wire:target="createNewRevision">Create New Revision</span>
-                    <span wire:loading wire:target="createNewRevision">Creating...</span>
-                </button>
-                <p class="mt-2 text-center text-xs text-gray-400 dark:text-gray-500">
-                    Copies all areas and lines from the current revision into a new one.
-                </p>
-            </div>
+            @if($canCreateRevisions)
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 shrink-0">
+                    <button
+                        wire:click="createNewRevision"
+                        wire:loading.attr="disabled"
+                        class="w-full flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                    >
+                        <x-heroicon-o-plus class="w-4 h-4" />
+                        <span wire:loading.remove wire:target="createNewRevision">Create New Revision</span>
+                        <span wire:loading wire:target="createNewRevision">Creating...</span>
+                    </button>
+                    <p class="mt-2 text-center text-xs text-gray-400 dark:text-gray-500">
+                        Copies all areas and lines from the current revision into a new one.
+                    </p>
+                </div>
+            @endif
         </div>
     </div>
     @endif

@@ -186,12 +186,14 @@ class ProjectForm
                 TextInput::make('cover_percentage')
                     ->label('Cover')
                     ->placeholder('Cover')
+                    ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
                     ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
 
                 TextInput::make('value')
                     ->label('Value')
                     ->placeholder('0.00')
                     ->numeric()
+                    ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
                     ->prefix('£')
                     ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
 

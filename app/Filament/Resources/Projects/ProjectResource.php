@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\Projects;
 
 use App\Enums\ProjectVisibility;
-use App\Enums\UserRole;
 use App\Filament\Resources\Projects\Pages\ListProjects;
 use App\Filament\Resources\Projects\Pages\OutputProject;
 use App\Filament\Resources\Projects\Pages\ProjectHistory;
@@ -18,6 +17,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class ProjectResource extends Resource
 {
@@ -34,7 +34,7 @@ class ProjectResource extends Resource
         $query = parent::getEloquentQuery();
         $user = auth()->user();
 
-        if ($user->role === UserRole::Admin) {
+        if ($user->isAdministrator()) {
             return $query;
         }
 
@@ -42,6 +42,21 @@ class ProjectResource extends Resource
             $query->where('visibility', ProjectVisibility::Open)
                 ->orWhere('user_id', $user->id);
         });
+    }
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('projects.view') ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->can('projects.create') ?? false;
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return auth()->user()?->can('projects.update-details') ?? false;
     }
 
     public static function form(Schema $schema): Schema

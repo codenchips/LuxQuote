@@ -1,14 +1,12 @@
 <?php
 
-namespace App\Filament\Resources\Users\Tables;
+namespace App\Filament\Resources\PermissionGroups\Tables;
 
-use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
-class UsersTable
+class PermissionGroupsTable
 {
     public static function configure(Table $table): Table
     {
@@ -17,19 +15,18 @@ class UsersTable
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
-                TextColumn::make('email')
-                    ->label('Email address')
+                TextColumn::make('slug')
+                    ->badge()
+                    ->color('gray')
                     ->searchable()
                     ->sortable(),
-                TextColumn::make('permissionGroup.name')
-                    ->label('Group')
-                    ->badge()
-                    ->color(fn (?string $state): string => $state === 'Admin' ? 'danger' : 'primary')
-                    ->placeholder('No group')
+                TextColumn::make('permissions_count')
+                    ->label('Permissions')
+                    ->counts('permissions')
                     ->sortable(),
-                TextColumn::make('created_at')
-                    ->label('Joined')
-                    ->dateTime()
+                TextColumn::make('users_count')
+                    ->label('Users')
+                    ->counts('users')
                     ->sortable(),
                 TextColumn::make('updated_at')
                     ->dateTime()
@@ -41,11 +38,6 @@ class UsersTable
             ])
             ->recordActions([
                 EditAction::make(),
-            ])
-            ->toolbarActions([
-                BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                ]),
             ]);
     }
 }

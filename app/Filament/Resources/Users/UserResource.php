@@ -14,6 +14,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use UnitEnum;
 
 class UserResource extends Resource
 {
@@ -21,28 +22,30 @@ class UserResource extends Resource
 
     protected static ?string $navigationLabel = 'Users';
 
+    protected static string|UnitEnum|null $navigationGroup = 'Users';
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUsers;
 
     protected static ?int $navigationSort = 3;
 
     public static function canViewAny(): bool
     {
-        return auth()->user()?->can('view-users') ?? false;
+        return auth()->user()?->can('users.view') ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->user()?->can('create-users') ?? false;
+        return auth()->user()?->can('users.create') ?? false;
     }
 
     public static function canEdit(Model $record): bool
     {
-        return auth()->user()?->can('edit-users') ?? false;
+        return auth()->user()?->can('users.update') ?? false;
     }
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()?->can('delete-users') ?? false;
+        return auth()->user()?->can('users.delete') ?? false;
     }
 
     public static function form(Schema $schema): Schema

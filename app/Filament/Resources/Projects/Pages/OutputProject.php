@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\Projects\Pages;
 
 use App\Enums\ProjectRevisionStatus;
-use App\Enums\UserRole;
 use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ProjectRevision;
@@ -25,7 +24,7 @@ class OutputProject extends ViewRecord
 
     public static function canAccess(array $parameters = []): bool
     {
-        return auth()->user()?->role === UserRole::Admin;
+        return auth()->user()?->can('output.view') ?? false;
     }
 
     public function getTitle(): string
@@ -45,6 +44,8 @@ class OutputProject extends ViewRecord
 
     public function getSchedulePdfUrl(): string
     {
+        abort_unless($this->canProduceUnpricedSchedule(), 403);
+
         return route('projects.pdf.schedule', [
             'project' => $this->record,
             'revision' => $this->record->active_revision_id,
@@ -53,6 +54,8 @@ class OutputProject extends ViewRecord
 
     public function getQuotePdfUrl(): string
     {
+        abort_unless($this->canProduceQuote(), 403);
+
         return route('projects.pdf.quote', [
             'project' => $this->record,
             'revision' => $this->record->active_revision_id,
@@ -61,6 +64,8 @@ class OutputProject extends ViewRecord
 
     public function getCsvExportUrl(): string
     {
+        abort_unless($this->canProducePricedSchedule(), 403);
+
         return route('projects.export.csv', [
             'project' => $this->record,
             'revision' => $this->record->active_revision_id,
@@ -69,6 +74,8 @@ class OutputProject extends ViewRecord
 
     public function getUnpricedCsvExportUrl(): string
     {
+        abort_unless($this->canProduceUnpricedSchedule(), 403);
+
         return route('projects.export.unpriced-csv', [
             'project' => $this->record,
             'revision' => $this->record->active_revision_id,
@@ -93,5 +100,30 @@ class OutputProject extends ViewRecord
     public function validationStatusLabel(): string
     {
         return $this->validationPassed() ? 'passed' : 'not_run';
+    }
+
+    public function canViewPrices(): bool
+    {
+        return auth()->user()?->can('pricing.view') ?? false;
+    }
+
+    public function canProduceUnpricedSchedule(): bool
+    {
+        return auth()->user()?->can('output.produce-unpriced-schedule') ?? false;
+    }
+
+    public function canProducePricedSchedule(): bool
+    {
+        return $this->canViewPrices() && (auth()->user()?->can('output.produce-priced-schedule') ?? false);
+    }
+
+    public function canProduceQuote(): bool
+    {
+        return $this->canViewPrices() && (auth()->user()?->can('output.produce-quote') ?? false);
+    }
+
+    public function canRequestQuoteApproval(): bool
+    {
+        return $this->canViewPrices() && (auth()->user()?->can('quote-approval.request') ?? false);
     }
 }

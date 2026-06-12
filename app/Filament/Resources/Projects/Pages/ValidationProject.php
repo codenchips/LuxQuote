@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\Projects\Pages;
 
 use App\Enums\ProjectRevisionStatus;
-use App\Enums\UserRole;
 use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ProjectLine;
@@ -65,12 +64,14 @@ class ValidationProject extends ViewRecord
                 ->label('Approve Revision')
                 ->icon('heroicon-o-check-badge')
                 ->color(fn (): string => $this->activeRevisionValidated ? 'success' : 'gray')
+                ->visible(fn (): bool => $this->canApproveRevision())
                 ->disabled(fn (): bool => ! $this->activeRevisionValidated)
                 ->action('openApproveRevisionModal'),
 
             Action::make('runValidation')
                 ->label('Run Validation')
                 ->icon('heroicon-o-arrow-path')
+                ->visible(fn (): bool => $this->canRunValidation())
                 ->action('runValidation'),
         ];
     }
@@ -156,6 +157,8 @@ class ValidationProject extends ViewRecord
 
     public function runValidation(): void
     {
+        abort_unless($this->canRunValidation(), 403);
+
         $this->ensureActiveRevisionIsEditable();
 
         $this->refreshValidation();
@@ -163,6 +166,7 @@ class ValidationProject extends ViewRecord
 
     public function openApproveRevisionModal(): void
     {
+        abort_unless($this->canApproveRevision(), 403);
         abort_unless($this->activeRevision()->validated, 403);
 
         $this->approveRevisionModalOpen = true;
@@ -175,6 +179,8 @@ class ValidationProject extends ViewRecord
 
     public function approveRevision(): void
     {
+        abort_unless($this->canApproveRevision(), 403);
+
         $revision = $this->activeRevision();
 
         abort_unless($revision->validated, 403);
@@ -194,6 +200,8 @@ class ValidationProject extends ViewRecord
 
     public function approveIssue(string $issueKey): void
     {
+        abort_unless($this->canApproveValidationLines(), 403);
+
         $this->ensureActiveRevisionIsEditable();
 
         $issue = $this->findIssue($issueKey);
@@ -211,6 +219,8 @@ class ValidationProject extends ViewRecord
 
     public function undoIssueApproval(string $issueKey): void
     {
+        abort_unless($this->canApproveValidationLines(), 403);
+
         $this->ensureActiveRevisionIsEditable();
 
         $issue = $this->findIssue($issueKey);
@@ -227,6 +237,8 @@ class ValidationProject extends ViewRecord
 
     public function updateIssueQuotePrice(string $issueKey, mixed $value): void
     {
+        abort_unless($this->canUpdateValidationLines() && $this->canEditPrices(), 403);
+
         $this->ensureActiveRevisionIsEditable();
 
         $issue = $this->findIssue($issueKey);
@@ -251,6 +263,8 @@ class ValidationProject extends ViewRecord
 
     public function matchIssueQuotePrice(string $issueKey): void
     {
+        abort_unless($this->canUpdateValidationLines() && $this->canEditPrices(), 403);
+
         $this->ensureActiveRevisionIsEditable();
 
         $issue = $this->findIssue($issueKey);
@@ -271,6 +285,8 @@ class ValidationProject extends ViewRecord
 
     public function mergeIssue(string $issueKey): void
     {
+        abort_unless($this->canMergeValidationLines(), 403);
+
         $this->ensureActiveRevisionIsEditable();
 
         $issue = $this->findIssue($issueKey);
@@ -302,6 +318,8 @@ class ValidationProject extends ViewRecord
 
     public function flagValidatedLine(int $lineId): void
     {
+        abort_unless($this->canFlagValidationLines(), 403);
+
         $this->ensureActiveRevisionIsEditable();
 
         $line = $this->lineForActiveRevision($lineId);
@@ -321,7 +339,7 @@ class ValidationProject extends ViewRecord
 
     public static function canAccess(array $parameters = []): bool
     {
-        return auth()->user()?->role === UserRole::Admin;
+        return auth()->user()?->can('validation.view') ?? false;
     }
 
     private function activeRevision(): ProjectRevision
@@ -478,5 +496,45 @@ class ValidationProject extends ViewRecord
     private function validator(): ProjectRevisionValidator
     {
         return app(ProjectRevisionValidator::class);
+    }
+
+    public function canViewPrices(): bool
+    {
+        return auth()->user()?->can('pricing.view') ?? false;
+    }
+
+    public function canEditPrices(): bool
+    {
+        return auth()->user()?->can('pricing.update') ?? false;
+    }
+
+    public function canRunValidation(): bool
+    {
+        return auth()->user()?->can('validation.run') ?? false;
+    }
+
+    public function canUpdateValidationLines(): bool
+    {
+        return auth()->user()?->can('validation.update-lines') ?? false;
+    }
+
+    public function canFlagValidationLines(): bool
+    {
+        return auth()->user()?->can('validation.flag-lines') ?? false;
+    }
+
+    public function canMergeValidationLines(): bool
+    {
+        return auth()->user()?->can('validation.merge-lines') ?? false;
+    }
+
+    public function canApproveValidationLines(): bool
+    {
+        return auth()->user()?->can('validation.approve-lines') ?? false;
+    }
+
+    public function canApproveRevision(): bool
+    {
+        return auth()->user()?->can('revisions.approve') ?? false;
     }
 }

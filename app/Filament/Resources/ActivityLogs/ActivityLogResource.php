@@ -22,7 +22,7 @@ class ActivityLogResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->user()?->can('view-activity-logs') ?? false;
+        return auth()->user()?->can('activity-log.view') ?? false;
     }
 
     public static function canCreate(): bool

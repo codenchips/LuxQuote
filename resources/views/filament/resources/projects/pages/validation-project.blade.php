@@ -5,6 +5,15 @@
         $unresolvedCount = $issues->count();
         $isValidated = $this->activeRevisionValidated;
         $isApproved = $this->activeRevisionApproved;
+        $canViewPrices = $this->canViewPrices();
+        $canEditPrices = $this->canEditPrices();
+        $canUpdateValidationLines = $this->canUpdateValidationLines();
+        $canFlagValidationLines = $this->canFlagValidationLines();
+        $canMergeValidationLines = $this->canMergeValidationLines();
+        $canApproveValidationLines = $this->canApproveValidationLines();
+        $validatedLineGridColumns = $canViewPrices
+            ? '130px 1fr 70px 95px 95px 1.4fr 110px'
+            : '130px 1fr 70px 95px 1.4fr 110px';
     @endphp
 
     <div class="space-y-6">
@@ -59,7 +68,7 @@
 
                         </div>
 
-                        @if($issue['type'] === 'price_mismatch')
+                        @if($issue['type'] === 'price_mismatch' && $canViewPrices)
                             <div class="grid w-52 shrink-0 grid-cols-2 gap-2 self-center text-sm">
                                 <label class="space-y-1">
                                     <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">RRP</span>
@@ -78,7 +87,7 @@
                                         step="0.01"
                                         min="0"
                                         value="{{ $issue['quote_price'] }}"
-                                        @disabled($issue['approved'])
+                                        @disabled($issue['approved'] || ! $canEditPrices || ! $canUpdateValidationLines)
                                         x-on:blur="$wire.updateIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }}, $el.value)"
                                         class="h-[34px] w-full rounded-lg border border-gray-300 bg-white px-2 py-0 text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:border-gray-700 dark:disabled:bg-gray-800/70 dark:disabled:text-gray-400"
                                     />
@@ -92,7 +101,7 @@
                                 'self-start pt-5' => $issue['type'] === 'price_mismatch',
                             ])
                         >
-                            @if($issue['type'] === 'duplicate_sku')
+                            @if($issue['type'] === 'duplicate_sku' && $canMergeValidationLines)
                                 <x-filament::button
                                     wire:click="mergeIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
                                     color="gray"
@@ -104,7 +113,7 @@
                                 </x-filament::button>
                             @endif
 
-                            @if($issue['type'] === 'price_mismatch')
+                            @if($issue['type'] === 'price_mismatch' && $canEditPrices && $canUpdateValidationLines)
                                 <x-filament::button
                                     wire:click="matchIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }})"
                                     color="gray"
@@ -116,14 +125,16 @@
                                 </x-filament::button>
                             @endif
 
-                            <x-filament::button
-                                wire:click="approveIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
-                                size="sm"
-                                icon="heroicon-o-hand-thumb-up"
-                                class="h-[34px] min-h-[34px]"
-                            >
-                                Approve
-                            </x-filament::button>
+                            @if($canApproveValidationLines)
+                                <x-filament::button
+                                    wire:click="approveIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
+                                    size="sm"
+                                    icon="heroicon-o-hand-thumb-up"
+                                    class="h-[34px] min-h-[34px]"
+                                >
+                                    Approve
+                                </x-filament::button>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -139,11 +150,13 @@
                 Validated ({{ count($validatedLines) }})
             </div>
 
-            <div class="grid gap-3 border-b border-gray-100 bg-gray-50 px-5 py-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:border-gray-800 dark:bg-gray-800/40 dark:text-gray-400" style="grid-template-columns: 130px 1fr 70px 95px 95px 1.4fr 110px">
+            <div class="grid gap-3 border-b border-gray-100 bg-gray-50 px-5 py-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:border-gray-800 dark:bg-gray-800/40 dark:text-gray-400" style="grid-template-columns: {{ $validatedLineGridColumns }}">
                 <div>SKU</div>
                 <div>Description</div>
                 <div class="text-center">Qty</div>
-                <div class="text-right">Quote</div>
+                @if($canViewPrices)
+                    <div class="text-right">Quote</div>
+                @endif
                 <div>Status</div>
                 <div>Note</div>
                 <div></div>
@@ -153,14 +166,16 @@
                 <div
                     wire:key="validated-line-{{ $line['id'] }}"
                     class="grid items-center gap-3 border-b border-gray-100 px-5 py-3 text-sm last:border-b-0 dark:border-gray-800"
-                    style="grid-template-columns: 130px 1fr 70px 95px 95px 1.4fr 110px"
+                    style="grid-template-columns: {{ $validatedLineGridColumns }}"
                 >
                     <div class="truncate font-mono font-medium text-gray-950 dark:text-white">{{ $line['code'] ?: '—' }}</div>
                     <div class="truncate text-gray-600 dark:text-gray-300">{{ $line['description'] }}</div>
                     <div class="text-center text-gray-600 dark:text-gray-300">{{ $line['qty'] }}</div>
+                    @if($canViewPrices)
                     <div class="text-right text-gray-600 dark:text-gray-300">
                         {{ $line['unit_price'] !== null ? '£'.number_format((float) $line['unit_price'], 2) : '—' }}
                     </div>
+                    @endif
                     <div>
                         <span
                             @class([
@@ -174,7 +189,7 @@
                     </div>
                     <div class="text-gray-500 dark:text-gray-400">{{ $line['note'] }}</div>
                     <div class="flex justify-end">
-                        @if(! $isApproved)
+                        @if(! $isApproved && $canFlagValidationLines)
                         <x-filament::button
                             wire:click="flagValidatedLine({{ $line['id'] }})"
                             color="gray"

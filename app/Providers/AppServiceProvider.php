@@ -2,7 +2,7 @@
 
 namespace App\Providers;
 
-use App\Enums\UserRole;
+use App\Enums\PermissionKey;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectArea;
@@ -61,13 +61,31 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(5)->by($request->ip());
         });
 
-        Gate::define('view-products', fn (User $user) => true);
-        Gate::define('import-products', fn (User $user) => $user->role === UserRole::Admin);
-        Gate::define('view-users', fn (User $user) => $user->role === UserRole::Admin);
-        Gate::define('create-users', fn (User $user) => $user->role === UserRole::Admin);
-        Gate::define('edit-users', fn (User $user) => $user->role === UserRole::Admin);
-        Gate::define('delete-users', fn (User $user) => $user->role === UserRole::Admin);
-        Gate::define('view-activity-logs', fn (User $user) => $user->role === UserRole::Admin);
-        Gate::define('view-salesforce', fn (User $user) => $user->role === UserRole::Admin);
+        Gate::before(fn (User $user): ?bool => $user->isAdministrator() ? true : null);
+
+        foreach (PermissionKey::cases() as $permission) {
+            Gate::define($permission->value, fn (User $user): bool => $user->hasPermission($permission));
+        }
+
+        foreach ($this->legacyPermissionAliases() as $legacyGate => $permission) {
+            Gate::define($legacyGate, fn (User $user): bool => $user->hasPermission($permission));
+        }
+    }
+
+    /**
+     * @return array<string, PermissionKey>
+     */
+    private function legacyPermissionAliases(): array
+    {
+        return [
+            'view-products' => PermissionKey::ProductsView,
+            'import-products' => PermissionKey::ProductsImport,
+            'view-users' => PermissionKey::UsersView,
+            'create-users' => PermissionKey::UsersCreate,
+            'edit-users' => PermissionKey::UsersUpdate,
+            'delete-users' => PermissionKey::UsersDelete,
+            'view-activity-logs' => PermissionKey::ActivityLogView,
+            'view-salesforce' => PermissionKey::SalesforceView,
+        ];
     }
 }

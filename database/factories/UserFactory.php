@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\UserRole;
+use App\Models\PermissionGroup;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -32,6 +33,7 @@ class UserFactory extends Factory
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
             'role' => UserRole::Users->value,
+            'permission_group_id' => PermissionGroup::where('slug', 'user')->value('id'),
         ];
     }
 
@@ -52,6 +54,28 @@ class UserFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'role' => UserRole::Admin->value,
+            'permission_group_id' => PermissionGroup::where('slug', 'admin')->value('id'),
+        ]);
+    }
+
+    public function sales(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'permission_group_id' => PermissionGroup::where('slug', 'sales')->value('id'),
+        ]);
+    }
+
+    public function technical(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'permission_group_id' => PermissionGroup::where('slug', 'technical')->value('id'),
+        ]);
+    }
+
+    public function manager(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'permission_group_id' => PermissionGroup::where('slug', 'manager')->value('id'),
         ]);
     }
 }

@@ -16,7 +16,7 @@ class AdminProductResourceTest extends TestCase
 
     public function test_admin_can_list_products(): void
     {
-        $admin = User::factory()->create();
+        $admin = User::factory()->admin()->create();
         Product::factory()->count(3)->create();
 
         $this->actingAs($admin);
@@ -27,7 +27,7 @@ class AdminProductResourceTest extends TestCase
 
     public function test_products_table_shows_required_columns(): void
     {
-        $admin = User::factory()->create();
+        $admin = User::factory()->admin()->create();
         $product = Product::factory()->create([
             'site' => 'xcite',
             'product_name' => 'My Lamp',

@@ -158,7 +158,7 @@ class ViewProject extends ViewRecord
                 ->icon('heroicon-o-pencil')
                 ->color('gray')
                 ->tooltip('Edit project details')
-                ->visible(fn (): bool => ! $this->isViewingRevisionValidated)
+                ->visible(fn (): bool => $this->canEditProjectDetails() && ! $this->isViewingRevisionValidated)
                 ->after(fn () => $this->afterProjectDetailsSaved()),
 
             Action::make('manageRevisions')
@@ -171,7 +171,7 @@ class ViewProject extends ViewRecord
                 ->label('Areas')
                 ->icon(Heroicon::OutlinedMapPin)
                 ->color('gray')
-                ->visible(fn (): bool => ! $this->isViewingRevisionValidated)
+                ->visible(fn (): bool => $this->canEditLines() && ! $this->isViewingRevisionValidated)
                 ->modalHeading('Manage Areas')
                 ->modalDescription('Define the rooms, floors, and areas for this project.')
                 ->modalContent(fn (): View => view(
@@ -185,6 +185,7 @@ class ViewProject extends ViewRecord
                 ->label('Schedule PDF')
                 ->icon('heroicon-o-document-arrow-down')
                 ->color('primary')
+                ->visible(fn (): bool => $this->canProduceUnpricedSchedule())
                 ->url(fn (): string => route('projects.pdf.schedule', [
                     'project' => $this->record,
                     'revision' => $this->viewingRevisionId,
@@ -361,6 +362,8 @@ class ViewProject extends ViewRecord
 
     public function setActiveRevision(int $revisionId): void
     {
+        abort_unless($this->canCreateRevisions(), 403);
+
         $revision = ProjectRevision::where('project_id', $this->record->id)
             ->findOrFail($revisionId);
 
@@ -377,6 +380,8 @@ class ViewProject extends ViewRecord
 
     public function createNewRevision(): void
     {
+        abort_unless($this->canCreateRevisions(), 403);
+
         $sourceRevision = ProjectRevision::where('project_id', $this->record->id)
             ->findOrFail($this->viewingRevisionId);
 
@@ -458,6 +463,8 @@ class ViewProject extends ViewRecord
 
     public function openProductPicker(int $areaId): void
     {
+        abort_unless($this->canEditLines(), 403);
+
         $this->productPickerAreaId = $areaId;
         $this->productSearch = '';
         $this->productSiteFilter = '';
@@ -767,6 +774,10 @@ class ViewProject extends ViewRecord
      */
     private function pastedProductPrice(array $columns): string
     {
+        if (! $this->canEditPrices()) {
+            return '';
+        }
+
         if (count($columns) >= 6) {
             return trim((string) ($columns[5] ?? ''));
         }
@@ -855,6 +866,10 @@ class ViewProject extends ViewRecord
 
         if (! in_array($field, $allowed, true)) {
             return;
+        }
+
+        if ($field === 'unit_price' && ! $this->canEditPrices()) {
+            abort(403);
         }
 
         $line = $this->findLineInViewingRevision($lineId);
@@ -1001,6 +1016,37 @@ class ViewProject extends ViewRecord
 
     private function ensureViewingRevisionIsEditable(): void
     {
+        abort_unless($this->canEditLines(), 403);
         abort_if($this->isViewingRevisionValidated, 403, 'Approved revisions are locked against editing.');
+    }
+
+    public function canViewPrices(): bool
+    {
+        return auth()->user()?->can('pricing.view') ?? false;
+    }
+
+    public function canEditPrices(): bool
+    {
+        return auth()->user()?->can('pricing.update') ?? false;
+    }
+
+    public function canEditLines(): bool
+    {
+        return auth()->user()?->can('projects.update-lines') ?? false;
+    }
+
+    public function canEditProjectDetails(): bool
+    {
+        return auth()->user()?->can('projects.update-details') ?? false;
+    }
+
+    public function canCreateRevisions(): bool
+    {
+        return auth()->user()?->can('revisions.create') ?? false;
+    }
+
+    public function canProduceUnpricedSchedule(): bool
+    {
+        return auth()->user()?->can('output.produce-unpriced-schedule') ?? false;
     }
 }

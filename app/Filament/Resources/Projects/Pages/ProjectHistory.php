@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\Projects\Pages;
 
-use App\Enums\UserRole;
 use App\Filament\Resources\ActivityLogs\Tables\ActivityLogsTable;
 use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
@@ -29,7 +28,7 @@ class ProjectHistory extends ViewRecord implements HasTable
 
     public static function canAccess(array $parameters = []): bool
     {
-        return auth()->user()?->role === UserRole::Admin;
+        return auth()->user()?->can('project-history.view') ?? false;
     }
 
     public function getTitle(): string
