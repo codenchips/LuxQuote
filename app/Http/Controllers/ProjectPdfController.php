@@ -12,8 +12,10 @@ use App\Services\SalesforceService;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 class ProjectPdfController extends Controller
 {
@@ -235,11 +237,26 @@ class ProjectPdfController extends Controller
         string $pdfContent,
         string $documentLabel,
     ): void {
-        $result = app(SalesforceService::class)->uploadPdf(
-            project: $project,
-            pdfContent: $pdfContent,
-            filename: $filename,
-        );
+        try {
+            $result = app(SalesforceService::class)->uploadPdf(
+                project: $project,
+                pdfContent: $pdfContent,
+                filename: $filename,
+            );
+        } catch (Throwable $exception) {
+            Log::error('Salesforce PDF upload threw an exception', [
+                'project_id' => $project->id,
+                'revision_id' => $revision->id,
+                'filename' => $filename,
+                'document_label' => $documentLabel,
+                'exception' => $exception,
+            ]);
+
+            $result = [
+                'success' => false,
+                'message' => 'The PDF was generated, but the Salesforce upload failed.',
+            ];
+        }
 
         if (! $result['success']) {
             Notification::make()

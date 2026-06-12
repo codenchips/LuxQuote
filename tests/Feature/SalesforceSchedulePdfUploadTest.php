@@ -10,6 +10,7 @@ use App\Services\SalesforceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
 use Tests\TestCase;
 
 class SalesforceSchedulePdfUploadTest extends TestCase
@@ -303,6 +304,50 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,
             'action_type' => 'salesforce_pdf.uploaded',
+            'revision_number' => 1,
+        ]);
+    }
+
+    public function test_salesforce_upload_exception_does_not_block_generated_pdf_response(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()
+            ->for($admin)
+            ->create([
+                'reference_number' => 'SCH-FAIL',
+                'salesforce_project' => true,
+                'salesforce_id' => '006000000000001AAA',
+            ]);
+
+        $this->instance(ProjectSchedulePdfService::class, $this->fakePdfService(
+            scheduleFilename: 'lighting-schedule-SCH-FAIL-R1-20260612-103000.pdf',
+            quoteFilename: 'lighting-quote-SCH-FAIL-R1-20260612-103000.pdf',
+            responseBody: 'fake schedule pdf despite upload failure',
+        ));
+
+        $this->instance(SalesforceService::class, new class
+        {
+            public function uploadPdf(Project $project, string $pdfContent, string $filename): array
+            {
+                throw new RuntimeException('Production Salesforce configuration is invalid.');
+            }
+        });
+
+        $response = $this->get(route('projects.pdf.schedule', [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertSee('fake schedule pdf despite upload failure')
+            ->assertSessionHas('filament.notifications');
+
+        $this->assertDatabaseHas('activity_logs', [
+            'project_id' => $project->id,
+            'action_type' => 'schedule_pdf.generated',
             'revision_number' => 1,
         ]);
     }

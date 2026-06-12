@@ -193,6 +193,16 @@ The Filament admin panel is served at the **root path** (`/`). Default theme is 
 | `vendor/bin/sail composer run dev` | Start server + queue + logs + Vite concurrently |
 | `vendor/bin/sail composer run test` | Clear config cache then run full test suite |
 
+## Production Deployment Notes
+
+- Production details live in `DEPLOYMENT.md`; check it before advising on server commands, PDFs, migrations, or database restores.
+- Production is a cPanel / WHM VPS at `/home/tamliteco/luxquote.app/`, fronted by host Apache as an HTTPS reverse proxy to Docker port `8080`.
+- Runtime commands on production must go through Docker Compose, usually `docker compose exec laravel.test ...`; do not suggest bare host `php`, `composer`, `artisan`, or `npm`.
+- Production migrations need `--force`: `docker compose exec laravel.test php artisan migrate --force`.
+- The database is the Docker `mysql` service, not cPanel MySQL.
+- PDF generation uses Browsershot/Puppeteer inside the container. Run npm/Puppeteer maintenance as the `sail` user, for example `docker compose exec -u sail laravel.test npx puppeteer browsers install chrome-headless-shell`.
+- Keep proxy trust configured so generated URLs use `https://quote.tamlite.co.uk` rather than `http://127.0.0.1:8080`.
+
 ## Filament Resource Structure
 
 Each Resource follows this subdirectory layout:

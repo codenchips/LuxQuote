@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectRevision;
+use Illuminate\Support\Facades\File;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\LaravelPdf\PdfBuilder;
 
@@ -71,6 +72,7 @@ class ProjectSchedulePdfService
             'showPrices' => $documentType === 'quote',
         ])
             ->withBrowsershot(function ($browsershot) use ($footerHtml): void {
+                $this->configureBrowsershot($browsershot);
                 $browsershot->noSandbox();
                 $browsershot->showBrowserHeaderAndFooter();
                 $browsershot->headerHtml('<p>Header</p>');
@@ -99,5 +101,45 @@ class ProjectSchedulePdfService
     private function filenamePart(string $part): string
     {
         return trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-');
+    }
+
+    private function configureBrowsershot(object $browsershot): void
+    {
+        $tempPath = (string) config('laravel-pdf.browsershot.temp_path', storage_path('app/browsershot'));
+
+        File::ensureDirectoryExists($tempPath);
+
+        $browsershot->setCustomTempPath($tempPath);
+
+        if (filled(config('laravel-pdf.browsershot.node_binary'))) {
+            $browsershot->setNodeBinary((string) config('laravel-pdf.browsershot.node_binary'));
+        }
+
+        if (filled(config('laravel-pdf.browsershot.npm_binary'))) {
+            $browsershot->setNpmBinary((string) config('laravel-pdf.browsershot.npm_binary'));
+        }
+
+        if (filled(config('laravel-pdf.browsershot.chrome_path'))) {
+            $browsershot->setChromePath((string) config('laravel-pdf.browsershot.chrome_path'));
+        }
+
+        $nodeModulesPath = $this->nodeModulesPath();
+
+        if ($nodeModulesPath !== null) {
+            $browsershot->setNodeModulePath($nodeModulesPath);
+        }
+    }
+
+    private function nodeModulesPath(): ?string
+    {
+        $configuredPath = config('laravel-pdf.browsershot.node_modules_path');
+
+        if (filled($configuredPath)) {
+            return (string) $configuredPath;
+        }
+
+        $localPath = base_path('node_modules');
+
+        return is_dir($localPath) ? $localPath : null;
     }
 }

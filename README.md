@@ -44,6 +44,12 @@ vendor/bin/sail npm run dev   # optional: enables hot-reload for CSS/JS changes
 vendor/bin/sail stop
 ```
 
+## Production Deployment
+
+Production runs on a cPanel / WHM VPS inside Docker Compose / Laravel Sail containers. Do not run bare PHP, Artisan, Composer, or npm commands on the host server; execute them through Docker Compose against the `laravel.test` container.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the production command map, reverse proxy notes, database restore workflow, and PDF/Puppeteer requirements.
+
 ## Frontend Assets (CSS / JS)
 
 This project uses Vite with Tailwind CSS v4. Custom styles are loaded alongside Filament's own CSS via `->assets()` in `AdminPanelProvider`.
