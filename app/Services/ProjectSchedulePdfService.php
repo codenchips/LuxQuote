@@ -104,8 +104,8 @@ class ProjectSchedulePdfService
     }
 
     private function configureBrowsershot(object $browsershot): void
-    {
-        $tempPath = (string) config('laravel-pdf.browsershot.temp_path', storage_path('app/browsershot'));
+    {        
+        $tempPath = config('laravel-pdf.browsershot.temp_path') ?: storage_path('app/browsershot');
 
         File::ensureDirectoryExists($tempPath);
 
