@@ -6,6 +6,7 @@ services:
             args:
                 WWWGROUP: '${WWWGROUP}'
         image: 'sail-8.5/app'
+        restart: unless-stopped
         extra_hosts:
             - 'host.docker.internal:host-gateway'
         ports:
@@ -26,10 +27,10 @@ services:
             - mysql
             - redis
             - meilisearch
-            - mailpit
-            - selenium
+            - mailpit            
     mysql:
         image: 'mysql:8.4'
+        restart: unless-stopped
         ports:
             - '${FORWARD_DB_PORT:-3306}:3306'
         environment:
@@ -92,17 +93,6 @@ services:
         ports:
             - '${FORWARD_MAILPIT_PORT:-1025}:1025'
             - '${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}:8025'
-        networks:
-            - sail
-    selenium:
-        image: selenium/standalone-chromium
-        extra_hosts:
-            - 'host.docker.internal:host-gateway'
-        volumes:
-            - '/dev/shm:/dev/shm'
-        ports:
-            - '${FORWARD_SELENIUM_PORT:-4444}:4444'
-            - '${FORWARD_SELENIUM_HEADFUL_PORT:-7900}:7900'            
         networks:
             - sail
 networks:
