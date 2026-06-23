@@ -86,6 +86,11 @@ class ProjectSchedulePdfService
         return $this->builder($project, $revision, 'quote');
     }
 
+    public function quoteContent(Project $project, ProjectRevision $revision): string
+    {
+        return $this->contentFromBuilder($this->quoteBuilder($project, $revision));
+    }
+
     private function documentFilename(string $title, Project $project, ProjectRevision $revision): string
     {
         return collect([

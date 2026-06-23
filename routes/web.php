@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\DocumentPackController;
 use App\Http\Controllers\ProjectPdfController;
 use Illuminate\Support\Facades\Route;
 use Spatie\LaravelPdf\Facades\Pdf;
@@ -18,6 +19,9 @@ Route::middleware('auth')->group(function (): void {
 
     Route::get('/projects/{project}/export/unpriced-csv', [ProjectPdfController::class, 'unpricedCsv'])
         ->name('projects.export.unpriced-csv');
+
+    Route::get('/projects/{project}/document-packs/{documentPack}', DocumentPackController::class)
+        ->name('projects.document-packs.download');
 });
 
 Route::get('/test-pdf', function () {

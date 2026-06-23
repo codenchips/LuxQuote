@@ -16,6 +16,8 @@ Examples:
 - `pricing.update`
 - `validation.merge-lines`
 - `output.produce-quote`
+- `output.manage-document-packs`
+- `output.produce-document-packs`
 - `permissions.manage`
 
 Do not create arbitrary permission keys from the UI. A permission is useful only when the codebase knows what behavior it controls.
@@ -104,6 +106,8 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Edit prices | x |  | x |  | x |
 | Produce priced schedule | x |  | x |  | x |
 | Produce quote | x |  | x |  | x |
+| Manage document packs | x | x | x | x | x |
+| Produce document packs | x | x | x | x | x |
 | Request quote approval | x |  | x |  | x |
 | View products list page | x |  |  |  | x |
 | Import / fetch products | x |  |  |  |  |
@@ -113,6 +117,21 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Edit users | x |  |  |  |  |
 | Delete users | x |  |  |  |  |
 | Manage groups / permissions | x |  |  |  |  |
+
+## Document Pack Permissions
+
+Document packs deliberately separate editing from output:
+
+- `output.manage-document-packs` allows a user to create, rename, reorder, update, and delete packs and their uploaded PDFs.
+- `output.produce-document-packs` allows a user to request the merged PDF download.
+
+These permissions do not bypass the permissions of generated contents:
+
+- A Quote role also requires `pricing.view` and `output.produce-quote`.
+- An Unpriced Schedule role also requires `output.produce-unpriced-schedule`.
+- A pack containing a Quote cannot be generated until the selected revision is validated and approved.
+
+The UI hides unavailable roles and disables blocked generation, while Livewire methods, the download controller, and the merge service enforce the same rules server-side. Pack and revision IDs must belong to the current project; non-admin users remain limited to Open projects or projects they own.
 
 ## Global Pricing Rule
 
@@ -154,6 +173,7 @@ Focused permission tests live in:
 
 - `tests/Feature/AdminPermissionGateTest.php`
 - `tests/Feature/AdminPermissionResourceTest.php`
+- `tests/Feature/AdminDocumentPackTest.php`
 
 Related feature tests should be updated when permission behavior changes, especially:
 

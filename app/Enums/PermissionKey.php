@@ -22,6 +22,8 @@ enum PermissionKey: string
     case OutputProduceUnpricedSchedule = 'output.produce-unpriced-schedule';
     case OutputProducePricedSchedule = 'output.produce-priced-schedule';
     case OutputProduceQuote = 'output.produce-quote';
+    case OutputManageDocumentPacks = 'output.manage-document-packs';
+    case OutputProduceDocumentPacks = 'output.produce-document-packs';
     case QuoteApprovalRequest = 'quote-approval.request';
     case PricingView = 'pricing.view';
     case PricingUpdate = 'pricing.update';
@@ -55,6 +57,8 @@ enum PermissionKey: string
             self::OutputProduceUnpricedSchedule => 'Produce unpriced schedule',
             self::OutputProducePricedSchedule => 'Produce priced schedule',
             self::OutputProduceQuote => 'Produce quote',
+            self::OutputManageDocumentPacks => 'Manage document packs',
+            self::OutputProduceDocumentPacks => 'Produce document packs',
             self::QuoteApprovalRequest => 'Request quote approval',
             self::PricingView => 'View prices',
             self::PricingUpdate => 'Edit prices',
@@ -92,6 +96,8 @@ enum PermissionKey: string
             self::OutputProduceUnpricedSchedule,
             self::OutputProducePricedSchedule,
             self::OutputProduceQuote,
+            self::OutputManageDocumentPacks,
+            self::OutputProduceDocumentPacks,
             self::QuoteApprovalRequest => 'Output',
 
             self::PricingView,
@@ -144,6 +150,8 @@ enum PermissionKey: string
                     self::ProjectHistoryView,
                     self::OutputView,
                     self::OutputProduceUnpricedSchedule,
+                    self::OutputManageDocumentPacks,
+                    self::OutputProduceDocumentPacks,
                 ],
             ],
             'sales' => [
@@ -157,6 +165,8 @@ enum PermissionKey: string
                     self::OutputProduceUnpricedSchedule,
                     self::OutputProducePricedSchedule,
                     self::OutputProduceQuote,
+                    self::OutputManageDocumentPacks,
+                    self::OutputProduceDocumentPacks,
                     self::QuoteApprovalRequest,
                     self::PricingView,
                     self::PricingUpdate,
@@ -176,6 +186,8 @@ enum PermissionKey: string
                     self::ValidationMergeLines,
                     self::OutputView,
                     self::OutputProduceUnpricedSchedule,
+                    self::OutputManageDocumentPacks,
+                    self::OutputProduceDocumentPacks,
                 ],
             ],
             'manager' => [
@@ -200,6 +212,8 @@ enum PermissionKey: string
                     self::OutputProduceUnpricedSchedule,
                     self::OutputProducePricedSchedule,
                     self::OutputProduceQuote,
+                    self::OutputManageDocumentPacks,
+                    self::OutputProduceDocumentPacks,
                     self::QuoteApprovalRequest,
                     self::PricingView,
                     self::PricingUpdate,

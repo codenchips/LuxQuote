@@ -41,6 +41,20 @@ Use `--force` for production migrations to bypass Laravel's interactive producti
 
 PDF generation uses Spatie Laravel PDF / Browsershot, which requires Node.js, Puppeteer, and a headless Chrome binary inside the `laravel.test` container.
 
+Document-pack generation additionally uses the system `qpdf` binary to validate uploaded PDFs and merge uploaded/generated documents. The application now builds Sail from the project-owned `docker/8.5/Dockerfile` (rather than the runtime under `vendor/`), and that image installs `qpdf`. `compose.yaml` also uses the project-owned `docker/mysql/create-testing-database.sh`.
+
+After deploying these Docker/Compose changes, rebuild and recreate the application container before running migrations:
+
+```bash
+docker compose build --no-cache laravel.test
+docker compose up -d laravel.test
+docker compose exec laravel.test qpdf --version
+docker compose exec laravel.test php artisan migrate --force
+docker compose exec laravel.test php artisan optimize:clear
+```
+
+Do not install `qpdf` manually only in a running container; that change would be lost the next time the container is rebuilt.
+
 Run npm and Puppeteer install/update commands as the `sail` user. Running them as root can create permission problems for the web process.
 
 ```bash
@@ -58,6 +72,17 @@ Error: Cannot find module 'puppeteer'
 
 That means the container cannot find the Node dependency required by Browsershot. Re-run the npm/Puppeteer commands above inside the `laravel.test` container.
 
+If document-pack uploads or generation fail, verify `qpdf --version` in the container and check `storage/logs/laravel.log`. Uploaded files are checked with `qpdf --check`; corrupt, encrypted, or unsupported PDFs are intentionally rejected.
+
+Optional document-pack environment overrides are:
+
+```dotenv
+QPDF_BINARY=qpdf
+DOCUMENT_PACK_DISK=local
+DOCUMENT_PACK_MAX_UPLOAD_KB=25600
+DOCUMENT_PACK_PROCESS_TIMEOUT=60
+```
+
 ## Database Restore Workflow
 
 When restoring a raw SQL backup into the containerized MySQL service, use this exact sequence to avoid duplicate or stray table errors:
@@ -70,4 +95,4 @@ docker compose exec laravel.test php artisan migrate --force
 
 ## Deployment Method
 
-Code is currently synced to the VPS via SFTP. After deploying code that changes PHP config, routes, views, migrations, dependencies, or frontend assets, run the relevant Docker Compose commands above.
+Code is currently synced to the VPS via SFTP. After deploying code that changes PHP config, routes, views, migrations, dependencies, frontend assets, Dockerfiles, or Compose configuration, run the relevant Docker Compose commands above. The document-pack release requires the three new migrations for pack tables and permissions, plus a rebuilt `laravel.test` image containing `qpdf`.

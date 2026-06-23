@@ -23,10 +23,13 @@ class AdminPermissionGateTest extends TestCase
 
         $this->assertTrue($user->can('projects.create'));
         $this->assertTrue($user->can('output.produce-unpriced-schedule'));
+        $this->assertTrue($user->can('output.manage-document-packs'));
+        $this->assertTrue($user->can('output.produce-document-packs'));
         $this->assertFalse($user->can('pricing.view'));
 
         $this->assertTrue($sales->can('pricing.view'));
         $this->assertTrue($sales->can('output.produce-quote'));
+        $this->assertTrue($sales->can('output.manage-document-packs'));
         $this->assertFalse($sales->can('projects.create'));
         $this->assertFalse($sales->can('validation.update-lines'));
 
@@ -34,11 +37,13 @@ class AdminPermissionGateTest extends TestCase
         $this->assertTrue($technical->can('validation.merge-lines'));
         $this->assertFalse($technical->can('pricing.view'));
         $this->assertFalse($technical->can('output.produce-priced-schedule'));
+        $this->assertTrue($technical->can('output.produce-document-packs'));
 
         $this->assertTrue($manager->can('projects.create'));
         $this->assertTrue($manager->can('projects.update-lines'));
         $this->assertTrue($manager->can('revisions.approve'));
         $this->assertTrue($manager->can('pricing.view'));
+        $this->assertTrue($manager->can('output.manage-document-packs'));
     }
 
     public function test_technical_user_cannot_update_line_price(): void

@@ -724,6 +724,37 @@ class AdminProjectResourceTest extends TestCase
             ]), false);
     }
 
+    public function test_admin_can_switch_between_single_pdf_and_document_pack_tabs(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->assertSet('outputTab', 'single')
+            ->assertSee('Quote Approval')
+            ->assertSee('Quick PDF/CSV Output')
+            ->assertSee('Document Packs')
+            ->assertSee('Priced quote with branding, cover percentage, totals and approval.')
+            ->assertSee('Schedule export with pricing. Requires validation passed.')
+            ->assertSee('Schedule without pricing. Always available.')
+            ->assertDontSee('Build a reusable pack, drag documents into the required order');
+
+        $this->assertLessThan(
+            strpos($component->html(), 'role="tablist"'),
+            strpos($component->html(), 'Quote Approval'),
+        );
+
+        $component
+            ->set('outputTab', 'packs')
+            ->assertSee('Quote Approval')
+            ->assertSee('Build a reusable pack, drag documents into the required order')
+            ->assertDontSee('Priced quote with branding, cover percentage, totals and approval.')
+            ->assertDontSee('Schedule export with pricing. Requires validation passed.')
+            ->assertDontSee('Schedule without pricing. Always available.');
+    }
+
     public function test_admin_can_export_the_active_revision_as_csv_with_prices(): void
     {
         $admin = User::factory()->admin()->create();

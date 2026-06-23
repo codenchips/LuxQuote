@@ -108,6 +108,12 @@ class ActivityLogsTable
 
                             'quote_pdf.generated' => 'Generated quote PDF <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
 
+                            'document_pack.saved' => 'Saved document pack <strong>'.e((string) ($payload['document_pack_name'] ?? '')).'</strong>',
+
+                            'document_pack.generated' => 'Generated document pack <strong>'.e((string) ($payload['document_pack_name'] ?? '')).'</strong> as <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
+
+                            'document_pack.deleted' => 'Deleted document pack <strong>'.e((string) ($payload['document_pack_name'] ?? '')).'</strong>',
+
                             'salesforce_pdf.uploaded' => 'Uploaded '.e((string) ($payload['document_label'] ?? 'PDF')).' to Salesforce <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
 
                             'user.login' => 'Logged in',

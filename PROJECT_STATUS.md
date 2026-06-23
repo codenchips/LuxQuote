@@ -1,6 +1,6 @@
 # Company App — Project Status
 
-_Last updated: 11 June 2026_
+_Last updated: 23 June 2026_
 
 ---
 
@@ -17,7 +17,7 @@ An internal quoting and project management tool for a lighting company (Tamlite 
 | Framework | Laravel 13 |
 | Admin panel | Filament 5 |
 | Reactive UI | Livewire 4 + Alpine.js |
-| PHP | 8.3+ |
+| PHP | 8.5 |
 | Tests | PHPUnit 12 |
 | Dev runtime | Laravel Sail (Docker) |
 | Bundler | Vite |
@@ -75,6 +75,16 @@ project_lines
   approved (bool), approved_at (nullable timestamp), approved_by (nullable FK → users)
   sort_order
 
+document_packs
+  id, project_id (FK), name
+  created_by (nullable FK -> users), updated_by (nullable FK -> users)
+  unique(project_id, name)
+
+document_pack_items
+  id, document_pack_id (FK), role, source_type, sort_order
+  file_disk, file_path, original_filename (nullable)
+  configuration (nullable JSON)
+
 activity_logs
   id, user_id (nullable FK), project_id (nullable FK), action_type
   user_email_snapshot, project_name_snapshot, revision_number (nullable)
@@ -89,7 +99,9 @@ activity_logs
 - `ProjectRevision::creator()` — BelongsTo User via `created_by`
 - `ProjectRevision::validator()` — BelongsTo User via `validated_by`
 - `ProjectLine::approver()` — BelongsTo User via `approved_by`
-- A new Project auto-creates revision #1 on creation (model boot hook) and a default area
+- `Project::documentPacks()` is a HasMany relationship to project-level named packs, ordered by name
+- `DocumentPack::items()` returns the ordered pack contents; deleting a pack removes its uploaded files
+- A new Project auto-creates revision #0 on creation (model boot hook) and a default area. Revision #0 displays as **P0**; subsequent revisions display as **R1**, **R2**, and so on
 - `ProjectArea` has computed accessors: `line_total_qty` and `line_total` (qty × unit_price sum)
 - `Product.description` is the display description derived during import: Xcite uses `v_description`; other sites use `product_name + ' ' + v_description`
 - `ProjectLine.product_id` is nullable origin tracking for product-backed lines; `code` stores the copied SKU and `description` stores the copied product display description used for schedule/PDF output
@@ -106,6 +118,8 @@ activity_logs
 | `ProjectRevisionStatus` | `Draft`, `Approved` |
 | `ProjectVisibility` | `Open`, `Private` |
 | `ProjectLineType` | `Standard`, `Modified`, `Custom` |
+| `DocumentPackItemRole` | `Cover`, `Legal`, `Quote`, `UnpricedSchedule` |
+| `DocumentPackItemSource` | `Uploaded`, `Generated`, `Template` (reserved for the future template phase) |
 
 ---
 
@@ -117,6 +131,8 @@ activity_logs
 | `/projects` | `ProjectResource` | List + custom View page |
 | `/projects/{id}` | `ViewProject` (custom) | Main working page — see below |
 | `/projects/{id}/validation` | `ValidationProject` | Admin-only validation, warning approval, and duplicate merge |
+| `/projects/{id}/output` | `OutputProject` | Quote approval summary, quick PDF/CSV outputs, and document-pack builder |
+| `/projects/{project}/document-packs/{documentPack}` | `DocumentPackController` | Authenticated combined-PDF download for a selected revision |
 | `/users` | `UserResource` | Admin-only create/edit/list |
 | `/activity-logs` | `ActivityLogResource` | Admin-only history table |
 | `/salesforce` | `Salesforce` page | Admin-only Salesforce Opportunities table |
@@ -149,6 +165,8 @@ Each line is a sortable row (Alpine `x-sort`) with inline-editable fields:
 Lines can be dragged between areas; the `sortLine(lineId, position, targetAreaId)` method handles cross-area moves within a DB transaction.
 
 ### Revision Management
+
+The initial project state is stored as revision number `0` and labelled **P0** (pre-revision). Creating the first revision produces **R1**, followed by **R2**, **R3**, etc. Display code must use `ProjectRevision::label()` / `labelForNumber()` rather than prepending `R` directly.
 
 A **Revisions** header button opens a modal listing all revisions. From there users can:
 - **Select** any revision — activates it by updating `projects.active_revision_id`, updates the project `revision` number, and refreshes `$viewingRevisionId`
@@ -338,6 +356,39 @@ Rules:
 
 ---
 
+## Output Page & Document Packs
+
+The project output page is available at `/projects/{id}/output`. The **Quote Approval** summary remains above a two-tab output selector:
+
+- **Quick PDF/CSV Output** — Quote PDF, priced CSV, unpriced schedule PDF, and unpriced CSV.
+- **Document Packs** — named, reusable project-level definitions that combine uploaded and generated PDFs into one download.
+
+### Pack workflow
+
+- Users may save multiple uniquely named packs against a project. Packs carry across revisions.
+- Pack items are draggable and may be added, removed, or reordered. Stable UUID/item keys keep each role selector attached to the correct card after a drag.
+- Initial roles are **Cover** and **Legal** (uploaded PDFs), plus **Quote** and **Unpriced Schedule** (generated at output time).
+- Uploaded PDFs remain project-level. Generated items always use the revision selected when the pack is generated, not the revision that was active when the pack was saved.
+- Uploaded files are restricted to PDFs, default to a 25 MB limit, and are checked with `qpdf --check`; corrupt, encrypted, or unsupported PDFs are rejected.
+- Pack generation uses `qpdf` server-side to concatenate every page of each selected document in the saved order. Temporary generated inputs and the merged output are cleaned up after use/download.
+- Saving, generating, and deleting packs creates `document_pack.saved`, `document_pack.generated`, and `document_pack.deleted` activity entries.
+- The `Template` source enum is reserved for a later phase where users can choose system-defined document templates.
+
+### Revision and approval behavior
+
+- A pack containing a Quote cannot be generated until the selected revision has passed validation and has status `approved`.
+- The Generate button is disabled with an explanatory message while approval is missing; the download controller and PDF service repeat the check server-side.
+- Quote and unpriced-schedule roles also enforce their underlying output permissions. Cross-project pack/revision combinations return 404/403 rather than leaking data.
+
+### Configuration
+
+`config/document-packs.php` supports:
+
+- `QPDF_BINARY` (default `qpdf`)
+- `DOCUMENT_PACK_DISK` (default `local`)
+- `DOCUMENT_PACK_MAX_UPLOAD_KB` (default `25600`)
+- `DOCUMENT_PACK_PROCESS_TIMEOUT` (default `60` seconds)
+
 ## Test Coverage
 
 | Test file | Area covered |
@@ -346,13 +397,14 @@ Rules:
 | `Feature/AdminProductResourceTest.php` | Filament Products list page (admin) |
 | `Feature/AdminProjectResourceTest.php` | ViewProject server-side revision/project scoping for line actions; paste products, create form gating, status badges, Activity Logs revision display |
 | `Feature/AdminProjectValidationTest.php` | Revision validation, validated-lines table, manual flagging, automatic/explicit approval, Undo, Merge, revalidation, and approval locking |
+| `Feature/AdminDocumentPackTest.php` | Pack CRUD/order, uploaded PDF validation, revision-aware merge order, permissions, project ownership, cleanup, and quote-approval generation lock |
 | `Feature/AdminUserResourceTest.php` | Filament Users CRUD (admin) |
 | `Feature/FrontEndProductsTest.php` | Products list for non-admin |
 | `Feature/ProductImportTest.php` | `ProductImportService` — happy path, API failure, structure error |
 | `Feature/ExampleTest.php` | Smoke test |
 | `Unit/ExampleTest.php` | Smoke test |
 
-**Remaining project test gaps:** product picker UI flow, revision activation UI, presence heartbeat, validation browser coverage, PDF generation, and full Salesforce API/service coverage.
+**Remaining project test gaps:** product picker UI flow, revision activation UI, presence heartbeat, broader validation/PDF browser coverage, and full Salesforce API/service coverage. Document-pack generation and ordering have focused feature coverage.
 
 ---
 
@@ -385,7 +437,7 @@ The admin-only history table is available at `/activity-logs` via `ActivityLogRe
 Columns:
 - **Who** — current user name when available, falling back to `user_email_snapshot`
 - **Project** — stored `project_name_snapshot`
-- **Rev** — stored `revision_number`, formatted as `R1`, `R2`, etc.; older rows may show `—`
+- **Rev** — stored `revision_number`, formatted through the shared revision label helper as `P0`, `R1`, `R2`, etc.; older rows may show `—`
 - **Action Performed** — formatted from `action_type` and `payload`
 - **Date & Time** — `created_at`
 
@@ -473,7 +525,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 11 June 2026)
+## Known Gaps / Next Steps (as of 23 June 2026)
 
 - [x] ~~`ProjectLine.status` column exists but is a placeholder (`–`) in the UI — no logic yet~~ — status badges now show Pending, Priced, Unpriced, or Approved
 - [ ] Project tests cover server-side line/revision scoping, but still need browser/UI coverage for product picker, revision activation, presence, and PDF generation
@@ -484,6 +536,22 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [ ] No tests covering the Salesforce service (`Http::fake()` for auth success, auth failure, query failure)
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
+- [ ] Document-pack template sources and additional roles (for example case studies) are planned but not yet implemented
+
+---
+
+## Features completed — 23 June 2026
+
+- **P0 revision model**: New projects now begin at revision number `0`, displayed as **P0**. The first user-created revision is **R1**, followed by R2, R3, etc. Shared label helpers prevent UI, activity-log, filename, and export code from manually prepending `R`.
+- **P0 PDF metadata**: Quote and schedule PDFs omit all revision labels while at P0, use **Project Location**, and no longer display Contractor.
+- **Document packs**: Projects can store multiple named, ordered packs containing uploaded Cover/Legal PDFs and revision-generated Quote/Unpriced Schedule PDFs. Packs are reusable across revisions and merge into one PDF with `qpdf`.
+- **Revision-aware generation**: Generated pack documents use the revision chosen at download time; project-level uploaded PDFs remain unchanged between revisions.
+- **Quote approval safety**: Packs containing a Quote show why generation is blocked and disable the Generate action until the selected revision is validated and approved. Permission and approval checks are repeated by the download controller/service.
+- **Drag/drop state fix**: Document cards use stable associative keys so reordering keeps each dropdown, role description, and uploaded file aligned with the same document.
+- **Output page layout**: Quote Approval sits above tabs for **Quick PDF/CSV Output** and **Document Packs**. Tabs have a rounded dark segmented style, pack selectors match project-detail input depth, and disabled Quote/Priced CSV actions share one visual treatment.
+- **Security and audit trail**: Added `output.manage-document-packs` and `output.produce-document-packs`, project/revision ownership checks, role-specific output permission checks, upload validation, and activity messages for pack save/generate/delete events.
+- **Docker runtime**: Sail now builds from the project-owned `docker/8.5` runtime with `qpdf` installed; the MySQL test-database initializer is also project-owned so the runtime is reproducible outside `vendor/`.
+- **Focused coverage**: `AdminDocumentPackTest` covers pack persistence/order, merge order, invalid uploads, permissions, ownership, cleanup, and quote approval. `AdminProjectResourceTest` covers the tab layout and active/default output state.
 
 ---
 
@@ -533,7 +601,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Features completed — 2 June 2026
 
-- **Schedule PDF generation**: A printable A4 lighting schedule can now be downloaded for any project revision via a **Schedule PDF** button in the ViewProject header. The PDF is generated server-side using `spatie/laravel-pdf` (Browsershot / headless Chrome) with `->noSandbox()` for Docker compatibility. Output includes a branded Tamlite header, project meta grid, per-area line tables (code, ref, description, qty, wattage, lumens, unit price, total, notes), area subtotals, a grand total box, and a quote/general notes block. Modified and Custom lines are visually distinguished with coloured left-side rules. The PDF filename follows the pattern `schedule-{reference}-R{revision}.pdf`. Non-admin users are auth-scoped (Open projects or their own only). Full implementation details in the [PDF Generation](#pdf-generation) section below.
+- **Schedule PDF generation**: A printable A4 lighting schedule can now be downloaded for any project revision via a **Schedule PDF** button in the ViewProject header. The PDF is generated server-side using `spatie/laravel-pdf` (Browsershot / headless Chrome) with `->noSandbox()` for Docker compatibility. Output includes a branded Tamlite header, project meta grid, per-area line tables (code, ref, description, qty, wattage, lumens, unit price, total, notes), area subtotals, a grand total box, and a quote/general notes block. Modified and Custom lines are visually distinguished with coloured left-side rules. Filenames include the document title, project reference, shared revision label (`P0`/`R1`/...), and timestamp. Non-admin users are auth-scoped (Open projects or their own only). Full implementation details in the [PDF Generation](#pdf-generation) section below.
 
 - **Native TOTP two-factor authentication**: Filament 5's built-in MFA support enabled — no external plugins. Users can set up and manage 2FA (QR code + recovery codes) directly from their profile page. On next login, users who have 2FA enabled are challenged before access is granted.
 - **2FA columns on `users` table**: Migration `2026_06_02_074020_add_two_factor_authentication_to_users_table` adds `app_authentication_secret` (encrypted TOTP secret) and `app_authentication_recovery_codes` (encrypted JSON array). Both columns are encrypted at rest via Laravel's built-in encryption and are hidden from model serialization.
@@ -549,6 +617,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 ### Engine
 
 - Package: `spatie/laravel-pdf ^2.11` + `spatie/browsershot` (Puppeteer / headless Chrome)
+- Document-pack merger/validator: system `qpdf` binary, invoked through Symfony Process
 - **`->noSandbox()` is required** for all PDF generation inside Docker/Sail containers
 - `.env` values: `LARAVEL_PDF_NODE_BINARY=/usr/bin/node`, `LARAVEL_PDF_NPM_BINARY=/usr/bin/npm`
 - All PDF Blade views use **inline `<style>` only** — no external CSS, no Vite/Tailwind CDN dependency
@@ -562,6 +631,9 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 | `resources/views/pdfs/schedule.blade.php` | Schedule document: header, per-area tables, subtotals, grand total, notes |
 | `app/Http/Controllers/ProjectPdfController.php` | Auth + revision resolution + PDF streaming |
 | `routes/web.php` | `GET /projects/{project}/pdf/schedule` (auth middleware) → `projects.pdf.schedule` |
+| `app/Services/DocumentPackPdfService.php` | Resolves uploaded/generated pack items, validates uploads, and merges PDFs in saved order |
+| `app/Http/Controllers/DocumentPackController.php` | Project/revision authorization, combined-PDF download, and generation activity log |
+| `config/document-packs.php` | qpdf path, storage disk, upload limit, and process timeout |
 
 ### Schedule document layout (A4 portrait)
 
@@ -588,6 +660,9 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - Non-admins may only download PDFs for **Open** projects or projects they own
 - A `?revision=X` query parameter selects any revision; defaults to `active_revision_id`
 - The ViewProject **Schedule PDF** button automatically passes the currently-viewed `$viewingRevisionId`
+- P0 PDFs omit `Rev:` / `Revision`; R1+ PDFs use `ProjectRevision::label()`
+- Schedule and quote metadata uses **Project Location** and does not display Contractor
+- Document-pack routes additionally require `output.produce-document-packs`; generated item roles enforce their own Quote/Unpriced permissions
 
 ---
 

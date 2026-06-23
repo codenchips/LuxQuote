@@ -75,6 +75,11 @@ class Project extends Model
         return $this->belongsTo(ProjectRevision::class, 'active_revision_id');
     }
 
+    public function documentPacks(): HasMany
+    {
+        return $this->hasMany(DocumentPack::class)->orderBy('name');
+    }
+
     /** @deprecated Use areas through a specific revision instead */
     public function areas(): HasMany
     {
