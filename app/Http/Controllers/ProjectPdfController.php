@@ -145,7 +145,7 @@ class ProjectPdfController extends Controller
         $filename = collect([
             $includePrices ? 'priced-schedule' : 'unpriced-schedule',
             $project->reference_number ?? 'proj-'.$project->id,
-            'R'.$revision->revision_number,
+            $revision->label(),
         ])->implode('-').'.csv';
 
         $areas = $revision->areas()

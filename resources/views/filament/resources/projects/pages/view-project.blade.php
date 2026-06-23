@@ -648,7 +648,7 @@
                 <div class="flex items-center gap-4 px-6 py-4 {{ $isViewing ? 'bg-primary-50 dark:bg-primary-900/10' : '' }}">
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
-                            <span class="text-sm font-semibold text-gray-900 dark:text-white">Rev {{ $revision->revision_number }}</span>
+                            <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ $revision->label() }}</span>
                             @if($isActive)
                             <span class="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/30 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">Active</span>
                             @endif

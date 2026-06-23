@@ -30,6 +30,30 @@ class AdminProjectResourceTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_project_revisions_progress_from_p0_to_r1_and_r2(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+
+        $this->assertSame(0, $project->revision);
+        $this->assertSame('P0', $project->activeRevision->label());
+
+        $component = Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->assertSee('P0')
+            ->call('createNewRevision');
+
+        $this->assertSame(1, $project->fresh()->revision);
+        $this->assertSame('R1', $project->fresh()->activeRevision->label());
+
+        $component->call('createNewRevision');
+
+        $this->assertSame(2, $project->fresh()->revision);
+        $this->assertSame('R2', $project->fresh()->activeRevision->label());
+        $this->assertSame([0, 1, 2], $project->revisions()->pluck('revision_number')->all());
+    }
+
     public function test_project_create_form_requires_key_project_fields(): void
     {
         $this->assertTrue(ProjectForm::createActionIsDisabled([
@@ -87,6 +111,120 @@ class AdminProjectResourceTest extends TestCase
         );
     }
 
+    public function test_selected_salesforce_reference_label_only_contains_the_reference_number(): void
+    {
+        $this->assertSame(
+            '22600',
+            ProjectForm::salesforceSelectedReferenceLabel([
+                'Project_Reference_Number__c' => '22600',
+                'Name' => 'Hartwest Primary School',
+            ]),
+        );
+    }
+
+    public function test_selecting_a_salesforce_reference_selects_the_matching_project(): void
+    {
+        $this->travelTo('2026-06-23');
+
+        config(['services.salesforce.url' => 'https://example.my.salesforce.com']);
+
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response([
+                    'records' => [[
+                        'Id' => '006000000000001AAA',
+                        'Name' => 'HARTEST PRIMARY SCHOOL',
+                        'Project_Reference_Number__c' => '22600',
+                        'Account' => ['Name' => 'Example Customer'],
+                        'Owner' => ['Email' => 'owner@example.com'],
+                    ]],
+                ]);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $component = Livewire::test(ListProjects::class)
+            ->mountAction('create')
+            ->setActionData([
+                'customer_name' => 'Previous Customer',
+                'site_location' => 'Previous Location',
+                'owner_email' => 'previous-owner@example.com',
+                'created_by_email' => 'wrong-creator@example.com',
+                'date' => '2025-01-01',
+                'branch_name' => 'Previous Branch',
+                'cover_percentage' => '12.5',
+                'value' => 1000,
+                'quote_notes' => 'Previous quote notes',
+                'internal_notes' => 'Previous internal notes',
+                'general_notes' => 'Previous general notes',
+            ])
+            ->set('mountedActions.0.data.salesforce_reference_id', '006000000000001AAA');
+
+        $data = $component->instance()->mountedActions[0]['data'];
+
+        $this->assertSame('006000000000001AAA', $data['salesforce_id']);
+        $this->assertSame('006000000000001AAA', $data['salesforce_reference_id']);
+        $this->assertSame('Hartest Primary School', $data['name']);
+        $this->assertSame('22600', $data['reference_number']);
+        $this->assertStringContainsString('HARTEST PRIMARY SCHOOL', $data['salesforce_pending_data']);
+        $this->assertNull($data['customer_name']);
+        $this->assertNull($data['site_location']);
+        $this->assertNull($data['owner_email']);
+        $this->assertSame($admin->email, $data['created_by_email']);
+        $this->assertSame('2026-06-23', $data['date']);
+        $this->assertNull($data['branch_name']);
+        $this->assertNull($data['cover_percentage']);
+        $this->assertNull($data['value']);
+        $this->assertNull($data['quote_notes']);
+        $this->assertNull($data['internal_notes']);
+        $this->assertNull($data['general_notes']);
+    }
+
+    public function test_duplicate_project_create_shows_a_validation_notification(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        Project::factory()->for($admin)->create([
+            'name' => 'Existing Salesforce Project',
+            'reference_number' => '25948',
+        ]);
+
+        Livewire::test(ListProjects::class)
+            ->mountAction('create')
+            ->setActionData([
+                'salesforce_project' => true,
+                'salesforce_id' => '006000000000001AAA',
+                'salesforce_reference_id' => '006000000000001AAA',
+                'salesforce_pending_data' => json_encode([
+                    'Id' => '006000000000001AAA',
+                    'Name' => 'Existing Salesforce Project',
+                    'Project_Reference_Number__c' => '25948',
+                ]),
+                'name' => 'Existing Salesforce Project',
+                'reference_number' => '25948',
+                'customer_name' => 'Example Customer',
+                'created_by_email' => $admin->email,
+                'date' => now()->toDateString(),
+            ])
+            ->callMountedAction()
+            ->assertHasActionErrors(['reference_number'])
+            ->assertNotified('Project already exists');
+
+        $this->assertSame(1, Project::query()->where('reference_number', '25948')->count());
+    }
+
     public function test_admin_can_validate_the_active_project_revision(): void
     {
         $admin = User::factory()->admin()->create();
@@ -141,7 +279,7 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(ValidationProject::class, ['record' => $project->id])
             ->assertSee('Hospital Lighting')
             ->assertSee('Example Customer')
-            ->assertSee('Rev 1')
+            ->assertSee('P0')
             ->assertSee('2 unresolved issues')
             ->assertSee('SKU "VALID-SKU" appears 2 times in this area.')
             ->assertSee('SKU "MISSING-SKU" was not found in the product catalogue.')
@@ -481,7 +619,7 @@ class AdminProjectResourceTest extends TestCase
         {
             public function filename(Project $project, ProjectRevision $revision): string
             {
-                return 'schedule-PDF-REF-R1.pdf';
+                return 'schedule-PDF-REF-P0.pdf';
             }
 
             public function builder(Project $project, ProjectRevision $revision): object
@@ -510,12 +648,12 @@ class AdminProjectResourceTest extends TestCase
             'user_id' => $admin->id,
             'project_id' => $project->id,
             'action_type' => 'schedule_pdf.generated',
-            'revision_number' => 1,
+            'revision_number' => 0,
         ]);
 
         Livewire::test(ProjectHistory::class, ['record' => $project->id])
             ->assertSee('Generated schedule PDF')
-            ->assertSee('schedule-PDF-REF-R1.pdf');
+            ->assertSee('schedule-PDF-REF-P0.pdf');
     }
 
     public function test_project_page_displays_revision_totals(): void
@@ -568,7 +706,7 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(OutputProject::class, ['record' => $project->id])
             ->assertSee('Output Project')
             ->assertSee('Open')
-            ->assertSee('Rev 1')
+            ->assertSee('P0')
             ->assertSee('Quote Approval')
             ->assertSee('Approval Not Requested')
             ->assertSee('Validation must pass before requesting approval')
@@ -648,7 +786,7 @@ class AdminProjectResourceTest extends TestCase
         {
             public function quoteFilename(Project $project, ProjectRevision $revision): string
             {
-                return 'quote-QUOTE-REF-R1.pdf';
+                return 'quote-QUOTE-REF-P0.pdf';
             }
 
             public function quoteBuilder(Project $project, ProjectRevision $revision): object
@@ -682,6 +820,9 @@ class AdminProjectResourceTest extends TestCase
         $project = Project::factory()->for($admin)->create([
             'name' => 'Quote Totals Project',
             'reference_number' => 'QT-001',
+            'customer_name' => 'Example Customer',
+            'contractor' => 'This Must Not Appear',
+            'site_location' => 'Telford, Shropshire',
         ]);
         $revision = $project->activeRevision;
         $area = $revision->areas()->first();
@@ -721,6 +862,37 @@ class AdminProjectResourceTest extends TestCase
         $this->assertStringContainsString('&pound;85.00', $html);
         $this->assertStringContainsString('Total quantity', $html);
         $this->assertStringContainsString('Line items', $html);
+    }
+
+    public function test_p0_schedule_and_quote_hide_revision_and_contractor_metadata(): void
+    {
+        $user = User::factory()->create(['name' => 'PDF User']);
+        $project = Project::factory()->for($user)->create([
+            'contractor' => 'Hidden Contractor',
+            'site_location' => 'Visible Project Location',
+        ]);
+        $revision = $project->activeRevision;
+        $areas = $revision->areas()->with('lines')->get();
+
+        foreach ([
+            ['title' => 'Lighting Schedule', 'showPrices' => false],
+            ['title' => 'Lighting Quote', 'showPrices' => true],
+        ] as $document) {
+            $html = view('pdfs.schedule', [
+                'project' => $project->load('user'),
+                'revision' => $revision,
+                'areas' => $areas,
+                'documentTitle' => $document['title'],
+                'showPrices' => $document['showPrices'],
+            ])->render();
+
+            $this->assertStringNotContainsString('Rev:', $html);
+            $this->assertStringNotContainsString('Revision:', $html);
+            $this->assertStringNotContainsString('Contractor:', $html);
+            $this->assertStringNotContainsString('Hidden Contractor', $html);
+            $this->assertStringContainsString('Project Location:', $html);
+            $this->assertStringContainsString('Visible Project Location', $html);
+        }
     }
 
     public function test_admin_can_paste_products_with_optional_description_and_price_columns(): void
@@ -1048,7 +1220,7 @@ class AdminProjectResourceTest extends TestCase
         {
             public function filename(Project $project, ProjectRevision $revision): string
             {
-                return 'schedule-22600-R1.pdf';
+                return 'schedule-22600-P0.pdf';
             }
 
             public function content(Project $project, ProjectRevision $revision): string
@@ -1117,7 +1289,7 @@ class AdminProjectResourceTest extends TestCase
             'https://example.my.salesforce.com/lightning/r/ContentDocument/069000000000001AAA/view',
             $log->payload['salesforce_pdf_url'] ?? null,
         );
-        $this->assertSame('schedule-22600-R1.pdf', $log->payload['salesforce_pdf_filename'] ?? null);
+        $this->assertSame('schedule-22600-P0.pdf', $log->payload['salesforce_pdf_filename'] ?? null);
 
         Livewire::test(ProjectHistory::class, ['record' => $project->id])
             ->assertSee('Saved project details and uploaded', false)
@@ -1269,7 +1441,7 @@ class AdminProjectResourceTest extends TestCase
             ->where('action_type', 'revision.created')
             ->first();
 
-        $this->assertSame(2, $revisionLog?->revision_number);
+        $this->assertSame(1, $revisionLog?->revision_number);
     }
 
     public function test_activity_logs_table_shows_the_revision_number(): void

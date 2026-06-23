@@ -31,6 +31,11 @@ class ProjectForm
                     ->label('Salesforce Project')
                     ->live()
                     ->default(true)
+                    ->afterStateUpdated(function (bool $state, Set $set): void {
+                        if ($state) {
+                            self::clearSalesforceSelection($set);
+                        }
+                    })
                     ->disabled(fn (?Project $record): bool => $record !== null)
                     ->columnSpanFull(),
 
@@ -40,6 +45,9 @@ class ProjectForm
                     ->live()
                     ->required()
                     ->unique(ignoreRecord: true)
+                    ->validationMessages([
+                        'unique' => 'A project with this project name already exists.',
+                    ])
                     ->hidden(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true && $record === null)
                     ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true)
                     ->columnSpanFull(),
@@ -62,26 +70,35 @@ class ProjectForm
                     })
                     ->live()
                     ->afterStateUpdated(function (?string $state, Set $set): void {
-                        if (blank($state)) {
-                            $set('name', null);
-                            $set('salesforce_id', null);
-                            $set('salesforce_pending_data', null);
-
-                            return;
-                        }
-
-                        $record = app(SalesforceService::class)->getOpportunityById($state);
-
-                        if ($record === null) {
-                            return;
-                        }
-
-                        $set('name', self::titleCaseProjectName($record['Name'] ?? ''));
-                        $set('salesforce_id', $record['Id'] ?? null);
-                        $set('salesforce_pending_data', json_encode($record));
+                        self::selectSalesforceOpportunity($state, $set);
                     })
                     ->visible(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true && $record === null)
                     ->columnSpanFull(),
+
+                Select::make('salesforce_reference_id')
+                    ->label('Reference Number')
+                    ->placeholder('Type to search Salesforce project references...')
+                    ->searchable()
+                    ->getSearchResultsUsing(
+                        fn (string $search): array => app(SalesforceService::class)->searchOpportunitiesByReference($search)
+                    )
+                    ->getOptionLabelUsing(function (?string $value): ?string {
+                        if (blank($value)) {
+                            return null;
+                        }
+
+                        $record = app(SalesforceService::class)->getOpportunityById($value);
+
+                        return $record ? self::salesforceSelectedReferenceLabel($record) : null;
+                    })
+                    ->live()
+                    ->afterStateUpdated(function (?string $state, Set $set): void {
+                        self::selectSalesforceOpportunity($state, $set);
+                    })
+                    ->visible(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true
+                        && $record === null
+                        && blank($get('salesforce_id')))
+                    ->dehydrated(false),
 
                 Html::make(<<<'HTML'
                     <div
@@ -134,6 +151,13 @@ class ProjectForm
                     ->live()
                     ->required()
                     ->unique(ignoreRecord: true)
+                    ->validationMessages([
+                        'unique' => 'A project with this reference number already exists.',
+                    ])
+                    ->hidden(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true
+                        && $record === null
+                        && blank($get('salesforce_id')))
+                    ->dehydratedWhenHidden()
                     ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
 
                 TextInput::make('customer_name')
@@ -152,7 +176,6 @@ class ProjectForm
                     ->label('Project Owner (email)')
                     ->placeholder('owner@company.com')
                     ->email()
-                    ->default(fn (): ?string => auth()->user()?->email)
                     ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
 
                 TextInput::make('created_by_email')
@@ -226,6 +249,14 @@ class ProjectForm
     }
 
     /**
+     * @param  array<string, mixed>  $record
+     */
+    public static function salesforceSelectedReferenceLabel(array $record): string
+    {
+        return (string) ($record['Project_Reference_Number__c'] ?? '');
+    }
+
+    /**
      * @param  array<string, mixed>|null  $state
      * @param  array<string, mixed>|null  $fallbackState
      */
@@ -240,5 +271,59 @@ class ProjectForm
         }
 
         return false;
+    }
+
+    private static function selectSalesforceOpportunity(?string $salesforceId, Set $set): void
+    {
+        if (blank($salesforceId)) {
+            self::clearSalesforceSelection($set);
+
+            return;
+        }
+
+        self::clearUnconfirmedSalesforceDetails($set);
+
+        $record = app(SalesforceService::class)->getOpportunityById($salesforceId);
+
+        if ($record === null) {
+            return;
+        }
+
+        $set('name', self::titleCaseProjectName($record['Name'] ?? ''));
+        $set('reference_number', $record['Project_Reference_Number__c'] ?? null);
+        $set('salesforce_id', $record['Id'] ?? null);
+        $set('salesforce_reference_id', $record['Id'] ?? null);
+        $set('salesforce_pending_data', json_encode($record));
+    }
+
+    private static function clearSalesforceSelection(Set $set): void
+    {
+        self::clearUnconfirmedSalesforceDetails($set);
+
+        $set('name', null);
+        $set('reference_number', null);
+        $set('salesforce_id', null);
+        $set('salesforce_reference_id', null);
+        $set('salesforce_pending_data', null);
+    }
+
+    private static function clearUnconfirmedSalesforceDetails(Set $set): void
+    {
+        foreach ([
+            'customer_name',
+            'site_location',
+            'owner_email',
+            'branch_name',
+            'cover_percentage',
+            'value',
+            'quote_notes',
+            'internal_notes',
+            'general_notes',
+        ] as $field) {
+            $set($field, null);
+        }
+
+        $set('created_by_email', auth()->user()?->email);
+        $set('date', now()->toDateString());
     }
 }

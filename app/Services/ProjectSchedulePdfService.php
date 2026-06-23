@@ -91,7 +91,7 @@ class ProjectSchedulePdfService
         return collect([
             $title,
             $project->reference_number ?? 'proj-'.$project->id,
-            'R'.$revision->revision_number,
+            $revision->label(),
             now()->format('Ymd-His'),
         ])
             ->map(fn (string $part): string => $this->filenamePart($part))
@@ -104,7 +104,7 @@ class ProjectSchedulePdfService
     }
 
     private function configureBrowsershot(object $browsershot): void
-    {        
+    {
         $tempPath = config('laravel-pdf.browsershot.temp_path') ?: storage_path('app/browsershot');
 
         File::ensureDirectoryExists($tempPath);

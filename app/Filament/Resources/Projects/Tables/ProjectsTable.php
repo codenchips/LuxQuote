@@ -68,7 +68,7 @@ class ProjectsTable
 
                 TextColumn::make('revision')
                     ->label('Rev')
-                    ->formatStateUsing(fn (int $state): string => 'R'.$state)
+                    ->formatStateUsing(fn (int $state): string => ProjectRevision::labelForNumber($state))
                     ->badge()
                     ->color('gray')
                     ->width('3.5rem'),
@@ -174,7 +174,7 @@ class ProjectsTable
 
                         $attributes['name'] = $record->name.' - Copy';
                         $attributes['reference_number'] = null;
-                        $attributes['revision'] = 1;
+                        $attributes['revision'] = 0;
 
                         // withoutEvents prevents the booted hook from auto-creating a revision+area
                         $copy = Project::withoutEvents(fn (): Project => Project::create($attributes));
@@ -182,7 +182,7 @@ class ProjectsTable
                         // Manually create the initial revision for the copied project
                         $newRevision = ProjectRevision::create([
                             'project_id' => $copy->id,
-                            'revision_number' => 1,
+                            'revision_number' => 0,
                             'created_by' => auth()->id(),
                         ]);
 

@@ -7,7 +7,9 @@ use App\Filament\Resources\Projects\Schemas\ProjectForm;
 use App\Models\Project;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
+use Illuminate\Validation\ValidationException;
 
 class ListProjects extends ListRecords
 {
@@ -45,5 +47,28 @@ class ListProjects extends ListRecords
                 })
                 ->successRedirectUrl(fn (Project $record): string => ProjectResource::getUrl('view', ['record' => $record])),
         ];
+    }
+
+    protected function onValidationError(ValidationException $exception): void
+    {
+        parent::onValidationError($exception);
+
+        $messages = collect($exception->errors())
+            ->flatten()
+            ->filter(fn (mixed $message): bool => is_string($message));
+
+        if ($messages->isEmpty()) {
+            return;
+        }
+
+        $isDuplicateProject = $messages->contains(
+            fn (string $message): bool => str_contains($message, 'already exists'),
+        );
+
+        Notification::make()
+            ->danger()
+            ->title($isDuplicateProject ? 'Project already exists' : 'Project could not be created')
+            ->body((string) $messages->first())
+            ->send();
     }
 }

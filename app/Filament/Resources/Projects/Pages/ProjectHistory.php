@@ -6,6 +6,7 @@ use App\Filament\Resources\ActivityLogs\Tables\ActivityLogsTable;
 use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ActivityLog;
+use App\Models\ProjectRevision;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Concerns\InteractsWithTable;
@@ -40,7 +41,7 @@ class ProjectHistory extends ViewRecord implements HasTable
     {
         $parts = array_filter([
             $this->record->visibility?->label(),
-            $this->record->revision ? 'Rev '.$this->record->revision : null,
+            ProjectRevision::labelForNumber($this->record->revision),
         ]);
 
         return new HtmlString(implode(' &middot; ', $parts));

@@ -331,7 +331,9 @@
             <div class="doc-title">{{ $documentTitle }}</div>
             <div class="ref-lines">
                 <div><span class="ref-label">Ref: </span><span class="ref-val">{{ $project->reference_number ?? '-' }}</span></div>
-                <div><span class="ref-label">Rev: </span><span class="ref-val">R{{ $revision->revision_number }}</span></div>
+                @if($revision->revision_number > 0)
+                    <div><span class="ref-label">Rev: </span><span class="ref-val">{{ $revision->label() }}</span></div>
+                @endif
                 <div><span class="ref-label">Date: </span><span class="ref-val">{{ $project->date?->format('d M Y') ?? '-' }}</span></div>
                 <div><span class="ref-label">Generated: </span><span class="ref-val">{{ now()->format('d M Y H:i') }}</span></div>
             </div>
@@ -351,15 +353,15 @@
         <div class="project-name">{{ $project->name }}</div>
         <div class="project-meta-row">
             <span class="meta-lbl">Customer:</span> {{ $project->customer_name ?? '-' }}
-            <span class="meta-sep">&middot;</span>
-            <span class="meta-lbl">Contractor:</span> {{ $project->contractor ?? '-' }}
         </div>
         <div class="project-meta-row">
-            <span class="meta-lbl">Location:</span> {{ $project->site_location ?? '-' }}
+            <span class="meta-lbl">Project Location:</span> {{ $project->site_location ?? '-' }}
         </div>
         <div class="project-meta-row">
-            <span class="meta-lbl">Revision:</span> R{{ $revision->revision_number }}
-            <span class="meta-sep">&middot;</span>
+            @if($revision->revision_number > 0)
+                <span class="meta-lbl">Revision:</span> {{ $revision->label() }}
+                <span class="meta-sep">&middot;</span>
+            @endif
             <span class="meta-lbl">Prepared by:</span> {{ $project->user?->name ?? '-' }}
         </div>
     </div>

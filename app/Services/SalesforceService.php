@@ -170,6 +170,39 @@ class SalesforceService
     }
 
     /**
+     * Search Opportunities by project reference for typeahead Select.
+     *
+     * @return array<string, string> Keyed by Opportunity ID, value is display label.
+     */
+    public function searchOpportunitiesByReference(string $query, int $limit = 10): array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return [];
+        }
+
+        $escaped = $this->soqlEscape($query);
+        $where = $this->openOpportunityWhereClause("Project_Reference_Number__c LIKE '%{$escaped}%'");
+        $result = $this->soqlQuery(
+            $auth,
+            "SELECT Id, Name, Project_Reference_Number__c FROM Opportunity{$where} ORDER BY Project_Reference_Number__c ASC LIMIT {$limit}",
+        );
+
+        $options = [];
+
+        foreach ($result['records'] ?? [] as $record) {
+            $reference = $record['Project_Reference_Number__c'] ?? '';
+            $name = $record['Name'] ?? '';
+            $options[$record['Id']] = filled($reference)
+                ? "{$reference} — {$name}"
+                : $name;
+        }
+
+        return $options;
+    }
+
+    /**
      * Fetch a single Opportunity by Salesforce ID.
      *
      * @return array<string, mixed>|null

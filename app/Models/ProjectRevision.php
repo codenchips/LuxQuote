@@ -25,6 +25,16 @@ class ProjectRevision extends Model
         ];
     }
 
+    public function label(): string
+    {
+        return self::labelForNumber($this->revision_number);
+    }
+
+    public static function labelForNumber(int $revisionNumber): string
+    {
+        return $revisionNumber === 0 ? 'P0' : 'R'.$revisionNumber;
+    }
+
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);

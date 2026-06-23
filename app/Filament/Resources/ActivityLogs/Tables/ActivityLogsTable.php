@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ActivityLogs\Tables;
 
 use App\Models\ActivityLog;
+use App\Models\ProjectRevision;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -26,7 +27,7 @@ class ActivityLogsTable
 
                 TextColumn::make('revision_number')
                     ->label('Rev')
-                    ->formatStateUsing(fn (?int $state): ?string => $state ? 'R'.$state : null)
+                    ->formatStateUsing(fn (?int $state): ?string => $state !== null ? ProjectRevision::labelForNumber($state) : null)
                     ->placeholder('—')
                     ->sortable()
                     ->width('4rem'),

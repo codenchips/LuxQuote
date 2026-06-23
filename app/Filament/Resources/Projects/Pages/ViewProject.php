@@ -135,8 +135,8 @@ class ViewProject extends ViewRecord
 
         if ($this->viewingRevisionId) {
             $revNum = ProjectRevision::find($this->viewingRevisionId)?->revision_number;
-            if ($revNum) {
-                $parts[] = 'Rev '.$revNum;
+            if ($revNum !== null) {
+                $parts[] = ProjectRevision::labelForNumber($revNum);
             }
         }
 

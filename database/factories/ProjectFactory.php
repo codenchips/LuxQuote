@@ -31,7 +31,7 @@ class ProjectFactory extends Factory
             'created_by_email' => $this->faker->safeEmail(),
             'department' => null,
             'date' => $this->faker->date(),
-            'revision' => 1,
+            'revision' => 0,
             'visibility' => ProjectVisibility::Open->value,
             'status' => ProjectStatus::Draft->value,
             'branch_name' => null,
