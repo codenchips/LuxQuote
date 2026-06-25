@@ -11,6 +11,7 @@ use App\Models\DocumentPackItem;
 use App\Models\Permission;
 use App\Models\PermissionGroup;
 use App\Models\Project;
+use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
 use App\Models\User;
 use App\Services\DocumentPackPdfService;
@@ -44,6 +45,7 @@ class AdminDocumentPackTest extends TestCase
             ->set('documentPackName', 'Customer Quote Pack')
             ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Cover->value)
             ->set("documentPackUploads.{$firstKey}", UploadedFile::fake()->createWithContent('cover.pdf', $this->pdfWithText('Cover')))
+            ->set("documentPackUploadOriginalNames.{$firstKey}", 'Cover Sheet.pdf')
             ->call('addDocumentPackItem', $firstKey);
 
         $secondKey = array_key_last($component->get('documentPackItems'));
@@ -67,7 +69,7 @@ class AdminDocumentPackTest extends TestCase
         ], $pack->items->pluck('source_type')->all());
 
         $cover = $pack->items->first();
-        $this->assertSame('cover.pdf', $cover->original_filename);
+        $this->assertSame('Cover Sheet.pdf', $cover->original_filename);
         Storage::disk('local')->assertExists($cover->file_path);
     }
 
@@ -77,6 +79,23 @@ class AdminDocumentPackTest extends TestCase
 
         $admin = User::factory()->admin()->create();
         $project = Project::factory()->for($admin)->create();
+        $revision = $project->activeRevision;
+        $area = $revision->areas()->firstOrFail();
+        ProjectLine::create([
+            'project_area_id' => $area->id,
+            'description' => 'Panel',
+            'qty' => 3,
+            'sort_order' => 0,
+        ]);
+        ProjectLine::create([
+            'project_area_id' => $area->id,
+            'description' => 'Downlight',
+            'qty' => 5,
+            'sort_order' => 1,
+        ]);
+        ProjectLine::query()
+            ->where('project_area_id', $area->id)
+            ->update(['updated_at' => '2026-06-25 10:30:00']);
         $this->actingAs($admin);
 
         $component = Livewire::test(OutputProject::class, ['record' => $project->id])
@@ -84,43 +103,44 @@ class AdminDocumentPackTest extends TestCase
         $firstKey = array_key_first($component->get('documentPackItems'));
 
         $component
+            ->assertSee('Select a document...')
+            ->assertDontSee('Contents')
             ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::UnpricedSchedule->value)
             ->assertSeeHtml('xl:grid-cols-6')
             ->assertSeeHtml('h-[233px] w-[165px]')
             ->assertSeeHtml('aria-label="Add document"')
+            ->assertSee('Unpriced Schedule')
             ->assertSee('Generated')
+            ->assertSee("P0 - 2 SKU's, 8 Items")
+            ->assertSee('Last modified 25/06/26 10:30')
+            ->assertDontSee('Select a document...')
             ->assertDontSee('The unpriced schedule generated for the revision selected at output time.')
             ->assertDontSee('Add after')
-            ->assertDontSee('Replace');
+            ->assertDontSee('Replace document type')
+            ->assertDontSee('Cancel replacement');
 
         $component
             ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Cover->value)
-            ->assertSee('Drop a file here or click to choose')
-            ->set("documentPackUploads.{$firstKey}", UploadedFile::fake()->createWithContent('cover.pdf', $this->pdfWithText('Cover')))
             ->assertSee('Cover')
-            ->assertSeeHtml('aria-label="Replace document type"')
+            ->assertSee('Drop a file here or click to choose')
             ->assertDontSee('Select a document...')
-            ->call('startEditingDocumentPackRole', $firstKey)
-            ->assertSee('Select a document...')
-            ->assertSeeHtml('aria-label="Cancel replacement"')
-            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Legal->value)
-            ->call('finishEditingDocumentPackRole', $firstKey)
-            ->assertSee('Drop a file here or click to choose')
-            ->assertSeeHtml('aria-label="Cancel replacement"')
-            ->assertDontSee('cover.pdf')
-            ->call('cancelEditingDocumentPackRole', $firstKey)
-            ->assertSet("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Cover->value)
-            ->assertSee('Cover')
-            ->assertSeeHtml('aria-label="Replace document type"')
-            ->call('startEditingDocumentPackRole', $firstKey)
-            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Legal->value)
-            ->call('finishEditingDocumentPackRole', $firstKey)
-            ->set("documentPackUploads.{$firstKey}", UploadedFile::fake()->createWithContent('legal.pdf', $this->pdfWithText('Legal')))
-            ->call('finishEditingDocumentPackRole', $firstKey)
-            ->assertSee('Legal')
-            ->assertSee('legal.pdf')
-            ->assertSeeHtml('aria-label="Replace document type"')
-            ->assertDontSeeHtml('aria-label="Cancel replacement"');
+            ->assertSeeHtml('x-on:drop.prevent.stop')
+            ->assertSeeHtml('Preview of selected PDF')
+            ->assertSeeHtml('window.documentPackPreviewUrls')
+            ->assertSeeHtml('rejectSelectedFile($event)')
+            ->assertSeeHtml('readAsDataURL')
+            ->assertSeeHtml('$wire.upload')
+            ->assertSeeHtml('clearDocumentPackUpload')
+            ->assertSee('Only PDF files can be uploaded.')
+            ->assertSeeHtml("\$wire.set('documentPackUploadOriginalNames.")
+            ->set("documentPackUploads.{$firstKey}", UploadedFile::fake()->createWithContent('cover.pdf', $this->pdfWithText('Cover')))
+            ->set("documentPackUploadOriginalNames.{$firstKey}", 'Cover Sheet.pdf')
+            ->assertSee('Cover Sheet.pdf')
+            ->assertSee('replace')
+            ->assertDontSee('Select a document...')
+            ->assertDontSee('Contents')
+            ->assertDontSee('Replace document type')
+            ->assertDontSee('Cancel replacement');
     }
 
     public function test_uploaded_document_pack_item_can_be_opened_inline(): void
@@ -148,6 +168,42 @@ class AdminDocumentPackTest extends TestCase
             ->assertOk()
             ->assertHeader('Content-Type', 'application/pdf')
             ->assertHeader('Content-Disposition', 'inline; filename="cover.pdf"');
+    }
+
+    public function test_replacing_uploaded_document_pack_item_uses_replacement_filename_without_old_preview_url(): void
+    {
+        Storage::fake('local');
+
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $pack = DocumentPack::factory()->for($project)->create(['created_by' => $admin->id]);
+        Storage::disk('local')->put('tests/old-legal.pdf', $this->pdfWithText('Old Legal'));
+        $item = DocumentPackItem::factory()->for($pack)->create([
+            'role' => DocumentPackItemRole::Legal,
+            'source_type' => DocumentPackItemSource::Uploaded,
+            'file_disk' => 'local',
+            'file_path' => 'tests/old-legal.pdf',
+            'original_filename' => 'old-legal.pdf',
+        ]);
+        $this->actingAs($admin);
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->set('outputTab', 'packs')
+            ->call('loadDocumentPack', $pack->id);
+
+        $itemKey = 'item-'.$item->id;
+
+        $component
+            ->set("documentPackUploads.{$itemKey}", UploadedFile::fake()->createWithContent('new-legal.pdf', $this->pdfWithText('New Legal')))
+            ->set("documentPackUploadOriginalNames.{$itemKey}", 'new-legal.pdf')
+            ->call('clearDocumentPackUpload', $itemKey)
+            ->assertSet("documentPackUploadOriginalNames.{$itemKey}", null)
+            ->set("documentPackUploads.{$itemKey}", UploadedFile::fake()->createWithContent('newer-legal.pdf', $this->pdfWithText('Newer Legal')))
+            ->set("documentPackUploadOriginalNames.{$itemKey}", 'newer-legal.pdf')
+            ->assertSee('newer-legal.pdf')
+            ->assertDontSee('old-legal.pdf');
+
+        $this->assertNull($component->instance()->documentPackItemPdfUrl($component->get('documentPackItems')[$itemKey]));
     }
 
     public function test_uploaded_document_pack_item_preview_requires_manage_permission(): void
@@ -278,7 +334,8 @@ class AdminDocumentPackTest extends TestCase
         $this->assertSame($secondKey, array_key_first($component->get('documentPackItems')));
         $component
             ->assertSet("documentPackItems.{$secondKey}.role", DocumentPackItemRole::UnpricedSchedule->value)
-            ->assertSeeHtml('wire:key="document-pack-role-'.$secondKey.'"')
+            ->assertSee('Unpriced Schedule')
+            ->assertDontSeeHtml('wire:key="document-pack-role-'.$secondKey.'"')
             ->call('saveDocumentPack')
             ->assertHasNoErrors();
 

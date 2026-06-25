@@ -366,10 +366,13 @@ The project output page is available at `/projects/{id}/output`. The **Quote App
 ### Pack workflow
 
 - Users may save multiple uniquely named packs against a project. Packs carry across revisions.
-- Pack items are draggable and may be added, removed, or reordered. Stable UUID/item keys keep each role selector attached to the correct card after a drag.
+- Pack items are compact six-across cards. Items are draggable and may be added at the end, removed, or reordered. Stable UUID/item keys keep each role, upload, preview, and filename attached to the correct card after a drag.
 - Initial roles are **Cover** and **Legal** (uploaded PDFs), plus **Quote** and **Unpriced Schedule** (generated at output time).
 - Uploaded PDFs remain project-level. Generated items always use the revision selected when the pack is generated, not the revision that was active when the pack was saved.
-- Uploaded files are restricted to PDFs, default to a 25 MB limit, and are checked with `qpdf --check`; corrupt, encrypted, or unsupported PDFs are rejected.
+- Uploaded-file cards accept click-to-select and drag/drop. Client-side guards reject non-PDF files before upload, and server-side validation still enforces `mimes:pdf`.
+- Uploaded PDFs show a first-page thumbnail that opens the saved document in a new tab. Unsaved uploads/replacements use a local browser preview and preserve the selected filename until the pack is saved.
+- Replacement uploads explicitly clear the previous pending upload before starting the next upload so repeated replacements do not alternate against stale Livewire temporary-file state.
+- Uploaded files default to a 25 MB limit and are checked with `qpdf --check`; corrupt, encrypted, or unsupported PDFs are rejected before they can be merged.
 - Pack generation uses `qpdf` server-side to concatenate every page of each selected document in the saved order. Temporary generated inputs and the merged output are cleaned up after use/download.
 - Saving, generating, and deleting packs creates `document_pack.saved`, `document_pack.generated`, and `document_pack.deleted` activity entries.
 - The `Template` source enum is reserved for a later phase where users can choose system-defined document templates.
@@ -378,6 +381,7 @@ The project output page is available at `/projects/{id}/output`. The **Quote App
 
 - A pack containing a Quote cannot be generated until the selected revision has passed validation and has status `approved`.
 - The Generate button is disabled with an explanatory message while approval is missing; the download controller and PDF service repeat the check server-side.
+- Generated Quote/Schedule cards show revision context as `{label} - {line count} SKU's, {qty total} Items`, plus a `Last modified dd/mm/yy hh:mm` line based on the latest project-line update in the selected revision.
 - Quote and unpriced-schedule roles also enforce their underlying output permissions. Cross-project pack/revision combinations return 404/403 rather than leaking data.
 
 ### Configuration

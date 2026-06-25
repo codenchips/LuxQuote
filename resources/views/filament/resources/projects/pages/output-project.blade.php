@@ -165,13 +165,107 @@
                             $hasReplacementUpload = $this->documentPackItemHasActiveUpload($item);
                             $hasExistingFile = $this->documentPackItemHasVisibleExistingFile($item);
                             $hasFile = $hasExistingFile || $hasReplacementUpload;
-                            $isEditingRole = $editingDocumentPackRoleKeys[$itemKey] ?? false;
-                            $showStaticRoleLabel = ! $isEditingRole && $requiresUpload && $hasFile && filled($roleLabel);
+                            $uploadedFile = $documentPackUploads[$itemKey] ?? null;
+                            $uploadedOriginalName = $documentPackUploadOriginalNames[$itemKey] ?? null;
+                            $displayFilename = $hasReplacementUpload && $uploadedFile ? ($uploadedOriginalName ?? $uploadedFile->getClientOriginalName()) : $item['original_filename'];
                             $pdfPreviewUrl = $requiresUpload && $hasFile ? $this->documentPackItemPdfUrl($item) : null;
                             $isEmpty = blank($item['role']) || ($requiresUpload && ! $hasFile);
                         @endphp
                         <article
                             wire:key="document-pack-item-{{ $itemKey }}"
+                            x-data="{
+                                previewKey: @js($itemKey),
+                                previewUrl: window.documentPackPreviewUrls?.[@js($itemKey)] ?? null,
+                                selectedFilename: window.documentPackPreviewFilenames?.[@js($itemKey)] ?? @js($displayFilename),
+                                uploadError: null,
+                                uploading: false,
+                                acceptsPdf(file) {
+                                    if (! file) {
+                                        return false;
+                                    }
+
+                                    return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+                                },
+                                rejectSelectedFile(event) {
+                                    const file = event.target.files?.[0] ?? null;
+
+                                    if (! file || this.acceptsPdf(file)) {
+                                        return;
+                                    }
+
+                                    event.preventDefault();
+                                    event.stopImmediatePropagation();
+                                    event.target.value = '';
+                                    this.uploadError = 'Only PDF files can be uploaded.';
+                                },
+                                setSelectedFile(file) {
+                                    if (! file) {
+                                        return;
+                                    }
+
+                                    if (! this.acceptsPdf(file)) {
+                                        this.uploadError = 'Only PDF files can be uploaded.';
+
+                                        return;
+                                    }
+
+                                    this.uploadError = null;
+
+                                    if (this.$refs.fileInput) {
+                                        this.$refs.fileInput.value = '';
+                                    }
+
+                                    window.documentPackPreviewUrls ??= {};
+                                    window.documentPackPreviewFilenames ??= {};
+
+                                    this.selectedFilename = file.name;
+                                    window.documentPackPreviewFilenames[this.previewKey] = this.selectedFilename;
+                                    this.uploading = true;
+
+                                    const reader = new FileReader();
+                                    reader.onload = () => {
+                                        this.previewUrl = reader.result;
+                                        window.documentPackPreviewUrls[this.previewKey] = this.previewUrl;
+                                    };
+                                    reader.readAsDataURL(file);
+
+                                    const finishUpload = () => {
+                                        $wire.set('documentPackUploadOriginalNames.{{ $itemKey }}', file.name);
+                                        $wire.call('markDocumentPackDirty');
+                                    };
+
+                                    $wire.call('clearDocumentPackUpload', this.previewKey).then(() => {
+                                        $wire.upload('documentPackUploads.{{ $itemKey }}', file,
+                                            () => {
+                                                this.uploading = false;
+                                                finishUpload();
+                                            },
+                                            () => {
+                                                this.uploading = false;
+                                                this.uploadError = 'The PDF could not be uploaded.';
+                                            },
+                                        );
+                                    });
+                                },
+                                chooseFile(event) {
+                                    this.setSelectedFile(event.target.files?.[0] ?? null);
+                                },
+                                dropFile(event) {
+                                    const file = event.dataTransfer.files?.[0] ?? null;
+
+                                    if (! file) {
+                                        return;
+                                    }
+
+                                    if (! this.acceptsPdf(file)) {
+                                        this.uploadError = 'Only PDF files can be uploaded.';
+
+                                        return;
+                                    }
+
+                                    this.setSelectedFile(file);
+                                },
+                            }"
                             x-sort:item="'{{ $itemKey }}'"
                             @class([
                                 'relative min-h-64 rounded-xl border-2 bg-white p-4 transition dark:bg-gray-950/40',
@@ -200,59 +294,32 @@
                                 </button>
                             </div>
 
-                            <div class="mt-3 block">
-                                <span class="text-xs font-medium text-gray-600 dark:text-gray-400">Contents</span>
-
-                                @if($showStaticRoleLabel)
-                                    <div class="mt-1 flex h-10 items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-3 text-sm font-semibold text-gray-900 shadow-sm dark:border-gray-600 dark:bg-gray-800/70 dark:text-white">
-                                        <span class="min-w-0 flex-1 truncate">{{ $roleLabel }}</span>
-                                        <button
-                                            type="button"
-                                            wire:click="startEditingDocumentPackRole('{{ $itemKey }}')"
-                                            class="rounded-md p-1 text-gray-400 transition hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-primary-500/10 dark:hover:text-primary-300"
-                                            title="Replace document type"
-                                            aria-label="Replace document type"
-                                        >
-                                            <x-heroicon-o-arrow-path class="h-4 w-4" />
-                                        </button>
-                                    </div>
-                                @else
-                                    <div class="mt-1 flex items-center gap-2">
-                                        <select
-                                            wire:key="document-pack-role-{{ $itemKey }}"
-                                            wire:model.live="documentPackItems.{{ $itemKey }}.role"
-                                            wire:change="finishEditingDocumentPackRole('{{ $itemKey }}')"
-                                            class="block h-10 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                                        >
-                                            <option value="">Select a document...</option>
-                                            @foreach($this->documentPackRoleOptions() as $value => $label)
-                                                <option value="{{ $value }}">{{ $label }}</option>
-                                            @endforeach
-                                        </select>
-
-                                        @if($isEditingRole)
-                                            <button
-                                                type="button"
-                                                wire:click="cancelEditingDocumentPackRole('{{ $itemKey }}')"
-                                                class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 text-gray-400 transition hover:bg-gray-50 hover:text-gray-700 dark:border-gray-600 dark:hover:bg-white/10 dark:hover:text-gray-200"
-                                                title="Cancel replacement"
-                                                aria-label="Cancel replacement"
-                                            >
-                                                <x-heroicon-o-x-mark class="h-5 w-5" />
-                                            </button>
-                                        @endif
-                                    </div>
-                                @endif
-
-                                @error('documentPackItems.'.$itemKey.'.role')
-                                    <span class="mt-1 block text-xs text-danger-600">{{ $message }}</span>
-                                @enderror
-                            </div>
+                            @if(blank($item['role']))
+                                <div class="mt-3">
+                                    <select
+                                        wire:key="document-pack-role-{{ $itemKey }}"
+                                        wire:model.live="documentPackItems.{{ $itemKey }}.role"
+                                        wire:change="markDocumentPackDirty"
+                                        class="block h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                                    >
+                                        <option value="">Select a document...</option>
+                                        @foreach($this->documentPackRoleOptions() as $value => $label)
+                                            <option value="{{ $value }}">{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error('documentPackItems.'.$itemKey.'.role')
+                                        <span class="mt-1 block text-xs text-danger-600">{{ $message }}</span>
+                                    @enderror
+                                </div>
+                            @elseif(filled($roleLabel))
+                                <div class="mt-3 text-center text-sm font-semibold text-gray-900 dark:text-white">{{ $roleLabel }}</div>
+                            @endif
 
                             @if($requiresUpload)
-                                @if($pdfPreviewUrl)
+                                @if($hasFile)
                                     <a
-                                        href="{{ $pdfPreviewUrl }}"
+                                        x-show="previewUrl || @js((bool) $pdfPreviewUrl)"
+                                        x-bind:href="previewUrl || @js($pdfPreviewUrl)"
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         class="mx-auto mt-3 block w-[165px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition hover:border-primary-400 hover:ring-2 hover:ring-primary-500/20 dark:border-white/10 dark:bg-gray-900"
@@ -260,34 +327,67 @@
                                     >
                                         <div class="h-[233px] w-[165px] overflow-hidden bg-gray-100 dark:bg-gray-800">
                                             <iframe
-                                                src="{{ $pdfPreviewUrl }}#page=1&toolbar=0&navpanes=0&scrollbar=0&view=FitH"
+                                                x-bind:src="(previewUrl || @js($pdfPreviewUrl)) ? (previewUrl || @js($pdfPreviewUrl)) + '#page=1&toolbar=0&navpanes=0&scrollbar=0&view=FitH' : null"
                                                 title="Preview of uploaded PDF"
                                                 scrolling="no"
                                                 class="pointer-events-none h-[253px] w-[185px] max-w-none overflow-hidden border-0"
                                             ></iframe>
                                         </div>
                                     </a>
-                                    @if(isset($documentPackUploads[$itemKey]))
-                                        <div class="mx-auto mt-2 max-w-[165px] truncate text-center text-xs text-primary-600 dark:text-primary-400">{{ $documentPackUploads[$itemKey]->getClientOriginalName() }}</div>
-                                    @elseif(filled($item['original_filename']))
-                                        <div class="mx-auto mt-2 max-w-[165px] truncate text-center text-xs text-gray-500 dark:text-gray-400">{{ $item['original_filename'] }}</div>
-                                    @endif
-                                @else
-                                    <label class="mx-auto mt-3 flex h-[233px] w-[165px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-center transition hover:border-primary-400 hover:bg-primary-50/50 dark:border-gray-600 dark:bg-white/5 dark:hover:border-primary-500 dark:hover:bg-primary-500/5">
-                                        <x-heroicon-o-document class="h-8 w-8 text-gray-400" />
-                                        <span class="mt-2 text-xs font-semibold text-gray-500 dark:text-gray-400">Upload PDF</span>
-                                        <span class="mt-1 px-3 text-[11px] text-gray-400 dark:text-gray-500">Drop a file here or click to choose</span>
+                                    <div x-show="! previewUrl && ! @js((bool) $pdfPreviewUrl)" class="mx-auto mt-3 flex h-[233px] w-[165px] flex-col items-center justify-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-center dark:border-white/10 dark:bg-white/5">
+                                        <x-heroicon-o-document-check class="h-8 w-8 text-primary-500" />
+                                        <span class="mt-2 text-xs font-semibold text-gray-500 dark:text-gray-400">PDF selected</span>
+                                    </div>
+                                    <div class="mx-auto mt-2 max-w-[165px] text-center">
+                                        <div x-text="selectedFilename" class="truncate text-xs text-gray-500 dark:text-gray-400"></div>
+                                        <label for="document-pack-upload-{{ $itemKey }}" class="mt-1 inline-flex cursor-pointer text-xs font-semibold text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300">replace</label>
                                         <input
+                                            id="document-pack-upload-{{ $itemKey }}"
+                                            x-ref="fileInput"
+                                            x-on:change.capture="rejectSelectedFile($event)"
+                                            x-on:click="$event.target.value = ''"
+                                            x-on:change="chooseFile($event)"
                                             type="file"
                                             accept="application/pdf,.pdf"
-                                            wire:model="documentPackUploads.{{ $itemKey }}"
-                                            wire:change="finishEditingDocumentPackRole('{{ $itemKey }}')"
+                                            class="sr-only"
+                                        />
+                                    </div>
+                                @else
+                                    <label
+                                        x-on:dragenter.prevent.stop
+                                        x-on:dragover.prevent.stop
+                                        x-on:drop.prevent.stop="dropFile($event)"
+                                        class="mx-auto mt-3 flex h-[233px] w-[165px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-center transition hover:border-primary-400 hover:bg-primary-50/50 dark:border-gray-600 dark:bg-white/5 dark:hover:border-primary-500 dark:hover:bg-primary-500/5"
+                                    >
+                                        <template x-if="previewUrl">
+                                            <div class="h-[233px] w-[165px] overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800">
+                                                <iframe
+                                                    x-bind:src="previewUrl + '#page=1&toolbar=0&navpanes=0&scrollbar=0&view=FitH'"
+                                                    title="Preview of selected PDF"
+                                                    scrolling="no"
+                                                    class="pointer-events-none h-[253px] w-[185px] max-w-none overflow-hidden border-0"
+                                                ></iframe>
+                                            </div>
+                                        </template>
+                                        <div x-show="! previewUrl" class="flex flex-col items-center justify-center px-3">
+                                            <x-heroicon-o-document class="h-8 w-8 text-gray-400" />
+                                            <span class="mt-2 text-xs font-semibold text-gray-500 dark:text-gray-400">Upload PDF</span>
+                                            <span class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">Drop a file here or click to choose</span>
+                                        </div>
+                                        <input
+                                            x-ref="fileInput"
+                                            x-on:change.capture="rejectSelectedFile($event)"
+                                            x-on:click="$event.target.value = ''"
+                                            x-on:change="chooseFile($event)"
+                                            type="file"
+                                            accept="application/pdf,.pdf"
                                             class="sr-only"
                                         />
                                     </label>
                                 @endif
 
-                                <div wire:loading wire:target="documentPackUploads.{{ $itemKey }}" class="mt-2 text-xs text-primary-600">Uploading PDF...</div>
+                                <div x-show="uploadError" x-text="uploadError" class="mt-2 text-xs text-danger-600"></div>
+                                <div x-show="uploading" class="mt-2 text-xs text-primary-600">Uploading PDF...</div>
                                 @error('documentPackUploads.'.$itemKey)
                                     <span class="mt-1 block text-xs text-danger-600">{{ $message }}</span>
                                 @enderror
@@ -299,6 +399,12 @@
                                         <span class="mt-2 text-xs text-amber-600 dark:text-amber-400">Quote not approved</span>
                                     @endif
                                 </div>
+                                @if($this->documentPackGeneratedSummary($item['role']))
+                                    <div class="mx-auto mt-2 max-w-[165px] text-center text-xs text-gray-500 dark:text-gray-400">{{ $this->documentPackGeneratedSummary($item['role']) }}</div>
+                                    @if($this->documentPackGeneratedModifiedAt($item['role']))
+                                        <div class="mx-auto mt-1 max-w-[165px] text-center text-[11px] text-gray-400 dark:text-gray-500">Last modified {{ $this->documentPackGeneratedModifiedAt($item['role']) }}</div>
+                                    @endif
+                                @endif
                             @endif
                         </article>
                     @endforeach

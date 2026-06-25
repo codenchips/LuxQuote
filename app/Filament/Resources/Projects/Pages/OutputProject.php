@@ -10,15 +10,16 @@ use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ActivityLog;
 use App\Models\DocumentPack;
 use App\Models\DocumentPackItem;
+use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
 use App\Services\DocumentPackPdfService;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\URL;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -49,6 +50,9 @@ class OutputProject extends ViewRecord
 
     /** @var array<string, TemporaryUploadedFile> */
     public array $documentPackUploads = [];
+
+    /** @var array<string, string> */
+    public array $documentPackUploadOriginalNames = [];
 
     /** @var array<string, bool> */
     public array $editingDocumentPackRoleKeys = [];
@@ -177,6 +181,52 @@ class OutputProject extends ViewRecord
         return DocumentPackItemRole::tryFrom($role)?->source() === DocumentPackItemSource::Uploaded;
     }
 
+    public function documentPackGeneratedSummary(string $role): ?string
+    {
+        $documentRole = DocumentPackItemRole::tryFrom($role);
+
+        if ($documentRole?->source() !== DocumentPackItemSource::Generated) {
+            return null;
+        }
+
+        $revision = $this->generationRevision();
+
+        if ($revision === null) {
+            return 'No revision selected';
+        }
+
+        $totals = ProjectLine::query()
+            ->whereHas('area', fn ($query) => $query->where('project_revision_id', $revision->id))
+            ->selectRaw('COUNT(*) as item_count, COALESCE(SUM(qty), 0) as qty_total')
+            ->first();
+
+        $itemCount = (int) ($totals?->item_count ?? 0);
+        $quantityTotal = (int) ($totals?->qty_total ?? 0);
+
+        return $revision->label().' - '.$itemCount." SKU's, ".$quantityTotal.' Items';
+    }
+
+    public function documentPackGeneratedModifiedAt(string $role): ?string
+    {
+        $documentRole = DocumentPackItemRole::tryFrom($role);
+
+        if ($documentRole?->source() !== DocumentPackItemSource::Generated) {
+            return null;
+        }
+
+        $revision = $this->generationRevision();
+
+        if ($revision === null) {
+            return null;
+        }
+
+        $lastModifiedAt = ProjectLine::query()
+            ->whereHas('area', fn ($query) => $query->where('project_revision_id', $revision->id))
+            ->max('project_lines.updated_at');
+
+        return ($lastModifiedAt !== null ? Carbon::parse($lastModifiedAt) : $revision->updated_at)?->format('d/m/y H:i');
+    }
+
     /**
      * @param  array{key: string, id: int|null, role: string, file_path: string|null, original_filename: string|null}  $item
      */
@@ -194,16 +244,12 @@ class OutputProject extends ViewRecord
             return null;
         }
 
-        if (! $upload instanceof TemporaryUploadedFile && ! $this->documentPackExistingFileAppliesToCurrentRole($item)) {
+        if ($upload instanceof TemporaryUploadedFile) {
             return null;
         }
 
-        if ($upload instanceof TemporaryUploadedFile && $this->temporaryUploadLooksLikePdf($upload)) {
-            return URL::temporarySignedRoute(
-                'livewire.preview-file',
-                now()->addMinutes(30)->endOfHour(),
-                ['filename' => $upload->getFilename()],
-            );
+        if (! $upload instanceof TemporaryUploadedFile && ! $this->documentPackExistingFileAppliesToCurrentRole($item)) {
+            return null;
         }
 
         if ($this->selectedDocumentPackId === null || blank($item['id'] ?? null) || blank($item['file_path'] ?? null)) {
@@ -237,13 +283,6 @@ class OutputProject extends ViewRecord
             && $this->documentPackExistingFileAppliesToCurrentRole($item);
     }
 
-    private function temporaryUploadLooksLikePdf(TemporaryUploadedFile $upload): bool
-    {
-        return $upload->getMimeType() === 'application/pdf'
-            || strtolower($upload->guessExtension() ?? '') === 'pdf'
-            || str($upload->getClientOriginalName())->lower()->endsWith('.pdf');
-    }
-
     public function newDocumentPack(): void
     {
         abort_unless($this->canManageDocumentPacks(), 403);
@@ -253,6 +292,7 @@ class OutputProject extends ViewRecord
         $item = $this->emptyDocumentPackItem();
         $this->documentPackItems = [$item['key'] => $item];
         $this->documentPackUploads = [];
+        $this->documentPackUploadOriginalNames = [];
         $this->editingDocumentPackRoleKeys = [];
         $this->originalDocumentPackRoleValues = [];
         $this->originalDocumentPackUploadFilenames = [];
@@ -283,6 +323,7 @@ class OutputProject extends ViewRecord
             })
             ->all();
         $this->documentPackUploads = [];
+        $this->documentPackUploadOriginalNames = [];
         $this->editingDocumentPackRoleKeys = [];
         $this->originalDocumentPackRoleValues = [];
         $this->originalDocumentPackUploadFilenames = [];
@@ -320,9 +361,22 @@ class OutputProject extends ViewRecord
 
         unset($this->documentPackItems[$key]);
         unset($this->documentPackUploads[$key]);
+        unset($this->documentPackUploadOriginalNames[$key]);
         unset($this->editingDocumentPackRoleKeys[$key]);
         unset($this->originalDocumentPackRoleValues[$key]);
         unset($this->originalDocumentPackUploadFilenames[$key]);
+        $this->documentPackDirty = true;
+    }
+
+    public function clearDocumentPackUpload(string $key): void
+    {
+        abort_unless($this->canManageDocumentPacks(), 403);
+
+        if (! array_key_exists($key, $this->documentPackItems)) {
+            return;
+        }
+
+        unset($this->documentPackUploads[$key], $this->documentPackUploadOriginalNames[$key]);
         $this->documentPackDirty = true;
     }
 
@@ -488,7 +542,7 @@ class OutputProject extends ViewRecord
                         $attributes += [
                             'file_disk' => $diskName,
                             'file_path' => $path,
-                            'original_filename' => $upload->getClientOriginalName(),
+                            'original_filename' => $this->documentPackUploadOriginalNames[$state['key']] ?? $upload->getClientOriginalName(),
                         ];
 
                         if ($oldPath !== null) {
@@ -770,6 +824,7 @@ class OutputProject extends ViewRecord
                 unset(
                     $this->documentPackItems[$key],
                     $this->documentPackUploads[$key],
+                    $this->documentPackUploadOriginalNames[$key],
                     $this->editingDocumentPackRoleKeys[$key],
                     $this->originalDocumentPackRoleValues[$key],
                     $this->originalDocumentPackUploadFilenames[$key],
@@ -792,6 +847,7 @@ class OutputProject extends ViewRecord
             unset(
                 $this->documentPackItems[$key],
                 $this->documentPackUploads[$key],
+                $this->documentPackUploadOriginalNames[$key],
                 $this->editingDocumentPackRoleKeys[$key],
                 $this->originalDocumentPackRoleValues[$key],
                 $this->originalDocumentPackUploadFilenames[$key],
