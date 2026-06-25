@@ -266,6 +266,8 @@ class OutputProject extends ViewRecord
     {
         abort_unless($this->canManageDocumentPacks(), 403);
 
+        $removedIncompleteItemCount = $this->removeIncompleteDocumentPackItems();
+
         $this->validate([
             'documentPackName' => [
                 'required',
@@ -275,7 +277,7 @@ class OutputProject extends ViewRecord
                     ->where('project_id', $this->record->id)
                     ->ignore($this->selectedDocumentPackId),
             ],
-            'documentPackItems' => ['required', 'array', 'min:1'],
+            'documentPackItems' => ['array'],
             'documentPackItems.*.role' => ['required', Rule::enum(DocumentPackItemRole::class)],
         ]);
 
@@ -394,6 +396,16 @@ class OutputProject extends ViewRecord
 
         unset($this->documentPacks);
         $this->loadDocumentPack($documentPack->id);
+
+        if ($removedIncompleteItemCount > 0) {
+            Notification::make()
+                ->title($removedIncompleteItemCount === 1 ? 'Incomplete document block removed' : 'Incomplete document blocks removed')
+                ->body($removedIncompleteItemCount === 1
+                    ? 'One unfinished block was removed before saving the pack.'
+                    : $removedIncompleteItemCount.' unfinished blocks were removed before saving the pack.')
+                ->warning()
+                ->send();
+        }
 
         Notification::make()->title('Document pack saved')->success()->send();
     }
@@ -547,7 +559,7 @@ class OutputProject extends ViewRecord
     {
         $uploads = [];
 
-        foreach ($this->documentPackItems as $index => $state) {
+        foreach ($this->documentPackItems as $state) {
             $role = DocumentPackItemRole::from($state['role']);
 
             abort_unless($this->canUseDocumentRole($role), 403);
@@ -567,7 +579,7 @@ class OutputProject extends ViewRecord
 
             if (! $upload instanceof TemporaryUploadedFile && ! $hasExistingFile) {
                 throw ValidationException::withMessages([
-                    "documentPackUploads.{$state['key']}" => 'Upload a PDF for document '.($index + 1).'.',
+                    "documentPackUploads.{$state['key']}" => 'Upload a PDF for this document.',
                 ]);
             }
 
@@ -595,6 +607,51 @@ class OutputProject extends ViewRecord
         }
 
         return $uploads;
+    }
+
+    private function removeIncompleteDocumentPackItems(): int
+    {
+        $removedCount = 0;
+
+        foreach ($this->documentPackItems as $key => $state) {
+            $role = DocumentPackItemRole::tryFrom($state['role'] ?? '');
+
+            if ($role === null) {
+                unset($this->documentPackItems[$key], $this->documentPackUploads[$key]);
+                $removedCount++;
+
+                continue;
+            }
+
+            if ($role->source() !== DocumentPackItemSource::Uploaded) {
+                continue;
+            }
+
+            $upload = $this->documentPackUploads[$state['key']] ?? null;
+
+            if ($upload instanceof TemporaryUploadedFile || $this->documentPackItemHasExistingFile($state)) {
+                continue;
+            }
+
+            unset($this->documentPackItems[$key], $this->documentPackUploads[$key]);
+            $removedCount++;
+        }
+
+        return $removedCount;
+    }
+
+    /**
+     * @param  array{key: string, id: int|null, role: string, file_path: string|null, original_filename: string|null}  $state
+     */
+    private function documentPackItemHasExistingFile(array $state): bool
+    {
+        return $this->selectedDocumentPackId !== null
+            && filled($state['id'] ?? null)
+            && DocumentPackItem::query()
+                ->where('document_pack_id', $this->selectedDocumentPackId)
+                ->whereKey($state['id'])
+                ->whereNotNull('file_path')
+                ->exists();
     }
 
     private function canUseDocumentRole(DocumentPackItemRole $role): bool

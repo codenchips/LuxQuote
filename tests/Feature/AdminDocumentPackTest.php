@@ -71,6 +71,61 @@ class AdminDocumentPackTest extends TestCase
         Storage::disk('local')->assertExists($cover->file_path);
     }
 
+    public function test_save_removes_blank_document_pack_blocks_and_saves_remaining_items(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $this->actingAs($admin);
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id]);
+        $firstKey = array_key_first($component->get('documentPackItems'));
+
+        $component
+            ->set('documentPackName', 'Pack With Draft Block')
+            ->call('addDocumentPackItem', $firstKey);
+
+        $secondKey = array_key_last($component->get('documentPackItems'));
+
+        $component
+            ->set("documentPackItems.{$secondKey}.role", DocumentPackItemRole::UnpricedSchedule->value)
+            ->call('saveDocumentPack')
+            ->assertHasNoErrors()
+            ->assertNotified('Document pack saved');
+
+        $pack = DocumentPack::where('project_id', $project->id)->firstOrFail();
+
+        $this->assertSame([DocumentPackItemRole::UnpricedSchedule], $pack->items->pluck('role')->all());
+        $this->assertCount(1, $component->get('documentPackItems'));
+    }
+
+    public function test_save_removes_uploaded_document_pack_blocks_without_files_and_saves_remaining_items(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $this->actingAs($admin);
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id]);
+        $firstKey = array_key_first($component->get('documentPackItems'));
+
+        $component
+            ->set('documentPackName', 'Pack Missing External File')
+            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Cover->value)
+            ->call('addDocumentPackItem', $firstKey);
+
+        $secondKey = array_key_last($component->get('documentPackItems'));
+
+        $component
+            ->set("documentPackItems.{$secondKey}.role", DocumentPackItemRole::UnpricedSchedule->value)
+            ->call('saveDocumentPack')
+            ->assertHasNoErrors()
+            ->assertNotified('Document pack saved');
+
+        $pack = DocumentPack::where('project_id', $project->id)->firstOrFail();
+
+        $this->assertSame([DocumentPackItemRole::UnpricedSchedule], $pack->items->pluck('role')->all());
+        $this->assertCount(1, $component->get('documentPackItems'));
+    }
+
     public function test_saved_pack_can_be_reordered_and_reused_for_another_revision(): void
     {
         Storage::fake('local');
