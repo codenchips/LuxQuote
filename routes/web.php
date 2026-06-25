@@ -22,6 +22,9 @@ Route::middleware('auth')->group(function (): void {
 
     Route::get('/projects/{project}/document-packs/{documentPack}', DocumentPackController::class)
         ->name('projects.document-packs.download');
+
+    Route::get('/projects/{project}/document-packs/{documentPack}/items/{documentPackItem}/file', [DocumentPackController::class, 'uploadedItem'])
+        ->name('projects.document-packs.items.file');
 });
 
 Route::get('/test-pdf', function () {

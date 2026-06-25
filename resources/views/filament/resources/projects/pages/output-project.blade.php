@@ -153,14 +153,21 @@
                 @enderror
 
                 <div
-                    class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+                    class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-6"
                     x-sort="(key, position) => $wire.sortDocumentPackItem(key, position)"
                     x-sort:config="{ animation: 150 }"
                 >
                     @foreach($documentPackItems as $itemKey => $item)
                         @php
+                            $role = \App\Enums\DocumentPackItemRole::tryFrom($item['role']);
+                            $roleLabel = $role?->label();
                             $requiresUpload = $this->documentPackRoleRequiresUpload($item['role']);
-                            $hasFile = filled($item['original_filename']) || isset($documentPackUploads[$itemKey]);
+                            $hasReplacementUpload = $this->documentPackItemHasActiveUpload($item);
+                            $hasExistingFile = $this->documentPackItemHasVisibleExistingFile($item);
+                            $hasFile = $hasExistingFile || $hasReplacementUpload;
+                            $isEditingRole = $editingDocumentPackRoleKeys[$itemKey] ?? false;
+                            $showStaticRoleLabel = ! $isEditingRole && $requiresUpload && $hasFile && filled($roleLabel);
+                            $pdfPreviewUrl = $requiresUpload && $hasFile ? $this->documentPackItemPdfUrl($item) : null;
                             $isEmpty = blank($item['role']) || ($requiresUpload && ! $hasFile);
                         @endphp
                         <article
@@ -193,82 +200,118 @@
                                 </button>
                             </div>
 
-                            <label class="mt-3 block">
+                            <div class="mt-3 block">
                                 <span class="text-xs font-medium text-gray-600 dark:text-gray-400">Contents</span>
-                                <select
-                                    wire:key="document-pack-role-{{ $itemKey }}"
-                                    wire:model.live="documentPackItems.{{ $itemKey }}.role"
-                                    wire:change="markDocumentPackDirty"
-                                    class="mt-1 block h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                                >
-                                    <option value="">Select a document...</option>
-                                    @foreach($this->documentPackRoleOptions() as $value => $label)
-                                        <option value="{{ $value }}">{{ $label }}</option>
-                                    @endforeach
-                                </select>
+
+                                @if($showStaticRoleLabel)
+                                    <div class="mt-1 flex h-10 items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-3 text-sm font-semibold text-gray-900 shadow-sm dark:border-gray-600 dark:bg-gray-800/70 dark:text-white">
+                                        <span class="min-w-0 flex-1 truncate">{{ $roleLabel }}</span>
+                                        <button
+                                            type="button"
+                                            wire:click="startEditingDocumentPackRole('{{ $itemKey }}')"
+                                            class="rounded-md p-1 text-gray-400 transition hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-primary-500/10 dark:hover:text-primary-300"
+                                            title="Replace document type"
+                                            aria-label="Replace document type"
+                                        >
+                                            <x-heroicon-o-arrow-path class="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                @else
+                                    <div class="mt-1 flex items-center gap-2">
+                                        <select
+                                            wire:key="document-pack-role-{{ $itemKey }}"
+                                            wire:model.live="documentPackItems.{{ $itemKey }}.role"
+                                            wire:change="finishEditingDocumentPackRole('{{ $itemKey }}')"
+                                            class="block h-10 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                                        >
+                                            <option value="">Select a document...</option>
+                                            @foreach($this->documentPackRoleOptions() as $value => $label)
+                                                <option value="{{ $value }}">{{ $label }}</option>
+                                            @endforeach
+                                        </select>
+
+                                        @if($isEditingRole)
+                                            <button
+                                                type="button"
+                                                wire:click="cancelEditingDocumentPackRole('{{ $itemKey }}')"
+                                                class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 text-gray-400 transition hover:bg-gray-50 hover:text-gray-700 dark:border-gray-600 dark:hover:bg-white/10 dark:hover:text-gray-200"
+                                                title="Cancel replacement"
+                                                aria-label="Cancel replacement"
+                                            >
+                                                <x-heroicon-o-x-mark class="h-5 w-5" />
+                                            </button>
+                                        @endif
+                                    </div>
+                                @endif
+
                                 @error('documentPackItems.'.$itemKey.'.role')
                                     <span class="mt-1 block text-xs text-danger-600">{{ $message }}</span>
                                 @enderror
-                            </label>
-
-                            <p class="mt-2 min-h-10 text-xs leading-5 text-gray-500 dark:text-gray-400">
-                                {{ $this->documentPackRoleDescription($item['role']) }}
-                            </p>
+                            </div>
 
                             @if($requiresUpload)
-                                <label class="mt-3 flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-3 py-3 text-center transition hover:border-primary-400 hover:bg-primary-50/50 dark:border-gray-600 dark:bg-white/5 dark:hover:border-primary-500 dark:hover:bg-primary-500/5">
-                                    <x-heroicon-o-arrow-up-tray class="h-6 w-6 text-gray-400" />
-                                    <span class="mt-1 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                                        {{ $hasFile ? 'Replace PDF' : 'Choose or drop PDF' }}
-                                    </span>
+                                @if($pdfPreviewUrl)
+                                    <a
+                                        href="{{ $pdfPreviewUrl }}"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        class="mx-auto mt-3 block w-[165px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition hover:border-primary-400 hover:ring-2 hover:ring-primary-500/20 dark:border-white/10 dark:bg-gray-900"
+                                        title="Open uploaded PDF in a new tab"
+                                    >
+                                        <div class="h-[233px] w-[165px] overflow-hidden bg-gray-100 dark:bg-gray-800">
+                                            <iframe
+                                                src="{{ $pdfPreviewUrl }}#page=1&toolbar=0&navpanes=0&scrollbar=0&view=FitH"
+                                                title="Preview of uploaded PDF"
+                                                scrolling="no"
+                                                class="pointer-events-none h-[253px] w-[185px] max-w-none overflow-hidden border-0"
+                                            ></iframe>
+                                        </div>
+                                    </a>
                                     @if(isset($documentPackUploads[$itemKey]))
-                                        <span class="mt-1 max-w-full truncate text-xs text-primary-600 dark:text-primary-400">{{ $documentPackUploads[$itemKey]->getClientOriginalName() }}</span>
+                                        <div class="mx-auto mt-2 max-w-[165px] truncate text-center text-xs text-primary-600 dark:text-primary-400">{{ $documentPackUploads[$itemKey]->getClientOriginalName() }}</div>
                                     @elseif(filled($item['original_filename']))
-                                        <span class="mt-1 max-w-full truncate text-xs text-gray-500 dark:text-gray-400">{{ $item['original_filename'] }}</span>
+                                        <div class="mx-auto mt-2 max-w-[165px] truncate text-center text-xs text-gray-500 dark:text-gray-400">{{ $item['original_filename'] }}</div>
                                     @endif
-                                    <input
-                                        type="file"
-                                        accept="application/pdf,.pdf"
-                                        wire:model="documentPackUploads.{{ $itemKey }}"
-                                        wire:change="markDocumentPackDirty"
-                                        class="sr-only"
-                                    />
-                                </label>
+                                @else
+                                    <label class="mx-auto mt-3 flex h-[233px] w-[165px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-center transition hover:border-primary-400 hover:bg-primary-50/50 dark:border-gray-600 dark:bg-white/5 dark:hover:border-primary-500 dark:hover:bg-primary-500/5">
+                                        <x-heroicon-o-document class="h-8 w-8 text-gray-400" />
+                                        <span class="mt-2 text-xs font-semibold text-gray-500 dark:text-gray-400">Upload PDF</span>
+                                        <span class="mt-1 px-3 text-[11px] text-gray-400 dark:text-gray-500">Drop a file here or click to choose</span>
+                                        <input
+                                            type="file"
+                                            accept="application/pdf,.pdf"
+                                            wire:model="documentPackUploads.{{ $itemKey }}"
+                                            wire:change="finishEditingDocumentPackRole('{{ $itemKey }}')"
+                                            class="sr-only"
+                                        />
+                                    </label>
+                                @endif
+
                                 <div wire:loading wire:target="documentPackUploads.{{ $itemKey }}" class="mt-2 text-xs text-primary-600">Uploading PDF...</div>
                                 @error('documentPackUploads.'.$itemKey)
                                     <span class="mt-1 block text-xs text-danger-600">{{ $message }}</span>
                                 @enderror
                             @elseif(filled($item['role']))
-                                <div class="mt-3 flex min-h-24 flex-col items-center justify-center rounded-lg bg-primary-50 px-3 text-center dark:bg-primary-500/10">
-                                    <x-heroicon-o-sparkles class="h-6 w-6 text-primary-500" />
-                                    <span class="mt-1 text-xs font-semibold text-primary-700 dark:text-primary-300">Generated when the pack is produced</span>
+                                <div class="mx-auto mt-3 flex h-[233px] w-[165px] flex-col items-center justify-center rounded-lg border border-primary-200 bg-primary-50 px-3 text-center dark:border-primary-500/20 dark:bg-primary-500/10">
+                                    <x-heroicon-o-sparkles class="h-8 w-8 text-primary-500" />
+                                    <span class="mt-2 text-xs font-semibold text-primary-700 dark:text-primary-300">Generated</span>
                                     @if($item['role'] === \App\Enums\DocumentPackItemRole::Quote->value && (! $selectedGenerationRevision?->validated || $selectedGenerationRevision?->status !== \App\Enums\ProjectRevisionStatus::Approved))
-                                        <span class="mt-1 text-xs text-amber-600 dark:text-amber-400">Selected revision is not approved for quoting.</span>
+                                        <span class="mt-2 text-xs text-amber-600 dark:text-amber-400">Quote not approved</span>
                                     @endif
                                 </div>
                             @endif
-
-                            <button
-                                type="button"
-                                wire:click="addDocumentPackItem('{{ $itemKey }}')"
-                                class="mt-4 inline-flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-gray-300 py-2 text-xs font-semibold text-gray-500 transition hover:border-primary-400 hover:text-primary-600 dark:border-gray-600 dark:text-gray-400"
-                            >
-                                <x-heroicon-o-plus class="h-4 w-4" />
-                                Add after
-                            </button>
                         </article>
                     @endforeach
 
-                    @if(empty($documentPackItems))
-                        <button
-                            type="button"
-                            wire:click="addDocumentPackItem"
-                            class="flex min-h-64 flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 text-gray-500 transition hover:border-primary-400 hover:bg-primary-50/40 hover:text-primary-600 dark:border-gray-600 dark:hover:bg-primary-500/5"
-                        >
-                            <x-heroicon-o-plus class="h-8 w-8" />
-                            <span class="mt-2 text-sm font-semibold">Add a document</span>
-                        </button>
-                    @endif
+                    <button
+                        type="button"
+                        wire:click="addDocumentPackItem"
+                        class="flex min-h-64 items-center justify-center rounded-xl border-2 border-dashed border-gray-300 text-gray-500 transition hover:border-primary-400 hover:bg-primary-50/40 hover:text-primary-600 dark:border-gray-600 dark:hover:bg-primary-500/5"
+                        title="Add document"
+                        aria-label="Add document"
+                    >
+                        <x-heroicon-o-plus class="h-9 w-9" />
+                    </button>
                 </div>
 
                 <div class="mt-5 flex flex-col gap-3 border-t border-gray-200 pt-5 sm:flex-row sm:items-center dark:border-white/10">

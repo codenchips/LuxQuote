@@ -18,6 +18,7 @@ use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -48,6 +49,15 @@ class OutputProject extends ViewRecord
 
     /** @var array<string, TemporaryUploadedFile> */
     public array $documentPackUploads = [];
+
+    /** @var array<string, bool> */
+    public array $editingDocumentPackRoleKeys = [];
+
+    /** @var array<string, string> */
+    public array $originalDocumentPackRoleValues = [];
+
+    /** @var array<string, string> */
+    public array $originalDocumentPackUploadFilenames = [];
 
     public bool $documentPackDirty = false;
 
@@ -167,6 +177,73 @@ class OutputProject extends ViewRecord
         return DocumentPackItemRole::tryFrom($role)?->source() === DocumentPackItemSource::Uploaded;
     }
 
+    /**
+     * @param  array{key: string, id: int|null, role: string, file_path: string|null, original_filename: string|null}  $item
+     */
+    public function documentPackItemPdfUrl(array $item): ?string
+    {
+        $role = DocumentPackItemRole::tryFrom($item['role'] ?? '');
+
+        if ($role?->source() !== DocumentPackItemSource::Uploaded) {
+            return null;
+        }
+
+        $upload = $this->documentPackUploads[$item['key']] ?? null;
+
+        if ($upload instanceof TemporaryUploadedFile && ! $this->documentPackUploadAppliesToCurrentRole($item, $upload)) {
+            return null;
+        }
+
+        if (! $upload instanceof TemporaryUploadedFile && ! $this->documentPackExistingFileAppliesToCurrentRole($item)) {
+            return null;
+        }
+
+        if ($upload instanceof TemporaryUploadedFile && $this->temporaryUploadLooksLikePdf($upload)) {
+            return URL::temporarySignedRoute(
+                'livewire.preview-file',
+                now()->addMinutes(30)->endOfHour(),
+                ['filename' => $upload->getFilename()],
+            );
+        }
+
+        if ($this->selectedDocumentPackId === null || blank($item['id'] ?? null) || blank($item['file_path'] ?? null)) {
+            return null;
+        }
+
+        return route('projects.document-packs.items.file', [
+            'project' => $this->record,
+            'documentPack' => $this->selectedDocumentPackId,
+            'documentPackItem' => $item['id'],
+        ]);
+    }
+
+    /**
+     * @param  array{key: string, id: int|null, role: string, file_path: string|null, original_filename: string|null}  $item
+     */
+    public function documentPackItemHasActiveUpload(array $item): bool
+    {
+        $upload = $this->documentPackUploads[$item['key']] ?? null;
+
+        return $upload instanceof TemporaryUploadedFile
+            && $this->documentPackUploadAppliesToCurrentRole($item, $upload);
+    }
+
+    /**
+     * @param  array{key: string, id: int|null, role: string, file_path: string|null, original_filename: string|null}  $item
+     */
+    public function documentPackItemHasVisibleExistingFile(array $item): bool
+    {
+        return filled($item['original_filename'] ?? null)
+            && $this->documentPackExistingFileAppliesToCurrentRole($item);
+    }
+
+    private function temporaryUploadLooksLikePdf(TemporaryUploadedFile $upload): bool
+    {
+        return $upload->getMimeType() === 'application/pdf'
+            || strtolower($upload->guessExtension() ?? '') === 'pdf'
+            || str($upload->getClientOriginalName())->lower()->endsWith('.pdf');
+    }
+
     public function newDocumentPack(): void
     {
         abort_unless($this->canManageDocumentPacks(), 403);
@@ -176,6 +253,9 @@ class OutputProject extends ViewRecord
         $item = $this->emptyDocumentPackItem();
         $this->documentPackItems = [$item['key'] => $item];
         $this->documentPackUploads = [];
+        $this->editingDocumentPackRoleKeys = [];
+        $this->originalDocumentPackRoleValues = [];
+        $this->originalDocumentPackUploadFilenames = [];
         $this->documentPackDirty = true;
     }
 
@@ -203,6 +283,9 @@ class OutputProject extends ViewRecord
             })
             ->all();
         $this->documentPackUploads = [];
+        $this->editingDocumentPackRoleKeys = [];
+        $this->originalDocumentPackRoleValues = [];
+        $this->originalDocumentPackUploadFilenames = [];
         $this->documentPackDirty = false;
     }
 
@@ -237,6 +320,9 @@ class OutputProject extends ViewRecord
 
         unset($this->documentPackItems[$key]);
         unset($this->documentPackUploads[$key]);
+        unset($this->editingDocumentPackRoleKeys[$key]);
+        unset($this->originalDocumentPackRoleValues[$key]);
+        unset($this->originalDocumentPackUploadFilenames[$key]);
         $this->documentPackDirty = true;
     }
 
@@ -260,6 +346,75 @@ class OutputProject extends ViewRecord
     public function markDocumentPackDirty(): void
     {
         $this->documentPackDirty = true;
+    }
+
+    public function startEditingDocumentPackRole(string $key): void
+    {
+        abort_unless($this->canManageDocumentPacks(), 403);
+
+        if (! array_key_exists($key, $this->documentPackItems)) {
+            return;
+        }
+
+        $this->originalDocumentPackRoleValues[$key] = $this->documentPackItems[$key]['role'];
+
+        $upload = $this->documentPackUploads[$key] ?? null;
+
+        if ($upload instanceof TemporaryUploadedFile) {
+            $this->originalDocumentPackUploadFilenames[$key] = $upload->getFilename();
+        } else {
+            unset($this->originalDocumentPackUploadFilenames[$key]);
+        }
+
+        $this->editingDocumentPackRoleKeys[$key] = true;
+    }
+
+    public function cancelEditingDocumentPackRole(string $key): void
+    {
+        abort_unless($this->canManageDocumentPacks(), 403);
+
+        if (! array_key_exists($key, $this->documentPackItems)) {
+            return;
+        }
+
+        if (array_key_exists($key, $this->originalDocumentPackRoleValues)) {
+            $this->documentPackItems[$key]['role'] = $this->originalDocumentPackRoleValues[$key];
+        }
+
+        unset($this->editingDocumentPackRoleKeys[$key]);
+        unset($this->originalDocumentPackRoleValues[$key]);
+        unset($this->originalDocumentPackUploadFilenames[$key]);
+    }
+
+    public function finishEditingDocumentPackRole(string $key): void
+    {
+        abort_unless($this->canManageDocumentPacks(), 403);
+
+        if (! array_key_exists($key, $this->documentPackItems)) {
+            return;
+        }
+
+        $role = DocumentPackItemRole::tryFrom($this->documentPackItems[$key]['role']);
+        $originalRole = $this->originalDocumentPackRoleValues[$key] ?? null;
+        $hasReplacementUpload = $this->documentPackItemHasActiveUpload($this->documentPackItems[$key]);
+
+        if (
+            $originalRole !== null
+            && $this->documentPackItems[$key]['role'] !== $originalRole
+            && $role?->source() === DocumentPackItemSource::Uploaded
+            && ! $hasReplacementUpload
+        ) {
+            $this->editingDocumentPackRoleKeys[$key] = true;
+            $this->markDocumentPackDirty();
+
+            return;
+        }
+
+        unset($this->editingDocumentPackRoleKeys[$key]);
+        unset($this->originalDocumentPackRoleValues[$key]);
+        unset($this->originalDocumentPackUploadFilenames[$key]);
+
+        $this->markDocumentPackDirty();
     }
 
     public function saveDocumentPack(): void
@@ -569,21 +724,16 @@ class OutputProject extends ViewRecord
             }
 
             $upload = $this->documentPackUploads[$state['key']] ?? null;
-            $hasExistingFile = $this->selectedDocumentPackId !== null
-                && filled($state['id'] ?? null)
-                && DocumentPackItem::query()
-                    ->where('document_pack_id', $this->selectedDocumentPackId)
-                    ->whereKey($state['id'])
-                    ->whereNotNull('file_path')
-                    ->exists();
+            $hasActiveUpload = $this->documentPackItemHasActiveUpload($state);
+            $hasExistingFile = $this->documentPackItemHasExistingFile($state);
 
-            if (! $upload instanceof TemporaryUploadedFile && ! $hasExistingFile) {
+            if (! $hasActiveUpload && ! $hasExistingFile) {
                 throw ValidationException::withMessages([
                     "documentPackUploads.{$state['key']}" => 'Upload a PDF for this document.',
                 ]);
             }
 
-            if (! $upload instanceof TemporaryUploadedFile) {
+            if (! $hasActiveUpload) {
                 continue;
             }
 
@@ -617,7 +767,13 @@ class OutputProject extends ViewRecord
             $role = DocumentPackItemRole::tryFrom($state['role'] ?? '');
 
             if ($role === null) {
-                unset($this->documentPackItems[$key], $this->documentPackUploads[$key]);
+                unset(
+                    $this->documentPackItems[$key],
+                    $this->documentPackUploads[$key],
+                    $this->editingDocumentPackRoleKeys[$key],
+                    $this->originalDocumentPackRoleValues[$key],
+                    $this->originalDocumentPackUploadFilenames[$key],
+                );
                 $removedCount++;
 
                 continue;
@@ -629,11 +785,17 @@ class OutputProject extends ViewRecord
 
             $upload = $this->documentPackUploads[$state['key']] ?? null;
 
-            if ($upload instanceof TemporaryUploadedFile || $this->documentPackItemHasExistingFile($state)) {
+            if ($this->documentPackItemHasActiveUpload($state) || $this->documentPackItemHasExistingFile($state)) {
                 continue;
             }
 
-            unset($this->documentPackItems[$key], $this->documentPackUploads[$key]);
+            unset(
+                $this->documentPackItems[$key],
+                $this->documentPackUploads[$key],
+                $this->editingDocumentPackRoleKeys[$key],
+                $this->originalDocumentPackRoleValues[$key],
+                $this->originalDocumentPackUploadFilenames[$key],
+            );
             $removedCount++;
         }
 
@@ -645,6 +807,10 @@ class OutputProject extends ViewRecord
      */
     private function documentPackItemHasExistingFile(array $state): bool
     {
+        if (! $this->documentPackExistingFileAppliesToCurrentRole($state)) {
+            return false;
+        }
+
         return $this->selectedDocumentPackId !== null
             && filled($state['id'] ?? null)
             && DocumentPackItem::query()
@@ -652,6 +818,37 @@ class OutputProject extends ViewRecord
                 ->whereKey($state['id'])
                 ->whereNotNull('file_path')
                 ->exists();
+    }
+
+    /**
+     * @param  array{key: string, id: int|null, role: string, file_path: string|null, original_filename: string|null}  $state
+     */
+    private function documentPackExistingFileAppliesToCurrentRole(array $state): bool
+    {
+        $key = $state['key'];
+
+        return ! array_key_exists($key, $this->originalDocumentPackRoleValues)
+            || $state['role'] === $this->originalDocumentPackRoleValues[$key];
+    }
+
+    /**
+     * @param  array{key: string, id: int|null, role: string, file_path: string|null, original_filename: string|null}  $state
+     */
+    private function documentPackUploadAppliesToCurrentRole(array $state, TemporaryUploadedFile $upload): bool
+    {
+        $key = $state['key'];
+
+        if (! array_key_exists($key, $this->originalDocumentPackRoleValues)) {
+            return true;
+        }
+
+        if ($state['role'] === $this->originalDocumentPackRoleValues[$key]) {
+            return true;
+        }
+
+        $originalUploadFilename = $this->originalDocumentPackUploadFilenames[$key] ?? null;
+
+        return $originalUploadFilename === null || $upload->getFilename() !== $originalUploadFilename;
     }
 
     private function canUseDocumentRole(DocumentPackItemRole $role): bool

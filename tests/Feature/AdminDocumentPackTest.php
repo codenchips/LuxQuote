@@ -71,6 +71,117 @@ class AdminDocumentPackTest extends TestCase
         Storage::disk('local')->assertExists($cover->file_path);
     }
 
+    public function test_document_pack_builder_uses_compact_cards_and_end_add_tile(): void
+    {
+        Storage::fake('local');
+
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $this->actingAs($admin);
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->set('outputTab', 'packs');
+        $firstKey = array_key_first($component->get('documentPackItems'));
+
+        $component
+            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::UnpricedSchedule->value)
+            ->assertSeeHtml('xl:grid-cols-6')
+            ->assertSeeHtml('h-[233px] w-[165px]')
+            ->assertSeeHtml('aria-label="Add document"')
+            ->assertSee('Generated')
+            ->assertDontSee('The unpriced schedule generated for the revision selected at output time.')
+            ->assertDontSee('Add after')
+            ->assertDontSee('Replace');
+
+        $component
+            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Cover->value)
+            ->assertSee('Drop a file here or click to choose')
+            ->set("documentPackUploads.{$firstKey}", UploadedFile::fake()->createWithContent('cover.pdf', $this->pdfWithText('Cover')))
+            ->assertSee('Cover')
+            ->assertSeeHtml('aria-label="Replace document type"')
+            ->assertDontSee('Select a document...')
+            ->call('startEditingDocumentPackRole', $firstKey)
+            ->assertSee('Select a document...')
+            ->assertSeeHtml('aria-label="Cancel replacement"')
+            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Legal->value)
+            ->call('finishEditingDocumentPackRole', $firstKey)
+            ->assertSee('Drop a file here or click to choose')
+            ->assertSeeHtml('aria-label="Cancel replacement"')
+            ->assertDontSee('cover.pdf')
+            ->call('cancelEditingDocumentPackRole', $firstKey)
+            ->assertSet("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Cover->value)
+            ->assertSee('Cover')
+            ->assertSeeHtml('aria-label="Replace document type"')
+            ->call('startEditingDocumentPackRole', $firstKey)
+            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Legal->value)
+            ->call('finishEditingDocumentPackRole', $firstKey)
+            ->set("documentPackUploads.{$firstKey}", UploadedFile::fake()->createWithContent('legal.pdf', $this->pdfWithText('Legal')))
+            ->call('finishEditingDocumentPackRole', $firstKey)
+            ->assertSee('Legal')
+            ->assertSee('legal.pdf')
+            ->assertSeeHtml('aria-label="Replace document type"')
+            ->assertDontSeeHtml('aria-label="Cancel replacement"');
+    }
+
+    public function test_uploaded_document_pack_item_can_be_opened_inline(): void
+    {
+        Storage::fake('local');
+
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $pack = DocumentPack::factory()->for($project)->create(['created_by' => $admin->id]);
+        Storage::disk('local')->put('tests/preview-cover.pdf', $this->pdfWithText('Preview Cover'));
+        $item = DocumentPackItem::factory()->for($pack)->create([
+            'role' => DocumentPackItemRole::Cover,
+            'source_type' => DocumentPackItemSource::Uploaded,
+            'file_disk' => 'local',
+            'file_path' => 'tests/preview-cover.pdf',
+            'original_filename' => 'cover.pdf',
+        ]);
+        $this->actingAs($admin);
+
+        $this->get(route('projects.document-packs.items.file', [
+            'project' => $project,
+            'documentPack' => $pack,
+            'documentPackItem' => $item,
+        ]))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->assertHeader('Content-Disposition', 'inline; filename="cover.pdf"');
+    }
+
+    public function test_uploaded_document_pack_item_preview_requires_manage_permission(): void
+    {
+        Storage::fake('local');
+
+        $group = PermissionGroup::create([
+            'name' => 'Output Viewer',
+            'slug' => 'output-viewer',
+            'description' => null,
+            'is_system' => false,
+        ]);
+        $group->permissions()->attach(Permission::where('key', 'output.view')->firstOrFail());
+
+        $user = User::factory()->create(['permission_group_id' => $group->id]);
+        $project = Project::factory()->for($user)->create();
+        $pack = DocumentPack::factory()->for($project)->create(['created_by' => $user->id]);
+        Storage::disk('local')->put('tests/preview-legal.pdf', $this->pdfWithText('Preview Legal'));
+        $item = DocumentPackItem::factory()->for($pack)->create([
+            'role' => DocumentPackItemRole::Legal,
+            'source_type' => DocumentPackItemSource::Uploaded,
+            'file_disk' => 'local',
+            'file_path' => 'tests/preview-legal.pdf',
+            'original_filename' => 'legal.pdf',
+        ]);
+        $this->actingAs($user);
+
+        $this->get(route('projects.document-packs.items.file', [
+            'project' => $project,
+            'documentPack' => $pack,
+            'documentPackItem' => $item,
+        ]))->assertForbidden();
+    }
+
     public function test_save_removes_blank_document_pack_blocks_and_saves_remaining_items(): void
     {
         $admin = User::factory()->admin()->create();

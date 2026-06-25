@@ -2,14 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\DocumentPackItemSource;
 use App\Enums\ProjectVisibility;
 use App\Models\ActivityLog;
 use App\Models\DocumentPack;
+use App\Models\DocumentPackItem;
 use App\Models\Project;
 use App\Models\ProjectRevision;
 use App\Services\DocumentPackPdfService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DocumentPackController extends Controller
 {
@@ -44,6 +48,47 @@ class DocumentPackController extends Controller
         return response()
             ->download($generatedPack['path'], $generatedPack['filename'], ['Content-Type' => 'application/pdf'])
             ->deleteFileAfterSend(true);
+    }
+
+    public function uploadedItem(
+        Request $request,
+        Project $project,
+        DocumentPack $documentPack,
+        DocumentPackItem $documentPackItem,
+    ): StreamedResponse {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless($request->user()->can('output.manage-document-packs'), 403);
+        abort_unless($documentPack->project_id === $project->id, 404);
+        abort_unless($documentPackItem->document_pack_id === $documentPack->id, 404);
+        abort_unless($documentPackItem->source_type === DocumentPackItemSource::Uploaded, 404);
+        abort_unless($documentPackItem->file_path !== null, 404);
+
+        $diskName = $documentPackItem->file_disk ?? 'local';
+        $filePath = $documentPackItem->file_path;
+        $disk = Storage::disk($diskName);
+
+        abort_unless($disk->exists($filePath), 404);
+
+        $filename = str_replace(['\\', '"'], '', $documentPackItem->original_filename ?: 'document-pack-item.pdf');
+
+        return response()->stream(function () use ($disk, $filePath): void {
+            $stream = $disk->readStream($filePath);
+
+            if ($stream === false) {
+                return;
+            }
+
+            try {
+                fpassthru($stream);
+            } finally {
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
+        }, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.$filename.'"',
+        ]);
     }
 
     private function authorizeProjectAccess(Request $request, Project $project): void
