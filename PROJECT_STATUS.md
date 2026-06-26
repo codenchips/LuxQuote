@@ -590,7 +590,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - **Revision validation and approval workflow**: Active revisions can be checked from `/projects/{id}/validation`. Current rules flag duplicate SKUs within an Area and SKUs missing from the product catalogue.
 - **Persistent validation state**: `project_revisions` now stores `validated`, `validated_at`, and `validated_by`. `project_lines` stores `approved`, `approved_at`, and `approved_by`.
 - **Warning actions**: Admins can explicitly **Approve** warnings, **Undo** approval, or **Merge** duplicate-SKU lines by summing quantities and deleting duplicates.
-- **Validated revision locking**: Validated revisions reject schedule mutations server-side and disable inline editing controls. Creating a new revision produces an editable, unvalidated copy while preserving line approval decisions.
+- **Revision approval locking**: Approved revisions reject schedule mutations server-side and disable inline editing controls. Validated-but-unapproved revisions remain editable, and creating a new revision from an approved revision produces an editable, unvalidated copy while preserving line approval decisions.
 - **Validation service and tests**: Rule evaluation is centralized in `ProjectRevisionValidator`; focused validation coverage lives in `AdminProjectValidationTest.php`. Full suite: 46 tests / 125 assertions.
 
 ---

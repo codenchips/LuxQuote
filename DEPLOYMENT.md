@@ -37,6 +37,45 @@ docker compose exec laravel.test php artisan migrate --force
 
 Use `--force` for production migrations to bypass Laravel's interactive production prompt.
 
+## SFTP Deployment Checklist
+
+Code is currently synced to the VPS via SFTP. Before running migrations for a structural release, take a database backup:
+
+```bash
+mkdir -p backups
+docker compose exec -T mysql mysqldump -u sail -ppassword --single-transaction --routines --triggers --no-tablespaces laravel > backups/pre-deploy-$(date +%Y%m%d-%H%M%S).sql
+```
+
+If SFTP cannot write because the app files are owned by the container user, temporarily hand ownership to the cPanel/SFTP user before uploading:
+
+```bash
+chown -R tamliteco:tamliteco /home/tamliteco/luxquote.app
+```
+
+After uploading files, hand ownership back to the container's actual `sail` user from inside the running app container. Do not hardcode a numeric UID/GID; Sail can remap the user at runtime.
+
+```bash
+docker compose exec laravel.test chown -R sail:sail /var/www/html
+docker compose exec laravel.test rm -rf /var/www/html/node_modules/.vite-temp
+```
+
+Then remove Vite's local dev-server marker before building assets:
+
+```bash
+rm -f public/hot
+docker compose exec -u sail laravel.test npm install
+docker compose exec -u sail laravel.test npm run build
+```
+
+Never deploy `public/hot` to production. If it exists, Laravel will try to load assets from `http://localhost:5173`, causing missing styles or CORS errors for users.
+
+Run production migrations and clear caches through Docker Compose:
+
+```bash
+docker compose exec laravel.test php artisan migrate --force
+docker compose exec laravel.test php artisan optimize:clear
+```
+
 ## PDF Runtime
 
 PDF generation uses Spatie Laravel PDF / Browsershot, which requires Node.js, Puppeteer, and a headless Chrome binary inside the `laravel.test` container.
@@ -95,4 +134,4 @@ docker compose exec laravel.test php artisan migrate --force
 
 ## Deployment Method
 
-Code is currently synced to the VPS via SFTP. After deploying code that changes PHP config, routes, views, migrations, dependencies, frontend assets, Dockerfiles, or Compose configuration, run the relevant Docker Compose commands above. The document-pack release requires the three new migrations for pack tables and permissions, plus a rebuilt `laravel.test` image containing `qpdf`.
+After deploying code that changes PHP config, routes, views, migrations, dependencies, frontend assets, Dockerfiles, or Compose configuration, run the relevant Docker Compose commands above. The document-pack release requires the three new migrations for pack tables and permissions, plus a rebuilt `laravel.test` image containing `qpdf`.

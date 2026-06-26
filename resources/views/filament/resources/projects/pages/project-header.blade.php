@@ -24,18 +24,15 @@
                 <nav class="flex items-center gap-6 text-base font-medium">
                     @foreach($subLinks as $link)
                         @if(! $loop->first)
-                            <span class="text-gray-600 dark:text-gray-600" aria-hidden="true">|</span>
+                            <span class="text-gray-300 dark:text-gray-600" aria-hidden="true">|</span>
                         @endif
 
                         <a
                             href="{{ $link['url'] }}"
-                            @if($link['active'])
-                                style="color: #f59e0b;"
-                            @endif
                             @class([
                                 'inline-flex items-center gap-1.5 transition-colors duration-150 whitespace-nowrap',
-                                'text-white hover:text-amber-300 dark:text-white dark:hover:text-amber-300' => !$link['active'],
-                                'font-semibold' => $link['active'],
+                                'text-gray-700 hover:text-amber-600 dark:text-white dark:hover:text-amber-300' => !$link['active'],
+                                'font-semibold text-amber-600 dark:text-amber-400' => $link['active'],
                             ])
                         >
                             <x-dynamic-component :component="$link['icon']" class="h-4 w-4" />

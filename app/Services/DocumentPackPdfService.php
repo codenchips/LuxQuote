@@ -65,7 +65,7 @@ class DocumentPackPdfService
         $process->setTimeout((float) config('document-packs.process_timeout_seconds', 60));
         $process->run();
 
-        if (! $process->isSuccessful()) {
+        if (! in_array($process->getExitCode(), [0, 3], true)) {
             throw new RuntimeException('The PDF is corrupt, encrypted, or uses an unsupported structure.');
         }
     }
