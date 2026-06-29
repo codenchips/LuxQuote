@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+current_branch="$(git branch --show-current)"
+
+if [ "$current_branch" != "main" ]; then
+    echo "Deploy aborted: start from main, not '$current_branch'."
+    exit 1
+fi
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "Deploy aborted: working tree has uncommitted changes."
+    git status --short
+    exit 1
+fi
+
+echo "Pushing main..."
+git push origin main
+
+echo "Switching to production..."
+git checkout production
+
+echo "Fast-forwarding production from main..."
+git merge --ff-only main
+
+echo "Pushing production..."
+git push origin production
+
+echo "Switching back to main..."
+git checkout main
+
+echo "Production deploy triggered."

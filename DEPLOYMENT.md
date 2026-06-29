@@ -37,6 +37,22 @@ docker compose exec laravel.test php artisan migrate --force
 
 Use `--force` for production migrations to bypass Laravel's interactive production prompt.
 
+## Reboot Recovery
+
+The production Docker services should survive VPS reboots. `compose.yaml` sets `restart: unless-stopped` for the app, MySQL, Redis, Meilisearch, and Mailpit services. The GitHub Actions runner container is also started with `--restart unless-stopped`.
+
+After a VPS reboot, verify the stack with:
+
+```bash
+cd /home/tamliteco/luxquote.app
+docker compose ps
+docker ps --filter name=luxquote-github-runner
+curl -I http://127.0.0.1:8080
+curl -I https://quote.tamlite.co.uk
+```
+
+If the runner is not listed, recreate it using the runner container command in the Deployment Method section with a fresh GitHub runner token.
+
 ## SFTP Deployment Checklist
 
 Code is currently synced to the VPS via SFTP. Before running migrations for a structural release, take a database backup:
