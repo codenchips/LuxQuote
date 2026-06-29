@@ -44,6 +44,21 @@ log "Starting production deploy for branch: $DEPLOY_BRANCH"
 log "Checking Docker services"
 docker compose up -d
 
+log "Waiting for MySQL to accept connections"
+for attempt in {1..60}; do
+    if docker compose exec -T mysql mysqladmin ping -h 127.0.0.1 -u "$DB_USERNAME" -p"$DB_PASSWORD" --silent; then
+        break
+    fi
+
+    if [ "$attempt" -eq 60 ]; then
+        log "ERROR: MySQL did not become ready in time."
+        docker compose logs --tail=80 mysql
+        exit 1
+    fi
+
+    sleep 2
+done
+
 log "Backing up database"
 mkdir -p "$BACKUP_DIR"
 docker compose exec -T mysql mysqldump \

@@ -22,5 +22,5 @@ jobs:
           PUBLIC_URL: ${{ secrets.PRODUCTION_URL || 'https://quote.tamlite.co.uk' }}
         run: |
           set -euo pipefail
-          cd /home/runner/luxquote.app
-          APP_DIR=/home/runner/luxquote.app DEPLOY_BRANCH=production PUBLIC_URL="$PUBLIC_URL" bash scripts/deploy-production.sh
+          cd /home/tamliteco/luxquote.app
+          APP_DIR=/home/tamliteco/luxquote.app DEPLOY_BRANCH=production PUBLIC_URL="$PUBLIC_URL" bash scripts/deploy-production.sh
