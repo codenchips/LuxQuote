@@ -541,6 +541,8 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
 - [ ] Document-pack template sources and additional roles (for example case studies) are planned but not yet implemented
+- [x] Scaffold GitHub-based automatic production deployment workflow and server deploy script for the `production` branch
+- [ ] Configure GitHub production secrets and one-time VPS git checkout/deploy key setup so production deploys run without manual SFTP steps
 
 ---
 

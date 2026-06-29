@@ -134,4 +134,55 @@ docker compose exec laravel.test php artisan migrate --force
 
 ## Deployment Method
 
+Code can be deployed automatically from GitHub by pushing the `production` branch. The workflow in `.github/workflows/deploy-production.yml` connects to the VPS over SSH and runs `scripts/deploy-production.sh`.
+
+The deploy script:
+
+- starts Docker services so the database is available
+- creates a compressed pre-deploy MySQL backup in `/home/tamliteco/luxquote.app/backups`
+- fetches and checks out `origin/production`
+- rebuilds/recreates Docker services with `docker compose up -d --build`
+- removes `public/hot`
+- fixes container-side ownership using `sail:sail`
+- installs Composer dependencies
+- installs/builds npm assets as the `sail` user
+- verifies `qpdf`
+- runs migrations with `--force`
+- clears/rebuilds Laravel caches
+- smoke-checks `https://quote.tamlite.co.uk`
+- prunes DB backups older than 14 days
+
+### One-Time Server Setup
+
+Production must be a git checkout of `git@github.com:codenchips/LuxQuote.git`. Keep `.env`, `storage/`, and `backups/` out of git. The server also needs SSH access to read the GitHub repo, usually via a read-only deploy key.
+
+There are two SSH links to set up:
+
+1. GitHub Actions -> VPS: create a private key for GitHub Actions, add the public key to the VPS user's `~/.ssh/authorized_keys`, and save the private key as `PRODUCTION_SSH_KEY`.
+2. VPS -> GitHub: create a read-only deploy key on the VPS, add the public key to the GitHub repository's deploy keys, and make sure `git fetch origin production` works from `/home/tamliteco/luxquote.app`.
+
+If converting the existing SFTP directory, take a database backup and preserve `.env`, `storage/`, and `backups/` before replacing the working tree with a clean clone. Do not delete the Docker MySQL volume.
+
+After the production app directory is a git checkout, verify the deploy script manually before relying on GitHub Actions:
+
+```bash
+cd /home/tamliteco/luxquote.app
+APP_DIR=/home/tamliteco/luxquote.app DEPLOY_BRANCH=production PUBLIC_URL=https://quote.tamlite.co.uk bash scripts/deploy-production.sh
+```
+
+### GitHub Secrets
+
+Configure these repository or environment secrets in GitHub:
+
+| Secret | Purpose |
+|---|---|
+| `PRODUCTION_SSH_HOST` | VPS hostname or IP |
+| `PRODUCTION_SSH_USER` | SSH user, for example `root` |
+| `PRODUCTION_SSH_KEY` | Private key GitHub Actions uses to SSH into the VPS |
+| `PRODUCTION_SSH_PORT` | Optional SSH port, defaults to `22` |
+| `PRODUCTION_DEPLOY_PATH` | Optional app path, defaults to `/home/tamliteco/luxquote.app` |
+| `PRODUCTION_URL` | Optional smoke-check URL, defaults to `https://quote.tamlite.co.uk` |
+
+Manual SFTP deployment should now be treated as a fallback only.
+
 After deploying code that changes PHP config, routes, views, migrations, dependencies, frontend assets, Dockerfiles, or Compose configuration, run the relevant Docker Compose commands above. The document-pack release requires the three new migrations for pack tables and permissions, plus a rebuilt `laravel.test` image containing `qpdf`.
