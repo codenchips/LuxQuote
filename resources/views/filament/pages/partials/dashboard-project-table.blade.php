@@ -1,19 +1,19 @@
 <div class="overflow-x-auto">
     <table class="w-full table-fixed divide-y divide-gray-200 text-sm dark:divide-gray-800">
         <thead class="lux-table-column-head">
-            <tr class="text-left text-xs font-medium uppercase text-slate-600 dark:text-slate-300">
+            <tr class="text-left text-xs font-bold uppercase text-slate-600 dark:text-slate-300">
                 <th class="w-[42%] px-4 py-3">Project name</th>
                 <th class="w-[12%] px-4 py-3">Rev</th>
                 <th class="w-[14%] px-4 py-3">Status</th>
                 <th class="w-[14%] px-4 py-3">Visibility</th>
-                <th class="w-[18%] px-4 py-3">Last accessed</th>
+                <th class="w-[18%] px-4 py-3 text-right">Last accessed</th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
             @forelse ($rows as $row)
                 <tr class="odd:bg-white even:bg-gray-50/70 dark:odd:bg-gray-950 dark:even:bg-gray-900">
                     <td class="px-4 py-3">
-                        <a href="{{ $row['url'] }}" class="font-medium text-primary-600 hover:underline dark:text-primary-400">
+                        <a href="{{ $row['url'] }}" class="block truncate font-medium text-primary-600 hover:underline dark:text-primary-400" title="{{ $row['name'] }}">
                             {{ $row['name'] }}
                         </a>
                     </td>
@@ -35,7 +35,7 @@
                             'bg-gray-50 text-gray-700 ring-gray-600/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20' => $row['visibilityColor'] === 'gray',
                         ])>{{ $row['visibility'] }}</span>
                     </td>
-                    <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ $row['lastAccessed'] }}</td>
+                    <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{{ $row['lastAccessed'] }}</td>
                 </tr>
             @empty
                 <tr>
