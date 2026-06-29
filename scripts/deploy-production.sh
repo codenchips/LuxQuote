@@ -36,6 +36,9 @@ if [ ! -d .git ]; then
     exit 1
 fi
 
+log "Marking production checkout as a safe git directory"
+git config --global --add safe.directory "$APP_DIR"
+
 log "Starting production deploy for branch: $DEPLOY_BRANCH"
 
 log "Checking Docker services"
@@ -66,12 +69,18 @@ log "Ensuring container file ownership"
 docker compose exec laravel.test chown -R sail:sail /var/www/html
 docker compose exec laravel.test rm -rf /var/www/html/node_modules/.vite-temp
 
-log "Installing Composer dependencies"
-docker compose exec laravel.test composer install --no-dev --optimize-autoloader --no-interaction
+log "Installing Composer dependencies without framework scripts"
+docker compose exec laravel.test composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
 
 log "Installing npm dependencies and building assets"
 docker compose exec -u sail laravel.test npm install
 docker compose exec -u sail laravel.test npm run build
+
+log "Completing Composer autoload and framework discovery"
+docker compose exec laravel.test composer dump-autoload --optimize
+
+log "Restarting app container after dependencies are available"
+docker compose restart laravel.test
 
 log "Verifying qpdf runtime"
 docker compose exec laravel.test qpdf --version
