@@ -242,13 +242,14 @@ class AdminProjectResourceTest extends TestCase
             'sort_order' => 1,
         ]);
 
-        Product::factory()->create(['sku' => 'VALID-SKU', 'price' => null]);
+        Product::factory()->create(['sku' => 'VALID-SKU', 'price' => 10]);
 
         $groundFloor->lines()->createMany([
             [
                 'code' => 'VALID-SKU',
                 'description' => 'First valid product',
                 'qty' => 1,
+                'unit_price' => 10,
                 'type' => ProjectLineType::Standard->value,
                 'sort_order' => 0,
             ],
@@ -256,6 +257,7 @@ class AdminProjectResourceTest extends TestCase
                 'code' => 'valid-sku',
                 'description' => 'Duplicate valid product',
                 'qty' => 1,
+                'unit_price' => 10,
                 'type' => ProjectLineType::Standard->value,
                 'sort_order' => 1,
             ],
@@ -263,6 +265,7 @@ class AdminProjectResourceTest extends TestCase
                 'code' => 'MISSING-SKU',
                 'description' => 'Missing product',
                 'qty' => 1,
+                'unit_price' => 10,
                 'type' => ProjectLineType::Custom->value,
                 'sort_order' => 2,
             ],
@@ -272,6 +275,7 @@ class AdminProjectResourceTest extends TestCase
             'code' => 'VALID-SKU',
             'description' => 'Valid in another area',
             'qty' => 1,
+            'unit_price' => 10,
             'type' => ProjectLineType::Standard->value,
             'sort_order' => 0,
         ]);
@@ -302,6 +306,7 @@ class AdminProjectResourceTest extends TestCase
             'code' => 'NEW-MISSING-SKU',
             'description' => 'New missing product',
             'qty' => 1,
+            'unit_price' => 10,
             'type' => ProjectLineType::Custom->value,
             'sort_order' => 0,
         ]);
@@ -714,10 +719,11 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('Quote PDF')
             ->assertSee('Priced Schedule')
             ->assertSee('Unpriced Schedule')
-            ->assertSee(route('projects.pdf.schedule', [
+            ->assertSee(e(route('projects.pdf.schedule', [
                 'project' => $project,
                 'revision' => $project->active_revision_id,
-            ]), false)
+                'salesforce_upload' => true,
+            ])), false)
             ->assertSee(route('projects.export.unpriced-csv', [
                 'project' => $project,
                 'revision' => $project->active_revision_id,

@@ -32,3 +32,45 @@
         width: 3rem;
     }
 }
+
+.lux-table-title-bar,
+.fi-ta-ctn .fi-ta-header {
+    border-color: #263759;
+    background: var(--color-primary-blue);
+}
+
+.lux-table-title-bar h2,
+.fi-ta-ctn .fi-ta-header .fi-ta-header-heading {
+    color: #f8fafc;
+}
+
+.fi-ta-ctn .fi-ta-header .fi-ta-header-description {
+    color: #cbd5e1;
+}
+
+.lux-table-column-head,
+.fi-ta-content-ctn .fi-ta-content-header,
+.fi-ta-table thead tr {
+    background: #0f172a;
+}
+
+.lux-table-column-head tr,
+.lux-table-column-head th,
+.fi-ta-header-cell,
+.fi-ta-header-group-cell,
+.fi-ta-actions-header-cell,
+.fi-ta-table thead th,
+.fi-ta-header-cell .fi-ta-header-cell-sort-btn {
+    color: #e2e8f0;
+}
+
+.fi-ta-header-cell .fi-icon,
+.fi-ta-header-cell-sort-btn .fi-icon {
+    color: #94a3b8;
+}
+
+.fi-ta-header-cell.fi-ta-header-cell-sorted,
+.fi-ta-header-cell.fi-ta-header-cell-sorted .fi-ta-header-cell-sort-btn,
+.fi-ta-header-cell.fi-ta-header-cell-sorted .fi-icon {
+    color: #ffffff;
+}

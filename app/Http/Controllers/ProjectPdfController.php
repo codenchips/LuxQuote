@@ -34,7 +34,7 @@ class ProjectPdfController extends Controller
         $filename = $pdf->filename($project, $revision);
         $builder = $pdf->builder($project, $revision);
 
-        if ($this->shouldUploadPdfToSalesforce($project)) {
+        if ($this->shouldUploadPdfToSalesforce($request, $project)) {
             $this->uploadPdfToSalesforce(
                 project: $project,
                 revision: $revision,
@@ -84,7 +84,7 @@ class ProjectPdfController extends Controller
         $filename = $pdf->quoteFilename($project, $revision);
         $builder = $pdf->quoteBuilder($project, $revision);
 
-        if ($this->shouldUploadPdfToSalesforce($project)) {
+        if ($this->shouldUploadPdfToSalesforce($request, $project)) {
             $this->uploadPdfToSalesforce(
                 project: $project,
                 revision: $revision,
@@ -296,8 +296,9 @@ class ProjectPdfController extends Controller
             ->send();
     }
 
-    private function shouldUploadPdfToSalesforce(Project $project): bool
+    private function shouldUploadPdfToSalesforce(Request $request, Project $project): bool
     {
-        return $project->salesforce_project || filled($project->salesforce_id);
+        return $request->boolean('salesforce_upload')
+            && ($project->salesforce_project || filled($project->salesforce_id));
     }
 }

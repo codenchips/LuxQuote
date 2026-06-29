@@ -117,6 +117,7 @@ class OutputProject extends ViewRecord
         return route('projects.pdf.schedule', [
             'project' => $this->record,
             'revision' => $this->record->active_revision_id,
+            'salesforce_upload' => true,
         ]);
     }
 
@@ -127,6 +128,7 @@ class OutputProject extends ViewRecord
         return route('projects.pdf.quote', [
             'project' => $this->record,
             'revision' => $this->record->active_revision_id,
+            'salesforce_upload' => true,
         ]);
     }
 
