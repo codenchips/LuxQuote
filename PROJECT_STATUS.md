@@ -532,17 +532,16 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 ## Known Gaps / Next Steps (as of 23 June 2026)
 
 - [x] ~~`ProjectLine.status` column exists but is a placeholder (`–`) in the UI — no logic yet~~ — status badges now show Pending, Priced, Unpriced, or Approved
-- [ ] Project tests cover server-side line/revision scoping, but still need browser/UI coverage for product picker, revision activation, presence, and PDF generation
-- [ ] No Artisan command yet to trigger `ProductImportService` (needs `make:command`)
-- [ ] Project totals (across all areas) not shown at the page level
+- [x] Artisan command `app:import-products` triggers `ProductImportService`
+- [x] Project totals (across all areas) now shown at the page level
 - [x] ~~No PDF / export functionality yet~~ — **Schedule PDF implemented (see Features completed — 2 June 2026)**
-- [ ] Bearer token for Salesforce is fetched fresh on every call — should be cached for its ~1 hour lifetime
+- [x] Salesforce bearer token is cached for its roughly 1-hour lifetime
 - [ ] No tests covering the Salesforce service (`Http::fake()` for auth success, auth failure, query failure)
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
 - [ ] Document-pack template sources and additional roles (for example case studies) are planned but not yet implemented
 - [x] Scaffold GitHub-based automatic production deployment workflow and server deploy script for the `production` branch
-- [ ] Configure GitHub production secrets and one-time VPS git checkout/deploy key setup so production deploys run without manual SFTP steps
+- [x] Configure GitHub production secrets and one-time VPS git checkout/deploy key setup so production deploys run without manual SFTP steps
 
 ---
 

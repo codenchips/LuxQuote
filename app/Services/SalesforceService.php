@@ -4,12 +4,17 @@ namespace App\Services;
 
 use App\Models\Project;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class SalesforceService
 {
     private const API_VERSION = 'v65.0';
+
+    private const AUTH_CACHE_TTL_BUFFER_SECONDS = 60;
+
+    private const AUTH_CACHE_DEFAULT_SECONDS = 3600;
 
     /**
      * Authenticate via OAuth2 Client Credentials and return the token + instance URL.
@@ -30,6 +35,16 @@ class SalesforceService
             $parsed['scheme'] ?? 'https',
             $parsed['host'] ?? '',
         );
+        $cacheKey = $this->authCacheKey($tokenUrl);
+
+        $cached = Cache::get($cacheKey);
+
+        if (is_array($cached) && isset($cached['token'], $cached['instanceUrl'])) {
+            return [
+                'token' => (string) $cached['token'],
+                'instanceUrl' => (string) $cached['instanceUrl'],
+            ];
+        }
 
         $response = Http::asForm()->post($tokenUrl, [
             'grant_type' => 'client_credentials',
@@ -46,10 +61,27 @@ class SalesforceService
             return null;
         }
 
-        return [
-            'token' => $response->json('access_token'),
+        $auth = [
+            'token' => (string) $response->json('access_token'),
             'instanceUrl' => rtrim((string) $response->json('instance_url'), '/'),
         ];
+
+        Cache::put($cacheKey, $auth, $this->authCacheSeconds((int) $response->json('expires_in', self::AUTH_CACHE_DEFAULT_SECONDS)));
+
+        return $auth;
+    }
+
+    private function authCacheKey(string $tokenUrl): string
+    {
+        return 'salesforce.auth.'.hash('sha256', implode('|', [
+            $tokenUrl,
+            (string) config('services.salesforce.client_id'),
+        ]));
+    }
+
+    private function authCacheSeconds(int $expiresIn): int
+    {
+        return max(60, $expiresIn - self::AUTH_CACHE_TTL_BUFFER_SECONDS);
     }
 
     /**

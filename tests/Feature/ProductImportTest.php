@@ -200,4 +200,26 @@ class ProductImportTest extends TestCase
 
         app(ProductImportService::class)->import();
     }
+
+    public function test_artisan_command_imports_products(): void
+    {
+        Http::fake(['*' => Http::response($this->apiResponse(), 200)]);
+
+        $this->artisan('app:import-products')
+            ->expectsOutput('Importing products...')
+            ->expectsOutput('2 products imported successfully.')
+            ->assertSuccessful();
+
+        $this->assertDatabaseCount('products', 2);
+    }
+
+    public function test_artisan_command_fails_when_import_fails(): void
+    {
+        Http::fake(['*' => Http::response(null, 500)]);
+
+        $this->artisan('app:import-products')
+            ->expectsOutput('Importing products...')
+            ->expectsOutput('Import failed: Product API request failed with status 500.')
+            ->assertFailed();
+    }
 }
