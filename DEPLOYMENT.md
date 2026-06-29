@@ -134,7 +134,7 @@ docker compose exec laravel.test php artisan migrate --force
 
 ## Deployment Method
 
-Code can be deployed automatically from GitHub by pushing the `production` branch. The workflow in `.github/workflows/deploy-production.yml` connects to the VPS over SSH and runs `scripts/deploy-production.sh`.
+Code can be deployed automatically from GitHub by pushing the `production` branch. The workflow in `.github/workflows/deploy-production.yml` runs on the `luxquote-production` self-hosted GitHub Actions runner on the VPS and executes `scripts/deploy-production.sh` against the production checkout.
 
 The deploy script:
 
@@ -156,10 +156,30 @@ The deploy script:
 
 Production must be a git checkout of `git@github.com:codenchips/LuxQuote.git`. Keep `.env`, `storage/`, and `backups/` out of git. The server also needs SSH access to read the GitHub repo, usually via a read-only deploy key.
 
-There are two SSH links to set up:
+The VPS needs SSH access to read the GitHub repo. Create a read-only deploy key on the VPS, add the public key to the GitHub repository's deploy keys, and make sure `git fetch origin production` works from `/home/tamliteco/luxquote.app`.
 
-1. GitHub Actions -> VPS: create a private key for GitHub Actions, add the public key to the VPS user's `~/.ssh/authorized_keys`, and save the private key as `PRODUCTION_SSH_KEY`.
-2. VPS -> GitHub: create a read-only deploy key on the VPS, add the public key to the GitHub repository's deploy keys, and make sure `git fetch origin production` works from `/home/tamliteco/luxquote.app`.
+Because the VPS firewall restricts inbound SSH, deployment uses a self-hosted runner rather than GitHub-hosted runners. The runner runs in Docker as `luxquote-github-runner`, connects outbound to GitHub, and has the host Docker socket mounted so it can run the normal Docker Compose deployment commands.
+
+Runner container shape:
+
+```bash
+docker run -d \
+  --name luxquote-github-runner \
+  --restart unless-stopped \
+  -e RUNNER_NAME="luxquote-production" \
+  -e RUNNER_LABELS="luxquote-production" \
+  -e RUNNER_WORKDIR="_work" \
+  -e REPO_URL="https://github.com/codenchips/LuxQuote" \
+  -e RUNNER_TOKEN="FRESH_TOKEN_FROM_GITHUB" \
+  -v /opt/actions-runner/luxquote-production:/home/runner/_work \
+  -v /home/tamliteco/luxquote.app:/home/runner/luxquote.app \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /usr/bin/docker:/usr/bin/docker:ro \
+  -v /usr/libexec/docker/cli-plugins:/usr/libexec/docker/cli-plugins:ro \
+  myoung34/github-runner:latest
+```
+
+Do not run the official GitHub runner directly on the CentOS 7 host; the host `libstdc++` is too old for the current runner binary.
 
 If converting the existing SFTP directory, take a database backup and preserve `.env`, `storage/`, and `backups/` before replacing the working tree with a clean clone. Do not delete the Docker MySQL volume.
 
@@ -176,11 +196,6 @@ Configure these repository or environment secrets in GitHub:
 
 | Secret | Purpose |
 |---|---|
-| `PRODUCTION_SSH_HOST` | VPS hostname or IP |
-| `PRODUCTION_SSH_USER` | SSH user, for example `root` |
-| `PRODUCTION_SSH_KEY` | Private key GitHub Actions uses to SSH into the VPS |
-| `PRODUCTION_SSH_PORT` | Optional SSH port, defaults to `22` |
-| `PRODUCTION_DEPLOY_PATH` | Optional app path, defaults to `/home/tamliteco/luxquote.app` |
 | `PRODUCTION_URL` | Optional smoke-check URL, defaults to `https://quote.tamlite.co.uk` |
 
 Manual SFTP deployment should now be treated as a fallback only.
