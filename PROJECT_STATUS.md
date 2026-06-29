@@ -1,6 +1,6 @@
 # Company App — Project Status
 
-_Last updated: 23 June 2026_
+_Last updated: 29 June 2026_
 
 ---
 
@@ -405,10 +405,17 @@ The project output page is available at `/projects/{id}/output`. The **Quote App
 | `Feature/AdminUserResourceTest.php` | Filament Users CRUD (admin) |
 | `Feature/FrontEndProductsTest.php` | Products list for non-admin |
 | `Feature/ProductImportTest.php` | `ProductImportService` — happy path, API failure, structure error |
+| `Feature/SalesforceServiceTest.php` | `SalesforceService` — OAuth success, auth failure, SOQL query failure, and bearer-token caching via `Http::fake()` |
 | `Feature/ExampleTest.php` | Smoke test |
 | `Unit/ExampleTest.php` | Smoke test |
 
-**Remaining project test gaps:** product picker UI flow, revision activation UI, presence heartbeat, broader validation/PDF browser coverage, and full Salesforce API/service coverage. Document-pack generation and ordering have focused feature coverage.
+Focused Salesforce service tests can be run before Salesforce credential or environment changes with:
+
+```bash
+vendor/bin/sail artisan test --compact tests/Feature/SalesforceServiceTest.php
+```
+
+**Remaining project test gaps:** product picker UI flow, revision activation UI, presence heartbeat, and broader validation/PDF browser coverage. Document-pack generation and ordering have focused feature coverage.
 
 ---
 
@@ -457,6 +464,8 @@ Tracked action types include project create/update/delete, revision creation, ar
 
 Authentication uses **OAuth2 Client Credentials**. The service is bound as a singleton in `AppServiceProvider`. Gate `view-salesforce` restricts the Salesforce page to Admin users only.
 
+Successful bearer-token responses are cached for their reported lifetime, minus a 60-second safety buffer, so normal Salesforce reads and writes do not request a fresh OAuth token for every service call.
+
 ### Environment variables required (`.env`)
 
 ```dotenv
@@ -474,6 +483,29 @@ SALESFORCE_BASE_URL=          # e.g. https://your-org.my.salesforce.com
 | `resources/views/filament/pages/salesforce.blade.php` | Blade template for the page |
 | `config/services.php` | `salesforce` key: `client_id`, `client_secret`, `url` |
 | `app/Providers/AppServiceProvider.php` | Singleton binding + gate definition |
+
+### Inspecting live Opportunity fields
+
+Use the interrogator command with structured output when comparing Salesforce fields before changing project population mappings:
+
+```bash
+vendor/bin/sail artisan salesforce:interrogate --limit=5 --format=json > storage/app/salesforce-opportunities.json
+```
+
+On production, run the same command through Docker Compose from `/home/tamliteco/luxquote.app`:
+
+```bash
+docker compose exec -T laravel.test php artisan salesforce:interrogate --limit=5 --format=json > salesforce-opportunities.json
+```
+
+Useful local parsing examples:
+
+```bash
+jq '.[0] | keys' storage/app/salesforce-opportunities.json
+jq '.[] | {Id, Name, StageName, Amount, Project_Reference_Number__c, CEF_Branch__c, CEF_Cover__c}' storage/app/salesforce-opportunities.json
+```
+
+Use `--format=ndjson` for one JSON object per line when grepping or importing into spreadsheet/data tools.
 
 ### Service methods
 
@@ -536,7 +568,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [x] Project totals (across all areas) now shown at the page level
 - [x] ~~No PDF / export functionality yet~~ — **Schedule PDF implemented (see Features completed — 2 June 2026)**
 - [x] Salesforce bearer token is cached for its roughly 1-hour lifetime
-- [ ] No tests covering the Salesforce service (`Http::fake()` for auth success, auth failure, query failure)
+- [x] Salesforce service tests cover `Http::fake()` auth success, auth failure, query failure, and token caching
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
 - [ ] Document-pack template sources and additional roles (for example case studies) are planned but not yet implemented

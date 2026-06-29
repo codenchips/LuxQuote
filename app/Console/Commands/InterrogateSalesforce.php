@@ -6,8 +6,9 @@ use App\Services\SalesforceService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use JsonException;
 
-#[Signature('salesforce:interrogate')]
+#[Signature('salesforce:interrogate {--limit=5 : Number of Opportunity records to fetch} {--format=table : Output format: table, json, or ndjson}')]
 #[Description('Fetch raw project/opportunity records from the Salesforce API and print them to the terminal.')]
 class InterrogateSalesforce extends Command
 {
@@ -21,12 +22,21 @@ class InterrogateSalesforce extends Command
      */
     public function handle(): int
     {
-        $this->info('Contacting Salesforce API...');
+        $format = strtolower((string) $this->option('format'));
+        $limit = max(1, (int) $this->option('limit'));
 
-        // $response = $this->salesforce->fetchProjects();
-        $response = $this->salesforce->fetchAllOpportunityFields(25);
+        if (! in_array($format, ['table', 'json', 'ndjson'], true)) {
+            $this->error('Invalid format. Use table, json, or ndjson.');
 
-        // 1. Handle API/Permission Failures explicitly
+            return self::FAILURE;
+        }
+
+        if ($format === 'table') {
+            $this->info('Contacting Salesforce API...');
+        }
+
+        $response = $this->salesforce->fetchAllOpportunityFields($limit);
+
         if (isset($response['success']) && ! $response['success']) {
             $this->error(sprintf('Salesforce API Error (HTTP %d)', $response['status']));
 
@@ -43,7 +53,6 @@ class InterrogateSalesforce extends Command
             return self::FAILURE;
         }
 
-        // 2. Handle successful connections with an empty database
         $records = $response['records'] ?? [];
         if (empty($records)) {
             $this->warn('Connected successfully, but the Opportunity (Project) table returned 0 rows.');
@@ -51,9 +60,12 @@ class InterrogateSalesforce extends Command
             return self::SUCCESS;
         }
 
+        if ($format !== 'table') {
+            return $this->writeStructuredRecords($records, $format);
+        }
+
         $this->info(sprintf('Received %d record(s).', count($records)));
 
-        // Print the top-level keys from the first record so we know what fields are available.
         $firstRecord = reset($records);
 
         if (is_array($firstRecord)) {
@@ -62,14 +74,13 @@ class InterrogateSalesforce extends Command
             $this->line(implode(', ', array_keys($firstRecord)));
             $this->line('');
 
-            // Render first 25 records in a table using those keys.
             $headers = array_keys($firstRecord);
             $rows = array_map(
                 fn (array $record): array => array_map(
                     fn (mixed $v): string => is_array($v) ? json_encode($v) : (string) $v,
                     $record,
                 ),
-                array_slice($records, 0, 25),
+                $records,
             );
 
             $this->table($headers, $rows);
@@ -82,6 +93,30 @@ class InterrogateSalesforce extends Command
 
         if (count($records) > 25) {
             $this->warn(sprintf('(Showing first 25 of %d records)', count($records)));
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<int, mixed>  $records
+     */
+    private function writeStructuredRecords(array $records, string $format): int
+    {
+        try {
+            if ($format === 'json') {
+                $this->line(json_encode($records, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+
+                return self::SUCCESS;
+            }
+
+            foreach ($records as $record) {
+                $this->line(json_encode($record, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+            }
+        } catch (JsonException $exception) {
+            $this->error('Could not encode Salesforce records: '.$exception->getMessage());
+
+            return self::FAILURE;
         }
 
         return self::SUCCESS;

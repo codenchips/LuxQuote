@@ -9,7 +9,6 @@ use App\Services\ProjectSchedulePdfService;
 use App\Services\SalesforceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Tests\TestCase;
@@ -54,47 +53,6 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), 'IsClosed = false')
             && str_contains((string) ($request->data()['q'] ?? ''), 'IsWon = false')
             && str_contains((string) ($request->data()['q'] ?? ''), "Name LIKE '%Hartest%'"));
-    }
-
-    public function test_salesforce_authentication_token_is_cached_between_requests(): void
-    {
-        Cache::flush();
-
-        config(['services.salesforce.url' => 'https://example.my.salesforce.com']);
-
-        Http::fake(function (Request $request) {
-            if (str_contains($request->url(), '/services/oauth2/token')) {
-                return Http::response([
-                    'access_token' => 'cached-test-token',
-                    'instance_url' => 'https://example.my.salesforce.com',
-                    'expires_in' => 3600,
-                ]);
-            }
-
-            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
-                return Http::response([
-                    'records' => [
-                        [
-                            'Id' => '006000000000001AAA',
-                            'Name' => 'Hartest Primary School',
-                            'Project_Reference_Number__c' => '22600',
-                        ],
-                    ],
-                ]);
-            }
-
-            return Http::response([], 500);
-        });
-
-        $salesforce = app(SalesforceService::class);
-
-        $salesforce->searchOpportunities('Hartest');
-        $salesforce->searchOpportunities('Hartest');
-
-        $tokenRequests = Http::recorded()
-            ->filter(fn (array $record): bool => str_contains($record[0]->url(), '/services/oauth2/token'));
-
-        $this->assertCount(1, $tokenRequests);
     }
 
     public function test_opportunity_reference_search_returns_full_project_names(): void
