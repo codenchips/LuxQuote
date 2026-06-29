@@ -112,6 +112,9 @@ docker compose exec laravel.test php artisan view:cache
 log "Smoke checking $PUBLIC_URL"
 curl --fail --silent --show-error --location --max-time 20 "$PUBLIC_URL" >/dev/null
 
+log "Pruning unused Docker build cache older than 24 hours"
+docker builder prune --all --force --filter "until=24h"
+
 log "Pruning database backups older than 14 days"
 find "$BACKUP_DIR" -name "pre-deploy-*.sql.gz" -type f -mtime +14 -delete
 

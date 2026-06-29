@@ -53,6 +53,31 @@ curl -I https://quote.tamlite.co.uk
 
 If the runner is not listed, recreate it using the runner container command in the Deployment Method section with a fresh GitHub runner token.
 
+## Docker Disk Cleanup
+
+Docker build cache and old images can consume significant disk space on the VPS. The deploy script prunes build cache older than 24 hours after successful deploys, and `scripts/production-docker-cleanup.sh` can be run manually or from cron for broader safe cleanup.
+
+The cleanup script prunes:
+
+- unused Docker build cache older than 24 hours
+- unused Docker images older than 24 hours
+- stopped containers older than 24 hours
+
+It deliberately does **not** prune Docker volumes, because the MySQL database lives in a Docker volume.
+
+Manual run:
+
+```bash
+cd /home/tamliteco/luxquote.app
+bash scripts/production-docker-cleanup.sh
+```
+
+Suggested weekly cron entry:
+
+```cron
+30 3 * * 0 cd /home/tamliteco/luxquote.app && bash scripts/production-docker-cleanup.sh >> /var/log/luxquote-docker-cleanup.log 2>&1
+```
+
 ## SFTP Deployment Checklist
 
 Code is currently synced to the VPS via SFTP. Before running migrations for a structural release, take a database backup:
