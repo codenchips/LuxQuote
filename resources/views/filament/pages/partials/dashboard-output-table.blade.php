@@ -1,7 +1,7 @@
 <div class="overflow-x-auto">
     @php($showDocumentPackName = $showDocumentPackName ?? false)
 
-    <table class="w-full table-fixed divide-y divide-gray-200 text-sm dark:divide-gray-800">
+    <table class="lux-dashboard-table w-full table-fixed text-sm">
         <thead class="lux-table-column-head">
             <tr class="text-left text-xs font-bold uppercase text-slate-600 dark:text-slate-300">
                 @if ($showDocumentPackName)
@@ -15,9 +15,9 @@
                 <th class="w-[9%] px-4 py-3 text-center">View</th>
             </tr>
         </thead>
-        <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+        <tbody>
             @forelse ($rows as $row)
-                <tr class="odd:bg-white even:bg-gray-50/70 dark:odd:bg-gray-950 dark:even:bg-gray-900">
+                <tr>
                     @if ($showDocumentPackName)
                         <td class="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                             <div class="truncate" title="{{ $row['documentPack'] ?? '' }}">{{ $row['documentPack'] ?? '' }}</div>

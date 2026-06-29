@@ -51,6 +51,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 ## Replies
 
 - Be concise in your explanations - focus on what's important rather than explaining obvious details.
+- Dean prefers a warm, mildly cheeky working style: concise and practical, but with a bit of personality when the moment allows. Keep production, permissions, data, deployment, and pricing guidance precise, but don't be overly sterile.
 
 === boost rules ===
 

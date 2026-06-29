@@ -1,5 +1,5 @@
 <div class="overflow-x-auto">
-    <table class="w-full table-fixed divide-y divide-gray-200 text-sm dark:divide-gray-800">
+    <table class="lux-dashboard-table w-full table-fixed text-sm">
         <thead class="lux-table-column-head">
             <tr class="text-left text-xs font-bold uppercase text-slate-600 dark:text-slate-300">
                 <th class="w-[42%] px-4 py-3">Project name</th>
@@ -9,9 +9,9 @@
                 <th class="w-[18%] px-4 py-3 text-right">Last accessed</th>
             </tr>
         </thead>
-        <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+        <tbody>
             @forelse ($rows as $row)
-                <tr class="odd:bg-white even:bg-gray-50/70 dark:odd:bg-gray-950 dark:even:bg-gray-900">
+                <tr>
                     <td class="px-4 py-3">
                         <a href="{{ $row['url'] }}" class="block truncate font-medium text-primary-600 hover:underline dark:text-primary-400" title="{{ $row['name'] }}">
                             {{ $row['name'] }}

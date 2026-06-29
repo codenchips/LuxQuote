@@ -33,17 +33,25 @@
     }
 }
 
+.lux-dashboard-panel {
+    border-color: #2a3140;
+    background: #18181b;
+}
+
 .lux-table-title-bar,
 .fi-ta-ctn .fi-ta-header {
-    border-color: #263759;
-    background: var(--color-primary-blue);
+    min-height: 3.5rem;
+    border-color: #2a3140;
+    background: #18181b;
 }
 
 .lux-table-title-bar h2,
 .fi-ta-ctn .fi-ta-header .fi-ta-header-heading {
-    color: #f8fafc;
+    color: #ffffff;
 }
 
+.lux-table-title-bar .fi-icon,
+.fi-ta-ctn .fi-ta-header .fi-icon,
 .fi-ta-ctn .fi-ta-header .fi-ta-header-description {
     color: #cbd5e1;
 }
@@ -61,12 +69,26 @@
 .fi-ta-actions-header-cell,
 .fi-ta-table thead th,
 .fi-ta-header-cell .fi-ta-header-cell-sort-btn {
-    color: #e2e8f0;
+    color: #f8fafc;
+}
+
+.lux-dashboard-table tbody tr {
+    border-top: 1px solid #2a3140;
+    background: #18181b;
+    transition: background-color 75ms ease;
+}
+
+.lux-dashboard-table tbody tr:first-child {
+    border-top: 0;
+}
+
+.lux-dashboard-table tbody tr:hover {
+    background: #303033;
 }
 
 .fi-ta-header-cell .fi-icon,
 .fi-ta-header-cell-sort-btn .fi-icon {
-    color: #94a3b8;
+    color: #cbd5e1;
 }
 
 .fi-ta-header-cell.fi-ta-header-cell-sorted,
