@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\ProjectLineType;
 use App\Enums\ProjectRevisionStatus;
+use App\Enums\ProjectStatus;
 use App\Enums\ProjectVisibility;
 use App\Filament\Resources\ActivityLogs\Pages\ListActivityLogs;
 use App\Filament\Resources\Projects\Pages\ListProjects;
@@ -223,6 +224,27 @@ class AdminProjectResourceTest extends TestCase
             ->assertNotified('Project already exists');
 
         $this->assertSame(1, Project::query()->where('reference_number', '25948')->count());
+    }
+
+    public function test_project_list_hides_archived_projects_until_status_filter_requests_them(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $draftProject = Project::factory()->for($admin)->create([
+            'status' => ProjectStatus::Draft,
+        ]);
+
+        $archivedProject = Project::factory()->for($admin)->create([
+            'status' => ProjectStatus::Archived,
+        ]);
+
+        Livewire::test(ListProjects::class)
+            ->assertCanSeeTableRecords([$draftProject])
+            ->assertCanNotSeeTableRecords([$archivedProject])
+            ->filterTable('status', [ProjectStatus::Archived])
+            ->assertCanSeeTableRecords([$archivedProject])
+            ->assertCanNotSeeTableRecords([$draftProject]);
     }
 
     public function test_admin_can_validate_the_active_project_revision(): void

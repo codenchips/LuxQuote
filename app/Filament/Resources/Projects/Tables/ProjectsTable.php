@@ -12,7 +12,6 @@ use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
@@ -150,13 +149,18 @@ class ProjectsTable
                         ->mapWithKeys(fn (ProjectStatus $status): array => [$status->value => $status->label()])
                         ->all()
                     )
-                    ->multiple(),
+                    ->multiple()
+                    ->query(function (Builder $query, array $data): Builder {
+                        $statuses = collect($data['values'] ?? [])
+                            ->filter(fn (?string $status): bool => filled($status))
+                            ->all();
 
-                // Filter::make('hide_archived')
-                //     ->label('Hide archived')
-                //     ->toggle()
-                //     ->default(true)
-                //     ->query(fn (Builder $query): Builder => $query->where('status', '!=', ProjectStatus::Archived->value)),
+                        if ($statuses === []) {
+                            return $query->where('status', '!=', ProjectStatus::Archived->value);
+                        }
+
+                        return $query->whereIn('status', $statuses);
+                    }),
             ])
             ->actions([
                 Action::make('duplicate')
