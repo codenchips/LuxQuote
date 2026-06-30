@@ -663,7 +663,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Features completed — 2 June 2026
 
-- **Schedule PDF generation**: A printable A4 lighting schedule can now be downloaded for any project revision via a **Schedule PDF** button in the ViewProject header. The PDF is generated server-side using `spatie/laravel-pdf` (Browsershot / headless Chrome) with `->noSandbox()` for Docker compatibility. Output includes a branded Tamlite header, project meta grid, per-area line tables (code, ref, description, qty, wattage, lumens, unit price, total, notes), area subtotals, a grand total box, and a quote/general notes block. Modified and Custom lines are visually distinguished with coloured left-side rules. Filenames include the document title, project reference, shared revision label (`P0`/`R1`/...), and timestamp. Non-admin users are auth-scoped (Open projects or their own only). Full implementation details in the [PDF Generation](#pdf-generation) section below.
+- **Schedule PDF generation**: A printable A4 lighting schedule can now be downloaded for any project revision via a **Schedule PDF** button in the ViewProject header. The PDF is generated server-side using `spatie/laravel-pdf` (Browsershot / headless Chrome) with `->noSandbox()` for Docker compatibility. Output includes a branded Tamlite header, project meta grid, per-area line tables (code, ref, description, qty, optional unit price/line total, datasheet icon), area subtotals, a grand total box, and a quote/general notes block. Line notes render as a full-width `Note:` row below the relevant line. Modified and Custom lines are visually distinguished with coloured left-side rules. Filenames include the document title, project reference, shared revision label (`P0`/`R1`/...), and timestamp. Non-admin users are auth-scoped (Open projects or their own only). Full implementation details in the [PDF Generation](#pdf-generation) section below.
 
 - **Native TOTP two-factor authentication**: Filament 5's built-in MFA support enabled — no external plugins. Users can set up and manage 2FA (QR code + recovery codes) directly from their profile page. On next login, users who have 2FA enabled are challenged before access is granted.
 - **2FA columns on `users` table**: Migration `2026_06_02_074020_add_two_factor_authentication_to_users_table` adds `app_authentication_secret` (encrypted TOTP secret) and `app_authentication_recovery_codes` (encrypted JSON array). Both columns are encrypted at rest via Laravel's built-in encryption and are hidden from model serialization.
@@ -699,22 +699,19 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ### Schedule document layout (A4 portrait)
 
-10-column table; content width 180 mm:
+The schedule table uses a compact A4 portrait layout with the Notes column removed. Line notes render as a separate row below the line, spanning all table columns and starting with bold `Note:`.
 
 | Col | Width | Source |
 |---|---|---|
-| `#` | 2.8% | Loop index |
-| Code | 13.3% | `ProjectLine.code` (SKU) |
-| Ref | 8.9% | `ProjectLine.ref` |
-| Description | 28.9% | `ProjectLine.description` |
-| Qty | 5% | `ProjectLine.qty` |
-| W | 6.7% | `line->product?->luminaire_wattage_w` (string — shown as-is) |
-| lm | 6.7% | `line->product?->lumens_lm` (string — shown as-is) |
-| Unit £ | 10% | `ProjectLine.unit_price` |
-| Total £ | 10% | `qty × unit_price` |
-| Notes | 7.8% | `ProjectLine.notes` |
+| Code | 12% | `ProjectLine.code` (SKU) |
+| Ref | 5% | `ProjectLine.ref` |
+| Description | 52% | `ProjectLine.description` |
+| Qty | 6% | `ProjectLine.qty` |
+| Unit Price | 9% | `ProjectLine.unit_price` (quote PDFs only) |
+| Line Total | 9% | `qty × unit_price` (quote PDFs only) |
+| Datasheet | 5% | Icon-only external datasheet link when the SKU exists in the local catalogue |
 
-> **Note:** `luminaire_wattage_w` and `lumens_lm` are freeform strings in the product catalogue (e.g. `"12W/16W/20W"`, `"550 to 900"`). They are rendered as-is, not passed through `number_format()`.
+Blank lines with no SKU render empty schedule cells so placeholder rows do not show partial data.
 
 ### Auth / access rules
 

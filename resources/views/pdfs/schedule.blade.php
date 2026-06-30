@@ -247,7 +247,7 @@
             font-size: 7.5pt;
             font-weight: 700;
             color: #192542;
-            padding: 1.5mm 2mm;
+            padding: 4mm 2mm 1.5mm 2mm;
             white-space: nowrap;
         }
 
@@ -263,12 +263,11 @@
         .line-table tr { break-inside: avoid; }
 
         /* Column widths */
-        .col-code { width: 12%; font-size: 8pt; white-space: nowrap; }        
-        .col-ref  { width: 4%; }
-        .col-desc { width: 36%; }
+        .col-code { width: 12%; font-size: 8pt; white-space: nowrap; }
+        .col-ref  { width: 5%; }
+        .col-desc { width: 52%; }
         .col-qty  { width: 6%;  text-align: center; }
-        .col-note { width: 32%; font-size: 8pt; color: #555; }
-        .col-ds   { width: 8%;  text-align: center; }
+        .col-ds   { width: 5%;  text-align: center; }
         .col-money { width: 9%; text-align: right; white-space: nowrap; }
 
         th.col-qty { text-align: center; }
@@ -276,9 +275,31 @@
 
         .ds-link {
             color: #1a56db;
-            text-decoration: underline;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 4.5mm;
+            height: 4.5mm;
+        }
+
+        .ds-link svg {
+            width: 3.8mm;
+            height: 3.8mm;
+            stroke: currentColor;
+            stroke-width: 2;
+            fill: none;
+        }
+
+        .line-note-cell {
+            padding-top: 1.5mm;
+            padding-left: 20%;
+            color: #555;
             font-size: 8pt;
-            white-space: nowrap;
+            background: #fcfcfd;
+        }
+
+        .line-note-cell strong {
+            color: #192542;
         }
 
         /* Line type left-border rules */
@@ -398,7 +419,7 @@
             <table class="line-table">
                 <thead>
                     <tr>
-                        <td colspan="{{ $showPrices ? 8 : 6 }}" class="area-header-cell">
+                        <td colspan="{{ $showPrices ? 7 : 5 }}" class="area-header-cell">
                             <div class="area-header-content">
                                 <span class="area-name">{{ $area->name }}</span>
                                 <span class="area-summary">
@@ -422,13 +443,14 @@
                             <th class="col-money">Unit Price</th>
                             <th class="col-money">Line Total</th>
                         @endif
-                        <th class="col-note">Notes</th>
                         <th class="col-ds">Datasheet</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach ($area->lines as $line)
                     @php
+                        $hasSku = filled($line->code);
+                        $hasLineNote = $hasSku && filled($line->notes);
                         $rowClass = match(true) {
                             $line->type === \App\Enums\ProjectLineType::Modified => 'row-modified',
                             $line->type === \App\Enums\ProjectLineType::Custom   => 'row-custom',
@@ -436,21 +458,20 @@
                         };
                     @endphp
                     <tr class="{{ $rowClass }}">
-                        <td class="col-code">{{ $line->code ?? '' }}</td>
-                        <td class="col-code">{{ $line->ref ?? '' }}</td>
-                        <td class="col-desc">{{ $line->description ?? '' }}</td>
-                        <td class="col-qty">{{ $line->qty ?? '' }}</td>
+                        <td class="col-code">{!! $hasSku ? e($line->code) : '&nbsp;' !!}</td>
+                        <td class="col-ref">{!! $hasSku ? e($line->ref ?? '') : '&nbsp;' !!}</td>
+                        <td class="col-desc">{!! $hasSku ? e($line->description ?? '') : '&nbsp;' !!}</td>
+                        <td class="col-qty">{!! $hasSku ? e($line->qty ?? '') : '&nbsp;' !!}</td>
                         @if($showPrices)
                             @php
                                 $unitPrice = (float) ($line->unit_price ?? 0);
                                 $lineTotal = ((int) ($line->qty ?? 0)) * $unitPrice;
                             @endphp
-                            <td class="col-money">&pound;{{ number_format($unitPrice, 2) }}</td>
-                            <td class="col-money">&pound;{{ number_format($lineTotal, 2) }}</td>
+                            <td class="col-money">{!! $hasSku ? '&pound;'.e(number_format($unitPrice, 2)) : '&nbsp;' !!}</td>
+                            <td class="col-money">{!! $hasSku ? '&pound;'.e(number_format($lineTotal, 2)) : '&nbsp;' !!}</td>
                         @endif
-                        <td class="col-note">{{ $line->notes ?? '' }}</td>
                         <td class="col-ds">
-                            @if($line->code && isset($existingSkus[$line->code]))
+                            @if($hasSku && isset($existingSkus[$line->code]))
                                 @php
                                     $sku   = $line->code;
                                     $base  = str_starts_with($sku, 'XC')
@@ -458,10 +479,22 @@
                                         : 'https://tamlite.co.uk/data-sheet/' . urlencode($sku);
                                     $dsUrl = $base . '?t=' . $pdfTimestamp . '&source=luxquote';
                                 @endphp
-                                <a href="{{ $dsUrl }}" target="_blank" class="ds-link">Datasheet</a>
+                                <a href="{{ $dsUrl }}" target="_blank" class="ds-link" title="Open datasheet in a new tab" aria-label="Open datasheet in a new tab">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="M15 3h6v6" />
+                                        <path d="M10 14L21 3" />
+                                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                    </svg>
+                                </a>
                             @endif
                         </td>
                     </tr>
+                    @if($hasLineNote)
+                        <tr class="line-note-row">
+                            <td colspan="2">&nbsp;</td>
+                            <td colspan="{{ $showPrices ? 5 : 3 }}" class="line-note-cell"><strong>Note:</strong> {{ $line->notes }}</td>
+                        </tr>
+                    @endif
                     @endforeach
                 </tbody>
             </table>
