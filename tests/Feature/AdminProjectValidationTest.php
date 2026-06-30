@@ -146,6 +146,15 @@ class AdminProjectValidationTest extends TestCase
 
         $this->assertFalse($line->fresh()->approved);
         $this->assertTrue($line->fresh()->validation_flagged);
+        $this->assertDatabaseHas(ActivityLog::class, [
+            'project_id' => $project->id,
+            'action_type' => 'validation.issue_flagged',
+            'revision_number' => 0,
+        ]);
+
+        Livewire::test(ListActivityLogs::class)
+            ->assertSee('Flagged validation issue')
+            ->assertSee('MISSING-SKU');
     }
 
     public function test_unresolved_issue_can_be_flagged_for_review(): void
@@ -194,6 +203,11 @@ class AdminProjectValidationTest extends TestCase
         $this->assertFalse($line->fresh()->approved);
         $this->assertTrue($line->fresh()->validation_flagged);
         $this->assertFalse($project->activeRevision->fresh()->validated);
+        $this->assertDatabaseHas(ActivityLog::class, [
+            'project_id' => $project->id,
+            'action_type' => 'validation.issue_flagged',
+            'revision_number' => 0,
+        ]);
     }
 
     public function test_run_validation_invalidates_a_revision_when_a_new_warning_appears(): void
@@ -580,6 +594,15 @@ class AdminProjectValidationTest extends TestCase
         $this->assertTrue($line->fresh()->approved);
         $this->assertNull($line->fresh()->approved_by);
         $this->assertTrue($project->activeRevision->fresh()->validated);
+        $this->assertDatabaseHas(ActivityLog::class, [
+            'project_id' => $project->id,
+            'action_type' => 'validation.issue_matched',
+            'revision_number' => 0,
+        ]);
+
+        Livewire::test(ListActivityLogs::class)
+            ->assertSee('Matched and approved quote price')
+            ->assertSee('MATCH-PRICE-SKU');
     }
 
     private function createLine(

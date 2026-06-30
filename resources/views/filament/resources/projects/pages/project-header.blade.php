@@ -17,7 +17,7 @@
         </div>
 
         {{-- Right side: project sub-links + page actions --}}
-        <div class="flex flex-col items-end gap-10 shrink-0">
+        <div class="flex flex-col items-end gap-6 shrink-0">
 
             {{-- Sub-page text links --}}
             @if(isset($subLinks) && count($subLinks))

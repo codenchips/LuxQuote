@@ -276,6 +276,7 @@ class ValidationProject extends ViewRecord
         $this->ensureActiveRevisionIsEditable();
 
         $issue = $this->findIssue($issueKey);
+        $lines = $this->linesForIssue($issue)->get();
 
         abort_unless($issue['type'] === 'price_mismatch' && ! $issue['approved'] && $issue['rrp'] !== null, 404);
 
@@ -288,6 +289,9 @@ class ValidationProject extends ViewRecord
             'validation_note' => $this->resolutionNote($issue),
         ]);
 
+        $this->logValidationActivity('validation.issue_matched', $this->issueActivityPayload($issue, $lines) + [
+            'matched_price' => number_format((float) $issue['rrp'], 2, '.', ''),
+        ]);
         $this->refreshValidation();
     }
 
@@ -298,6 +302,7 @@ class ValidationProject extends ViewRecord
         $this->ensureActiveRevisionIsEditable();
 
         $issue = $this->findIssue($issueKey);
+        $lines = $this->linesForIssue($issue)->get();
 
         $this->linesForIssue($issue)->update([
             'approved' => false,
@@ -307,6 +312,7 @@ class ValidationProject extends ViewRecord
             'validation_note' => null,
         ]);
 
+        $this->logValidationActivity('validation.issue_flagged', $this->issueActivityPayload($issue, $lines));
         $this->refreshValidation();
     }
 
@@ -361,6 +367,12 @@ class ValidationProject extends ViewRecord
             'validation_note' => null,
         ]);
 
+        $this->logValidationActivity('validation.issue_flagged', [
+            'issue_type' => 'manual_flag',
+            'message' => 'Line flagged for review.',
+            'line_count' => 1,
+            'lines' => [$this->lineActivityPayload($line)],
+        ]);
         $this->refreshValidation();
     }
 
@@ -491,13 +503,21 @@ class ValidationProject extends ViewRecord
             'message' => $issue['message'],
             'line_count' => $lines->count(),
             'lines' => $lines
-                ->map(fn (ProjectLine $line): array => [
-                    'id' => $line->id,
-                    'code' => (string) $line->code,
-                    'description' => (string) $line->description,
-                ])
+                ->map(fn (ProjectLine $line): array => $this->lineActivityPayload($line))
                 ->values()
                 ->all(),
+        ];
+    }
+
+    /**
+     * @return array{id: int, code: string, description: string}
+     */
+    private function lineActivityPayload(ProjectLine $line): array
+    {
+        return [
+            'id' => $line->id,
+            'code' => (string) $line->code,
+            'description' => (string) $line->description,
         ];
     }
 
