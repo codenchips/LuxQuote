@@ -1,6 +1,6 @@
 # Company App — Project Status
 
-_Last updated: 29 June 2026_
+_Last updated: 30 June 2026_
 
 ---
 
@@ -358,10 +358,18 @@ Rules:
 
 ## Output Page & Document Packs
 
-The project output page is available at `/projects/{id}/output`. The **Quote Approval** summary remains above a two-tab output selector:
+The project output page is available at `/projects/{id}/output`. It starts with a three-part status panel and then a two-tab output selector:
 
-- **Quick PDF/CSV Output** — Quote PDF, priced CSV, unpriced schedule PDF, and unpriced CSV.
+- **Quote status** — shows `Approval Required`, `Requested`, or `Approved`, and includes **Request Approval** when the active revision is not approved.
+- **Validation** — shows `Passed` or `Not passed`, plus **View Validation**. This entire section is hidden from users without `validation.view`.
+- **Datasheet note** — explains that outputs include links to product datasheets and that datasheets can later be embedded when the switches become functional.
+
+The output selector tabs are:
+
+- **Quick Output** — Quote PDF, quote CSV, schedule PDF, and schedule CSV. Visible labels avoid `Priced` / `Unpriced` wording; permissions still enforce the underlying priced/unpriced capabilities.
 - **Document Packs** — named, reusable project-level definitions that combine uploaded and generated PDFs into one download.
+
+Primary generation and request actions use Filament's orange primary button convention. The active Output tab uses an orange underline that works in light and dark mode.
 
 ### Pack workflow
 
@@ -375,6 +383,7 @@ The project output page is available at `/projects/{id}/output`. The **Quote App
 - Uploaded files default to a 25 MB limit and are checked with `qpdf --check`; corrupt, encrypted, or unsupported PDFs are rejected before they can be merged.
 - Pack generation uses `qpdf` server-side to concatenate every page of each selected document in the saved order. Temporary generated inputs and the merged output are cleaned up after use/download.
 - Saving, generating, and deleting packs creates `document_pack.saved`, `document_pack.generated`, and `document_pack.deleted` activity entries.
+- The Document Pack footer keeps Delete Pack, Save Pack, and Generate Combined PDF right-aligned with matching button dimensions and non-wrapping labels.
 - The `Template` source enum is reserved for a later phase where users can choose system-defined document templates.
 
 ### Revision and approval behavior
@@ -561,11 +570,35 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 29 June 2026)
+## Known Gaps / Next Steps (as of 30 June 2026)
 
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
 - [ ] Document-pack template sources and additional roles (for example case studies) are planned but not yet implemented
+- [ ] Review the Output page visually in dark mode across desktop widths
+- [ ] Review the Output page in light mode, especially orange actions, tab underline, status chips, and disabled buttons
+- [ ] Check mobile/tablet layout for the top status panel and the two document cards
+- [ ] Decide whether Include Datasheets switches should stay disabled, become functional, or be hidden until implemented
+- [ ] Add browser-level coverage for the Output page layout if visual regressions continue
+- [ ] Standardize a shared Blade/CSS helper for Filament-style primary buttons used outside native Filament actions
+- [ ] Consider applying the same shared button helper to other custom modals and project-page actions
+- [ ] Revisit the Document Packs builder PDF preview behavior for uploaded files that return 404
+- [ ] Run a final focused regression pass before deployment:
+  - `vendor/bin/sail artisan test --compact tests/Feature/AdminProjectResourceTest.php`
+  - `vendor/bin/sail artisan test --compact tests/Feature/AdminDocumentPackTest.php`
+  - `vendor/bin/sail artisan test --compact tests/Feature/AdminProjectValidationTest.php`
+
+---
+
+## Features completed — 30 June 2026
+
+- **Output page rework**: The Output page now uses a status-panel-first layout with Quote status, permission-aware Validation, and datasheet guidance above **Quick Output** / **Document Packs** tabs.
+- **Output permissions display**: Validation status and the View Validation action are hidden from users without `validation.view`; underlying output, pricing, document-pack, and approval checks remain enforced server-side.
+- **Output copy and actions**: Visible labels avoid `Priced` / `Unpriced` wording, the quote card now reads `Quote with pricing.`, datasheet switches say `Include datasheets`, and primary actions use Filament's orange primary button convention.
+- **Document-pack controls**: Generate Combined PDF uses the orange primary style; Delete Pack, Save Pack, and Generate Combined PDF are right-aligned, consistently sized, and do not wrap.
+- **Dashboard polish**: Dashboard project-table status and visibility badges no longer wrap; the Rev column is narrower and the freed space is assigned to Status and Visibility.
+- **Product picker polish**: The Add Products button in the project product-picker modal uses the same Filament orange primary button convention when enabled.
+- **Focused verification**: `AdminProjectResourceTest` and `AdminDocumentPackTest` were run during the Output rework; Pint and `git diff --check` passed after later copy/style adjustments.
 
 ---
 
