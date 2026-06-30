@@ -62,9 +62,9 @@ class ValidationProject extends ViewRecord
             Action::make('openApproveRevisionModal')
                 ->label('Approve Revision')
                 ->icon('heroicon-o-check-badge')
-                ->color(fn (): string => $this->activeRevisionValidated ? 'success' : 'gray')
+                ->color(fn (): string => $this->activeRevisionReadyForApproval ? 'success' : 'gray')
                 ->visible(fn (): bool => $this->canApproveRevision())
-                ->disabled(fn (): bool => ! $this->activeRevisionValidated)
+                ->disabled(fn (): bool => ! $this->activeRevisionReadyForApproval)
                 ->action('openApproveRevisionModal'),
 
             Action::make('runValidation')
@@ -155,6 +155,12 @@ class ValidationProject extends ViewRecord
         return $this->activeRevision()->status === ProjectRevisionStatus::Approved;
     }
 
+    #[Computed]
+    public function activeRevisionReadyForApproval(): bool
+    {
+        return $this->revisionReadyForApproval($this->activeRevision());
+    }
+
     public function runValidation(): void
     {
         abort_unless($this->canRunValidation(), 403);
@@ -167,7 +173,7 @@ class ValidationProject extends ViewRecord
     public function openApproveRevisionModal(): void
     {
         abort_unless($this->canApproveRevision(), 403);
-        abort_unless($this->activeRevision()->validated, 403);
+        abort_unless($this->revisionReadyForApproval($this->activeRevision()), 403);
 
         $this->approveRevisionModalOpen = true;
     }
@@ -182,6 +188,11 @@ class ValidationProject extends ViewRecord
         abort_unless($this->canApproveRevision(), 403);
 
         $revision = $this->activeRevision();
+
+        abort_unless($this->revisionReadyForApproval($revision), 403);
+
+        $this->validator()->syncValidationStatus($revision);
+        $revision->refresh();
 
         abort_unless($revision->validated, 403);
 
@@ -198,6 +209,7 @@ class ValidationProject extends ViewRecord
         $this->approveRevisionModalOpen = false;
         unset($this->activeRevisionApproved);
         unset($this->activeRevisionValidated);
+        unset($this->activeRevisionReadyForApproval);
         $this->record->load('activeRevision');
         $this->refreshHeaderActions();
     }
@@ -429,11 +441,25 @@ class ValidationProject extends ViewRecord
 
     private function lineForActiveRevision(int $lineId): ProjectLine
     {
+        return $this->lineQuery($this->activeRevision())
+            ->findOrFail($lineId);
+    }
+
+    private function lineQuery(ProjectRevision $revision): Builder
+    {
         return ProjectLine::query()
             ->whereHas('area', fn ($query) => $query
                 ->where('project_id', $this->record->id)
-                ->where('project_revision_id', $this->record->active_revision_id))
-            ->findOrFail($lineId);
+                ->where('project_revision_id', $revision->id));
+    }
+
+    private function revisionReadyForApproval(ProjectRevision $revision): bool
+    {
+        return $revision->validated || (
+            $this->validator()->unresolvedIssues($revision) === []
+            && $this->lineQuery($revision)->exists()
+            && $this->lineQuery($revision)->where('approved', false)->doesntExist()
+        );
     }
 
     /**
@@ -488,6 +514,7 @@ class ValidationProject extends ViewRecord
         $this->validator()->syncValidationStatus($this->activeRevision());
         unset($this->activeRevisionValidated);
         unset($this->activeRevisionApproved);
+        unset($this->activeRevisionReadyForApproval);
         $this->record->load('activeRevision');
     }
 

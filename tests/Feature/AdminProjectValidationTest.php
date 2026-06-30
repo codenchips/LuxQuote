@@ -465,7 +465,15 @@ class AdminProjectValidationTest extends TestCase
         Livewire::test(ValidationProject::class, ['record' => $project->id])
             ->assertSee('Issues (0)')
             ->assertSee('Validated (1)')
-            ->assertSee('Approved: SKU "UNKNOWN-SKU" was not found in the product catalogue and has no quote price.');
+            ->assertSee('Ready to approve')
+            ->assertSee('Approved: SKU "UNKNOWN-SKU" was not found in the product catalogue and has no quote price.')
+            ->call('openApproveRevisionModal')
+            ->assertSet('approveRevisionModalOpen', true)
+            ->call('approveRevision')
+            ->assertSee('Project is approved and locked');
+
+        $this->assertTrue($newRevision->fresh()->validated);
+        $this->assertSame(ProjectRevisionStatus::Approved, $newRevision->fresh()->status);
     }
 
     public function test_price_mismatch_is_a_validation_issue_that_can_be_approved_and_undone(): void

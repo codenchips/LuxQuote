@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Projects\Pages;
 use App\Enums\DocumentPackItemRole;
 use App\Enums\DocumentPackItemSource;
 use App\Enums\ProjectRevisionStatus;
+use App\Enums\ProjectStatus;
 use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ActivityLog;
@@ -150,6 +151,33 @@ class OutputProject extends ViewRecord
             'project' => $this->record,
             'revision' => $this->record->active_revision_id,
         ]);
+    }
+
+    public function requestQuoteApproval(): void
+    {
+        abort_unless($this->canRequestQuoteApproval(), 403);
+        abort_if($this->quoteApproved(), 403, 'Approved revisions do not need approval requests.');
+
+        $this->record->markApprovalRequested();
+        $this->record->refresh();
+        $this->record->load('activeRevision');
+
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'project_id' => $this->record->id,
+            'action_type' => 'quote_approval.requested',
+            'user_email_snapshot' => auth()->user()?->email ?? '',
+            'project_name_snapshot' => $this->record->name,
+            'revision_number' => $this->activeRevision()->revision_number,
+            'payload' => [
+                'revision_label' => $this->activeRevision()->label(),
+            ],
+        ]);
+
+        Notification::make()
+            ->title('Quote approval requested')
+            ->success()
+            ->send();
     }
 
     #[Computed]
@@ -723,6 +751,11 @@ class OutputProject extends ViewRecord
         return $this->activeRevision()->status === ProjectRevisionStatus::Approved;
     }
 
+    public function quoteApprovalRequested(): bool
+    {
+        return $this->record->status === ProjectStatus::ApprovalRequested;
+    }
+
     public function validationStatusLabel(): string
     {
         return $this->validationPassed() ? 'passed' : 'not_run';
@@ -750,7 +783,7 @@ class OutputProject extends ViewRecord
 
     public function canRequestQuoteApproval(): bool
     {
-        return $this->canViewPrices() && (auth()->user()?->can('quote-approval.request') ?? false);
+        return auth()->user()?->can('output.view') ?? false;
     }
 
     public function canManageDocumentPacks(): bool

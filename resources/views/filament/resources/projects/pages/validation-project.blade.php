@@ -5,6 +5,7 @@
         $unresolvedCount = $issues->count();
         $isValidated = $this->activeRevisionValidated;
         $isApproved = $this->activeRevisionApproved;
+        $isReadyToApprove = $this->activeRevisionReadyForApproval;
         $canViewPrices = $this->canViewPrices();
         $canEditPrices = $this->canEditPrices();
         $canUpdateValidationLines = $this->canUpdateValidationLines();
@@ -33,10 +34,10 @@
 
                 <div>
                     <p class="font-semibold">
-                        {{ $isApproved ? 'Project is approved and locked' : ($unresolvedCount ? $unresolvedCount.' unresolved '.Str::plural('issue', $unresolvedCount) : ($isValidated ? 'Ready to approve' : 'No unresolved issues')) }}
+                        {{ $isApproved ? 'Project is approved and locked' : ($unresolvedCount ? $unresolvedCount.' unresolved '.Str::plural('issue', $unresolvedCount) : ($isReadyToApprove ? 'Ready to approve' : 'No unresolved issues')) }}
                     </p>
                     <p class="text-sm text-gray-600 dark:text-gray-400">
-                        {{ $isApproved ? 'This revision is locked against further editing.' : ($unresolvedCount ? 'Resolve or approve each warning before proceeding.' : ($isValidated ? 'Click Approve Revision to lock this revision.' : 'Run validation to check this revision.')) }}
+                        {{ $isApproved ? 'This revision is locked against further editing.' : ($unresolvedCount ? 'Resolve or approve each warning before proceeding.' : ($isReadyToApprove ? 'Click Approve Revision to lock this revision.' : 'Run validation to check this revision.')) }}
                     </p>
                 </div>
             </div>

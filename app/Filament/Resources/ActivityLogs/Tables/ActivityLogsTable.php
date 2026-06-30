@@ -106,6 +106,8 @@ class ActivityLogsTable
 
                             'revision.approved' => 'Approved and locked <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
 
+                            'quote_approval.requested' => 'Requested quote approval for <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
+
                             'validation.issue_approved' => (function () use ($payload): string {
                                 $lines = $payload['lines'] ?? [];
                                 $items = implode(', ', array_map(function (array $line): string {
@@ -253,6 +255,7 @@ class ActivityLogsTable
                         'project.deleted' => 'Project Deleted',
                         'revision.created' => 'Revision Created',
                         'revision.approved' => 'Revision Approved',
+                        'quote_approval.requested' => 'Quote Approval Requested',
                         'validation.issue_approved' => 'Validation Issue Approved',
                         'validation.issue_approval_undone' => 'Validation Issue Approval Undone',
                         'validation.issue_matched' => 'Validation Issue Matched',

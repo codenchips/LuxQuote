@@ -4,9 +4,11 @@
         $quoteApproved = $this->quoteApproved();
         $validationStatus = $this->validationStatusLabel();
         $validationStatusText = $validationPassed ? 'Valid' : 'Not valid';
+        $approvalRequested = $this->quoteApprovalRequested();
         $canProduceUnpricedSchedule = $this->canProduceUnpricedSchedule();
         $canProducePricedSchedule = $this->canProducePricedSchedule();
         $canProduceQuote = $this->canProduceQuote();
+        $canRequestQuoteApproval = $this->canRequestQuoteApproval();
         $canManageDocumentPacks = $this->canManageDocumentPacks();
         $documentPackDownloadUrl = $this->getDocumentPackDownloadUrl();
         $documentPackGenerationBlockReason = $this->documentPackGenerationBlockReason();
@@ -15,18 +17,34 @@
     @endphp
 
     <div class="space-y-6">
-        @if($canProduceQuote || $canProducePricedSchedule)
+        @if($canRequestQuoteApproval || $canProduceQuote || $canProducePricedSchedule)
             <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
             <div class="flex flex-col gap-3">
                 <div>
                     <h2 class="text-base font-semibold text-gray-950 dark:text-white">Quote Approval</h2>
-                    <div class="mt-2 inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-600 dark:bg-white/10 dark:text-gray-300">
-                        @if ($quoteApproved)
-                            <x-heroicon-o-check-circle class="h-4 w-4 text-success-500" />
-                            Quote Approved
-                        @else
-                            <x-heroicon-o-clock class="h-4 w-4" />
-                            Approval Not Requested
+                    <div class="mt-2 flex flex-wrap items-center gap-3">
+                        <div class="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-600 dark:bg-white/10 dark:text-gray-300">
+                            @if ($quoteApproved)
+                                <x-heroicon-o-check-circle class="h-4 w-4 text-success-500" />
+                                Quote Approved
+                            @elseif ($approvalRequested)
+                                <x-heroicon-o-paper-airplane class="h-4 w-4 text-warning-500" />
+                                Approval Requested
+                            @else
+                                <x-heroicon-o-clock class="h-4 w-4" />
+                                Approval Not Requested
+                            @endif
+                        </div>
+
+                        @if($canRequestQuoteApproval && ! $quoteApproved)
+                            <button
+                                type="button"
+                                wire:click="requestQuoteApproval"
+                                class="inline-flex h-8 items-center justify-center gap-2 rounded-md bg-primary-600 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-500"
+                            >
+                                <x-heroicon-o-paper-airplane class="h-4 w-4" />
+                                Request Approval
+                            </button>
                         @endif
                     </div>
                 </div>
@@ -34,7 +52,7 @@
                 @unless ($validationPassed)
                     <div class="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/60 dark:bg-amber-500/15 dark:text-amber-100">
                         <x-heroicon-o-exclamation-triangle class="mt-0.5 h-4 w-4 shrink-0" />
-                        <span>Validation must pass before requesting approval. Current status:</span>
+                        <span>Approval can be requested now, but quote generation still needs validation to pass. Current status:</span>
                         <span class="inline-flex items-center rounded-md bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-950 dark:bg-amber-400/25 dark:text-amber-100">{{ $validationStatusText }}</span>
                     </div>
                 @endunless
@@ -115,6 +133,11 @@
                             New Pack
                         </button>
                     </div>
+                </div>
+
+                <div class="mt-5 flex items-center gap-3 rounded-lg border border-sky-300 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900 dark:border-sky-500/50 dark:bg-sky-500/15 dark:text-sky-100">
+                    <x-heroicon-o-information-circle class="h-5 w-5 shrink-0" />
+                    <span>This is work in progress and will include pack selection and templated documents.</span>
                 </div>
 
                 <div class="mt-5 grid gap-4 md:grid-cols-2">
@@ -471,11 +494,7 @@
         @endif
 
         @if($outputTab === 'single')
-            <div @class([
-                'grid gap-5',
-                'lg:grid-cols-3' => $canProduceQuote && $canProducePricedSchedule,
-                'lg:grid-cols-2' => ($canProduceQuote xor $canProducePricedSchedule),
-            ])>
+            <div class="grid gap-5 lg:grid-cols-3">
             @if($canProduceQuote)
                 <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
                 <div class="flex items-start gap-3">
@@ -514,6 +533,14 @@
                             Generate Quote PDF
                         </button>
                     @endif
+
+                    <label class="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
+                        <span class="font-medium">Include Datasheets</span>
+                        <input type="checkbox" class="sr-only" disabled>
+                        <span aria-hidden="true" class="relative inline-flex h-6 w-11 shrink-0 rounded-full bg-gray-300 opacity-60 transition dark:bg-white/20">
+                            <span class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition dark:bg-gray-500"></span>
+                        </span>
+                    </label>
                 </div>
                 </section>
             @endif
@@ -577,6 +604,13 @@
                         <x-heroicon-o-table-cells class="h-4 w-4" />
                         Unpriced CSV
                     </a>
+                    <label class="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
+                        <span class="font-medium">Include Datasheets</span>
+                        <input type="checkbox" class="sr-only" disabled>
+                        <span aria-hidden="true" class="relative inline-flex h-6 w-11 shrink-0 rounded-full bg-gray-300 opacity-60 transition dark:bg-white/20">
+                            <span class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition dark:bg-gray-500"></span>
+                        </span>
+                    </label>
                 </div>
                 </section>
             @endif

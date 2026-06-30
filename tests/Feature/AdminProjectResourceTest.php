@@ -809,7 +809,7 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('P0')
             ->assertSee('Quote Approval')
             ->assertSee('Approval Not Requested')
-            ->assertSee('Validation must pass before requesting approval')
+            ->assertSee('Approval can be requested now')
             ->assertSee('Quote PDF requires')
             ->assertSee('Quote PDF')
             ->assertSee('Priced Schedule')
@@ -823,6 +823,59 @@ class AdminProjectResourceTest extends TestCase
                 'project' => $project,
                 'revision' => $project->active_revision_id,
             ]), false);
+    }
+
+    public function test_authorized_user_can_request_quote_approval(): void
+    {
+        $salesUser = User::factory()->sales()->create();
+        $this->actingAs($salesUser);
+
+        $project = Project::factory()->for($salesUser)->create([
+            'name' => 'Approval Request Project',
+        ]);
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $salesUser->id,
+        ]);
+
+        Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->assertSee('Approval Not Requested')
+            ->assertSee('Request Approval')
+            ->call('requestQuoteApproval')
+            ->assertSee('Approval Requested')
+            ->assertSee('Requested');
+
+        $this->assertSame(ProjectStatus::ApprovalRequested, $project->fresh()->status);
+        $this->assertDatabaseHas(ActivityLog::class, [
+            'project_id' => $project->id,
+            'action_type' => 'quote_approval.requested',
+            'revision_number' => 0,
+        ]);
+
+        $this->actingAs(User::factory()->admin()->create());
+
+        Livewire::test(ListActivityLogs::class)
+            ->assertSee('Requested quote approval')
+            ->assertSee('P0');
+    }
+
+    public function test_any_output_user_can_request_quote_approval_without_validation(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $project = Project::factory()->for($user)->create();
+
+        Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->assertSee('Approval Not Requested')
+            ->assertSee('Request Approval')
+            ->assertSee('Approval can be requested now')
+            ->call('requestQuoteApproval')
+            ->assertSee('Approval Requested');
+
+        $this->assertFalse($project->activeRevision->fresh()->validated);
+        $this->assertSame(ProjectStatus::ApprovalRequested, $project->fresh()->status);
     }
 
     public function test_admin_can_switch_between_single_pdf_and_document_pack_tabs(): void
