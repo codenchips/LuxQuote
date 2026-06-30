@@ -120,6 +120,7 @@ class ProjectLineObserver
 
         if ($project && $area->project_revision_id === $project->active_revision_id) {
             $project->updateQuietly(['last_edited_at' => now(), 'last_edited_by' => auth()->id()]);
+            $project->syncStatusFromActiveRevision();
         }
     }
 }

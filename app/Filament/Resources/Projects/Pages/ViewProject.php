@@ -371,6 +371,7 @@ class ViewProject extends ViewRecord
             'active_revision_id' => $revision->id,
             'revision' => $revision->revision_number,
         ]);
+        $this->record->syncStatusFromActiveRevision();
 
         $this->record->refresh();
         $this->viewingRevisionId = $revision->id;
@@ -425,6 +426,7 @@ class ViewProject extends ViewRecord
             'active_revision_id' => $newRevision->id,
             'revision' => $newRevisionNumber,
         ]);
+        $this->record->syncStatusFromActiveRevision();
 
         $this->record->refresh();
         $this->viewingRevisionId = $newRevision->id;

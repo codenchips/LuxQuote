@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Projects\Pages;
 use App\Enums\ProjectRevisionStatus;
 use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
+use App\Models\ActivityLog;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
 use App\Services\ProjectRevisionValidator;
@@ -84,6 +85,7 @@ class ValidationProject extends ViewRecord
      *     message: string,
      *     line_ids: array<int, int>,
      *     approved: bool,
+     *     flagged: bool,
      *     rrp?: string|null,
      *     quote_price?: string|null
      * }>
@@ -133,7 +135,7 @@ class ValidationProject extends ViewRecord
                     'description' => $line->description,
                     'qty' => $line->qty,
                     'unit_price' => $line->unit_price,
-                    'status' => $lineIssues->where('approved', true)->isNotEmpty() ? 'Approved' : 'Resolved',
+                    'status' => 'Approved',
                     'note' => $this->validatedLineNote($line, $lineIssues),
                 ];
             })
@@ -188,6 +190,10 @@ class ValidationProject extends ViewRecord
         ]);
 
         $this->syncApprovedRevisionValueToSalesforce($revision);
+        $this->record->syncStatusFromActiveRevision();
+        $this->logValidationActivity('revision.approved', [
+            'revision_label' => $revision->label(),
+        ]);
 
         $this->approveRevisionModalOpen = false;
         unset($this->activeRevisionApproved);
@@ -203,6 +209,7 @@ class ValidationProject extends ViewRecord
         $this->ensureActiveRevisionIsEditable();
 
         $issue = $this->findIssue($issueKey);
+        $lines = $this->linesForIssue($issue)->get();
 
         $this->linesForIssue($issue)->update([
             'approved' => true,
@@ -212,6 +219,7 @@ class ValidationProject extends ViewRecord
             'validation_note' => $this->approvalNote($issue),
         ]);
 
+        $this->logValidationActivity('validation.issue_approved', $this->issueActivityPayload($issue, $lines));
         $this->refreshValidation();
     }
 
@@ -222,6 +230,7 @@ class ValidationProject extends ViewRecord
         $this->ensureActiveRevisionIsEditable();
 
         $issue = $this->findIssue($issueKey);
+        $lines = $this->linesForIssue($issue)->get();
 
         $this->linesForIssue($issue)->update([
             'approved' => false,
@@ -230,6 +239,7 @@ class ValidationProject extends ViewRecord
             'validation_note' => null,
         ]);
 
+        $this->logValidationActivity('validation.issue_approval_undone', $this->issueActivityPayload($issue, $lines));
         $this->refreshValidation();
     }
 
@@ -276,6 +286,25 @@ class ValidationProject extends ViewRecord
             'approved_by' => null,
             'validation_flagged' => false,
             'validation_note' => $this->resolutionNote($issue),
+        ]);
+
+        $this->refreshValidation();
+    }
+
+    public function flagIssue(string $issueKey): void
+    {
+        abort_unless($this->canFlagValidationLines(), 403);
+
+        $this->ensureActiveRevisionIsEditable();
+
+        $issue = $this->findIssue($issueKey);
+
+        $this->linesForIssue($issue)->update([
+            'approved' => false,
+            'approved_at' => null,
+            'approved_by' => null,
+            'validation_flagged' => true,
+            'validation_note' => null,
         ]);
 
         $this->refreshValidation();
@@ -328,7 +357,7 @@ class ValidationProject extends ViewRecord
             'approved' => false,
             'approved_at' => null,
             'approved_by' => null,
-            'validation_flagged' => $line->validation_flagged || $approvedIssues->isEmpty(),
+            'validation_flagged' => true,
             'validation_note' => null,
         ]);
 
@@ -408,7 +437,7 @@ class ValidationProject extends ViewRecord
      */
     private function resolutionNote(array $issue): string
     {
-        return 'Resolved: '.$issue['message'];
+        return 'Approved: '.$issue['message'];
     }
 
     /**
@@ -437,7 +466,7 @@ class ValidationProject extends ViewRecord
             return 'Approved: '.$approvedMessages->implode(' ');
         }
 
-        return 'Resolved: no current validation issues.';
+        return 'Approved: no current validation issues.';
     }
 
     private function refreshValidation(): void
@@ -448,6 +477,44 @@ class ValidationProject extends ViewRecord
         unset($this->activeRevisionValidated);
         unset($this->activeRevisionApproved);
         $this->record->load('activeRevision');
+    }
+
+    /**
+     * @param  array{type: string, message: string}  $issue
+     * @param  Collection<int, ProjectLine>  $lines
+     * @return array{issue_type: string, message: string, line_count: int, lines: array<int, array{id: int, code: string, description: string}>}
+     */
+    private function issueActivityPayload(array $issue, Collection $lines): array
+    {
+        return [
+            'issue_type' => $issue['type'],
+            'message' => $issue['message'],
+            'line_count' => $lines->count(),
+            'lines' => $lines
+                ->map(fn (ProjectLine $line): array => [
+                    'id' => $line->id,
+                    'code' => (string) $line->code,
+                    'description' => (string) $line->description,
+                ])
+                ->values()
+                ->all(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $payload
+     */
+    private function logValidationActivity(string $actionType, ?array $payload = null): void
+    {
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'project_id' => $this->record->id,
+            'action_type' => $actionType,
+            'user_email_snapshot' => auth()->user()?->email ?? '',
+            'project_name_snapshot' => $this->record->name,
+            'revision_number' => $this->activeRevision()->revision_number,
+            'payload' => $payload,
+        ]);
     }
 
     private function syncApprovedRevisionValueToSalesforce(ProjectRevision $revision): void

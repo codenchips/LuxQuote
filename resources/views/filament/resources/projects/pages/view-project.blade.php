@@ -6,7 +6,7 @@
     $canCreateRevisions = $this->canCreateRevisions();
     $lineGridColumns = $canViewPrices
         ? '20px 110px 65px 1fr 60px 90px 95px 1fr 84px 60px'
-        : '20px 110px 65px 1fr 60px 90px 1fr 84px 60px';
+        : '20px 110px 65px 1fr 60px 90px 1fr 60px';
 @endphp
 <div x-data="{ confirmDeleteLineId: null }" wire:poll.30s="heartbeat">
 
@@ -155,7 +155,9 @@
                         <div class="text-center">Unit Price</div>
                     @endif
                     <div>Notes</div>
-                    <div>Status</div>
+                    @if($canViewPrices)
+                        <div>Status</div>
+                    @endif
                     <div></div>
                 </div>
 
@@ -258,23 +260,24 @@
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-500 dark:text-gray-400"
                         />
 
-                        {{-- Status --}}
-                        <div class="flex justify-center">
-                            @php $displayStatus = $line->approved ? 'Approved' : $line->status; @endphp
-                            @if($displayStatus)
-                            <span class="inline-flex items-center justify-center rounded px-2 py-0.5 text-xs font-semibold {{ match($displayStatus) {
-                                'Approved' => 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-400',
-                                'Priced' => 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400',
-                                'Unpriced' => 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400',
-                                'Pending' => 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400',
-                                default => 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-                            } }}">
-                                {{ $displayStatus }}
-                            </span>
-                            @else
-                            <span class="text-sm text-gray-400">–</span>
-                            @endif
-                        </div>
+                        @if($canViewPrices)
+                            {{-- Status --}}
+                            <div class="flex justify-center">
+                                @php
+                                    $displayStatus = $line->validation_flagged
+                                        ? 'Flagged'
+                                        : ($line->approved ? 'Approved' : 'Pending');
+                                @endphp
+                                <span class="inline-flex items-center justify-center rounded px-2 py-0.5 text-xs font-semibold {{ match($displayStatus) {
+                                    'Approved' => 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400',
+                                    'Flagged' => 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400',
+                                    'Pending' => 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400',
+                                    default => 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+                                } }}">
+                                    {{ $displayStatus }}
+                                </span>
+                            </div>
+                        @endif
 
                         {{-- Row actions --}}
                         <div class="flex items-center justify-end gap-0.5">

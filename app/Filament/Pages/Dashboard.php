@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Enums\DocumentPackItemRole;
+use App\Enums\ProjectStatus;
 use App\Enums\ProjectVisibility;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ActivityLog;
@@ -43,7 +44,7 @@ class Dashboard extends BaseDashboard
             ->latest()
             ->limit(40)
             ->get()
-            ->filter(fn (ActivityLog $log): bool => $log->project !== null && $this->canSeeProject($log->project, $user))
+            ->filter(fn (ActivityLog $log): bool => $log->project !== null && $this->canShowProjectOnDashboard($log->project, $user))
             ->unique('project_id')
             ->take(5)
             ->map(fn (ActivityLog $log): array => $this->projectRow($log->project, $log->created_at));
@@ -63,6 +64,7 @@ class Dashboard extends BaseDashboard
         return Project::query()
             ->with('activeRevision')
             ->where('user_id', $user->id)
+            ->where('status', '!=', ProjectStatus::Archived->value)
             ->latest()
             ->limit(5)
             ->get()
@@ -106,7 +108,7 @@ class Dashboard extends BaseDashboard
             ->latest()
             ->limit(40)
             ->get()
-            ->filter(fn (ActivityLog $log): bool => $log->project !== null && $this->canSeeProject($log->project, $user))
+            ->filter(fn (ActivityLog $log): bool => $log->project !== null && $this->canShowProjectOnDashboard($log->project, $user))
             ->map(function (ActivityLog $log) use ($user): ?array {
                 $project = $log->project;
                 $revision = $this->revisionForLog($log);
@@ -175,7 +177,10 @@ class Dashboard extends BaseDashboard
             'name' => $user->name,
             'email' => $user->email,
             'avatarUrl' => Filament::getUserAvatarUrl($user),
-            'projectCount' => Project::query()->where('user_id', $user->id)->count(),
+            'projectCount' => Project::query()
+                ->where('user_id', $user->id)
+                ->where('status', '!=', ProjectStatus::Archived->value)
+                ->count(),
             'profileUrl' => Filament::getProfileUrl(),
         ];
     }
@@ -197,7 +202,7 @@ class Dashboard extends BaseDashboard
             ->latest()
             ->limit(40)
             ->get()
-            ->filter(fn (ActivityLog $log): bool => $log->project !== null && $this->canSeeProject($log->project, $user))
+            ->filter(fn (ActivityLog $log): bool => $log->project !== null && $this->canShowProjectOnDashboard($log->project, $user))
             ->map(function (ActivityLog $log) use ($routeName): ?array {
                 $project = $log->project;
                 $revision = $this->revisionForLog($log);
@@ -228,12 +233,7 @@ class Dashboard extends BaseDashboard
             'url' => ProjectResource::getUrl('view', ['record' => $project]),
             'revision' => $project->activeRevision?->label() ?? ProjectRevision::labelForNumber((int) $project->revision),
             'status' => $project->status?->label() ?? (string) $project->status,
-            'statusColor' => match ($project->status?->value) {
-                'in_progress' => 'info',
-                'complete' => 'success',
-                'cancelled' => 'danger',
-                default => 'gray',
-            },
+            'statusColor' => $project->status?->color() ?? 'gray',
             'visibility' => $project->visibility?->label() ?? (string) $project->visibility,
             'visibilityColor' => match ($project->visibility?->value) {
                 'open' => 'success',
@@ -284,6 +284,11 @@ class Dashboard extends BaseDashboard
         }
 
         return $project->visibility === ProjectVisibility::Open || $project->user_id === $user->id;
+    }
+
+    private function canShowProjectOnDashboard(Project $project, User $user): bool
+    {
+        return $project->status !== ProjectStatus::Archived && $this->canSeeProject($project, $user);
     }
 
     private function canSeeDocumentPack(DocumentPack $documentPack, User $user): bool

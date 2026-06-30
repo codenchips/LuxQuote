@@ -106,6 +106,8 @@ class ProjectPdfController extends Controller
             ],
         ]);
 
+        $project->markQuoted($revision);
+
         return $builder
             ->inline($filename)
             ->toResponse($request);

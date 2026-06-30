@@ -22,6 +22,7 @@ class ProjectRevisionValidator
      *     message: string,
      *     line_ids: array<int, int>,
      *     approved: bool,
+     *     flagged: bool,
      *     rrp?: string|null,
      *     quote_price?: string|null
      * }>
@@ -40,11 +41,19 @@ class ProjectRevisionValidator
             ->mapWithKeys(fn (Product $product): array => [$this->normaliseSku($product->sku) => $product]);
 
         return $areas
-            ->flatMap(fn (ProjectArea $area): array => [
-                ...$this->manualFlaggedIssues($area),
-                ...$this->duplicateSkuIssues($area),
-                ...$this->priceReviewIssues($area, $productsBySku),
-            ])
+            ->flatMap(function (ProjectArea $area) use ($productsBySku): array {
+                $duplicateIssues = $this->duplicateSkuIssues($area);
+                $priceReviewIssues = $this->priceReviewIssues($area, $productsBySku);
+                $coveredLineIds = collect([...$duplicateIssues, ...$priceReviewIssues])
+                    ->flatMap(fn (array $issue): array => $issue['line_ids'])
+                    ->unique();
+
+                return [
+                    ...$duplicateIssues,
+                    ...$priceReviewIssues,
+                    ...$this->manualFlaggedIssues($area, $coveredLineIds),
+                ];
+            })
             ->values()
             ->all();
     }
@@ -59,6 +68,7 @@ class ProjectRevisionValidator
      *     message: string,
      *     line_ids: array<int, int>,
      *     approved: bool,
+     *     flagged: bool,
      *     rrp?: string|null,
      *     quote_price?: string|null
      * }>
@@ -124,14 +134,15 @@ class ProjectRevisionValidator
      *     message: string,
      *     line_ids: array<int, int>,
      *     approved: bool,
+     *     flagged: bool,
      *     rrp?: string|null,
      *     quote_price?: string|null
      * }>
      */
-    private function manualFlaggedIssues(ProjectArea $area): array
+    private function manualFlaggedIssues(ProjectArea $area, Collection $coveredLineIds): array
     {
         return $area->lines
-            ->filter(fn (ProjectLine $line): bool => $line->validation_flagged)
+            ->filter(fn (ProjectLine $line): bool => $line->validation_flagged && ! $coveredLineIds->contains($line->id))
             ->map(fn (ProjectLine $line): array => $this->issue(
                 key: "manual-flag-{$line->id}",
                 type: 'manual_flag',
@@ -154,6 +165,7 @@ class ProjectRevisionValidator
      *     message: string,
      *     line_ids: array<int, int>,
      *     approved: bool,
+     *     flagged: bool,
      *     rrp?: string|null,
      *     quote_price?: string|null
      * }>
@@ -192,6 +204,7 @@ class ProjectRevisionValidator
      *     message: string,
      *     line_ids: array<int, int>,
      *     approved: bool,
+     *     flagged: bool,
      *     rrp?: string|null,
      *     quote_price?: string|null
      * }>
@@ -237,6 +250,7 @@ class ProjectRevisionValidator
      *     message: string,
      *     line_ids: array<int, int>,
      *     approved: bool,
+     *     flagged: bool,
      *     rrp?: string|null,
      *     quote_price?: string|null
      * }
@@ -261,6 +275,7 @@ class ProjectRevisionValidator
             'approved' => $lines->every(
                 fn (ProjectLine $line): bool => $line->approved && $line->approved_by !== null
             ),
+            'flagged' => $lines->contains(fn (ProjectLine $line): bool => $line->validation_flagged),
         ] + $extra;
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ProjectRevisionStatus;
 use App\Enums\ProjectStatus;
 use App\Enums\ProjectVisibility;
 use Database\Factories\ProjectFactory;
@@ -103,6 +104,75 @@ class Project extends Model
             'user_id',
         )->where('project_presences.last_seen_at', '>=', now()->subSeconds(90))
             ->where('project_presences.user_id', '!=', auth()->id() ?? 0);
+    }
+
+    public function syncStatusFromActiveRevision(): void
+    {
+        if ($this->status === ProjectStatus::Archived) {
+            return;
+        }
+
+        $this->load('activeRevision');
+
+        $status = match (true) {
+            $this->activeRevisionHasGeneratedQuote() => ProjectStatus::Quoted,
+            $this->activeRevision?->status === ProjectRevisionStatus::Approved => ProjectStatus::Approved,
+            $this->activeRevisionHasScheduleProducts() => ProjectStatus::InProgress,
+            default => ProjectStatus::Draft,
+        };
+
+        $this->updateQuietly(['status' => $status]);
+    }
+
+    public function markApprovalRequested(): void
+    {
+        if ($this->status === ProjectStatus::Archived) {
+            return;
+        }
+
+        $this->update(['status' => ProjectStatus::ApprovalRequested]);
+    }
+
+    public function markQuoted(ProjectRevision $revision): void
+    {
+        if ($this->status === ProjectStatus::Archived || $this->active_revision_id !== $revision->id) {
+            return;
+        }
+
+        $this->updateQuietly(['status' => ProjectStatus::Quoted]);
+    }
+
+    private function activeRevisionHasScheduleProducts(): bool
+    {
+        if (! $this->active_revision_id) {
+            return false;
+        }
+
+        return ProjectLine::whereHas('area', function ($query): void {
+            $query->where('project_id', $this->id)
+                ->where('project_revision_id', $this->active_revision_id);
+        })
+            ->whereNotNull('code')
+            ->where('code', '!=', '')
+            ->exists();
+    }
+
+    private function activeRevisionHasGeneratedQuote(): bool
+    {
+        if (! $this->activeRevision) {
+            return false;
+        }
+
+        return ActivityLog::where('project_id', $this->id)
+            ->where('revision_number', $this->activeRevision->revision_number)
+            ->where(function ($query): void {
+                $query->where('action_type', 'quote_pdf.generated')
+                    ->orWhere(function ($query): void {
+                        $query->where('action_type', 'document_pack.generated')
+                            ->where('payload->contains_quote', true);
+                    });
+            })
+            ->exists();
     }
 
     protected static function booted(): void

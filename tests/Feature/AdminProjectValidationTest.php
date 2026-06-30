@@ -4,8 +4,11 @@ namespace Tests\Feature;
 
 use App\Enums\ProjectLineType;
 use App\Enums\ProjectRevisionStatus;
+use App\Enums\ProjectStatus;
+use App\Filament\Resources\ActivityLogs\Pages\ListActivityLogs;
 use App\Filament\Resources\Projects\Pages\ValidationProject;
 use App\Filament\Resources\Projects\Pages\ViewProject;
+use App\Models\ActivityLog;
 use App\Models\Product;
 use App\Models\Project;
 use App\Models\ProjectLine;
@@ -68,6 +71,11 @@ class AdminProjectValidationTest extends TestCase
 
         $this->assertTrue($line->fresh()->approved);
         $this->assertTrue($project->activeRevision->fresh()->validated);
+        $this->assertDatabaseHas(ActivityLog::class, [
+            'project_id' => $project->id,
+            'action_type' => 'validation.issue_approved',
+            'revision_number' => 0,
+        ]);
 
         $component
             ->call('undoIssueApproval', $issueKey)
@@ -75,6 +83,16 @@ class AdminProjectValidationTest extends TestCase
 
         $this->assertFalse($line->fresh()->approved);
         $this->assertFalse($project->activeRevision->fresh()->validated);
+        $this->assertDatabaseHas(ActivityLog::class, [
+            'project_id' => $project->id,
+            'action_type' => 'validation.issue_approval_undone',
+            'revision_number' => 0,
+        ]);
+
+        Livewire::test(ListActivityLogs::class)
+            ->assertSee('Approved validation warning')
+            ->assertSee('Undid validation approval')
+            ->assertSee('MISSING-SKU');
     }
 
     public function test_validation_page_shows_clean_product_lines_as_validated(): void
@@ -95,7 +113,7 @@ class AdminProjectValidationTest extends TestCase
             ->assertSee("SKU \"{$missingLine->code}\" was not found in the product catalogue and has no quote price.")
             ->assertSee('Validated (1)')
             ->assertSee($validLine->code)
-            ->assertSee('Resolved: no current validation issues.')
+            ->assertSee('Approved: no current validation issues.')
             ->assertDontSee('Area:');
     }
 
@@ -123,10 +141,35 @@ class AdminProjectValidationTest extends TestCase
         $component
             ->call('flagValidatedLine', $line->id)
             ->assertSee('Issues (1)')
+            ->assertSee('Issue flagged')
             ->assertSee('SKU "MISSING-SKU" was not found in the product catalogue and has no quote price.');
 
         $this->assertFalse($line->fresh()->approved);
-        $this->assertFalse($line->fresh()->validation_flagged);
+        $this->assertTrue($line->fresh()->validation_flagged);
+    }
+
+    public function test_unresolved_issue_can_be_flagged_for_review(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $product = Product::factory()->create([
+            'sku' => 'FLAG-PRICE-SKU',
+            'price' => 12.34,
+        ]);
+        $line = $this->createLine($project, $product->sku, unitPrice: 10.00);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertSee('Flag Issue')
+            ->assertDontSee('Issue flagged')
+            ->call('flagIssue', "price-mismatch-{$line->id}")
+            ->assertSee('Issues (1)')
+            ->assertSee('Issue flagged')
+            ->assertSee('Quote price for SKU "FLAG-PRICE-SKU" does not match the product RRP.');
+
+        $this->assertFalse($line->fresh()->approved);
+        $this->assertTrue($line->fresh()->validation_flagged);
     }
 
     public function test_clean_validated_line_can_be_manually_flagged_as_an_issue(): void
@@ -145,6 +188,7 @@ class AdminProjectValidationTest extends TestCase
             ->assertSee('Validated (1)')
             ->call('flagValidatedLine', $line->id)
             ->assertSee('Issues (1)')
+            ->assertSee('Issue flagged')
             ->assertSee('SKU "VALID-SKU" has been manually flagged for review.');
 
         $this->assertFalse($line->fresh()->approved);
@@ -213,6 +257,16 @@ class AdminProjectValidationTest extends TestCase
             ->assertDontSee('Run Validation');
 
         $this->assertSame(ProjectRevisionStatus::Approved, $project->activeRevision->fresh()->status);
+        $this->assertSame(ProjectStatus::Approved, $project->fresh()->status);
+        $this->assertDatabaseHas(ActivityLog::class, [
+            'project_id' => $project->id,
+            'action_type' => 'revision.approved',
+            'revision_number' => 0,
+        ]);
+
+        Livewire::test(ListActivityLogs::class)
+            ->assertSee('Approved and locked')
+            ->assertSee('P0');
     }
 
     public function test_approving_salesforce_revision_updates_opportunity_amount(): void
@@ -306,7 +360,7 @@ class AdminProjectValidationTest extends TestCase
             ->assertSee('Ready to approve')
             ->assertSee('Issues (0)')
             ->assertSee('Validated (1)')
-            ->assertSee('Resolved: SKU "DUPLICATE-SKU" appears 2 times in this area.');
+            ->assertSee('Approved: SKU "DUPLICATE-SKU" appears 2 times in this area.');
 
         $this->assertSame(1, ProjectLine::whereIn('id', [$firstLine->id, $secondLine->id])->count());
         $this->assertSame(5, $firstLine->fresh()->qty);
@@ -518,7 +572,7 @@ class AdminProjectValidationTest extends TestCase
         $line = $this->createLine($project, $product->sku, unitPrice: 10.00);
 
         Livewire::test(ValidationProject::class, ['record' => $project->id])
-            ->assertSee('Match')
+            ->assertSee('Match and Approve')
             ->call('matchIssueQuotePrice', "price-mismatch-{$line->id}")
             ->assertSee('Ready to approve');
 

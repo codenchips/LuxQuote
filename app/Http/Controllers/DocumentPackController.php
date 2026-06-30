@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\DocumentPackItemRole;
 use App\Enums\DocumentPackItemSource;
 use App\Enums\ProjectVisibility;
 use App\Models\ActivityLog;
@@ -30,6 +31,7 @@ class DocumentPackController extends Controller
         $revisionId = $request->integer('revision', $project->active_revision_id);
         $revision = ProjectRevision::where('project_id', $project->id)->findOrFail($revisionId);
         $generatedPack = $pdfService->generate($documentPack, $revision, $request->user());
+        $containsQuote = $documentPack->items()->where('role', DocumentPackItemRole::Quote->value)->exists();
 
         ActivityLog::create([
             'user_id' => $request->user()->id,
@@ -42,8 +44,13 @@ class DocumentPackController extends Controller
                 'document_pack_id' => $documentPack->id,
                 'document_pack_name' => $documentPack->name,
                 'filename' => $generatedPack['filename'],
+                'contains_quote' => $containsQuote,
             ],
         ]);
+
+        if ($containsQuote) {
+            $project->markQuoted($revision);
+        }
 
         return response()
             ->download($generatedPack['path'], $generatedPack['filename'], ['Content-Type' => 'application/pdf'])

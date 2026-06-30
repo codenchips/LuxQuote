@@ -76,13 +76,7 @@ class ProjectsTable
                     ->label('Status')
                     ->badge()
                     ->formatStateUsing(fn (ProjectStatus $state): string => $state->label())
-                    ->color(fn (ProjectStatus $state): string => match ($state) {
-                        ProjectStatus::Draft => 'gray',
-                        ProjectStatus::InProgress => 'info',
-                        ProjectStatus::Complete => 'success',
-                        ProjectStatus::Cancelled => 'danger',
-                        ProjectStatus::Archived => 'gray',
-                    })
+                    ->color(fn (ProjectStatus $state): string => $state->color())
                     ->sortable()
                     ->width('5.5rem'),
 
@@ -217,6 +211,7 @@ class ProjectsTable
 
                         // Set the active revision on the copied project
                         $copy->updateQuietly(['active_revision_id' => $newRevision->id]);
+                        $copy->syncStatusFromActiveRevision();
                     }),
 
                 ActionGroup::make([

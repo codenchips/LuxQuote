@@ -104,6 +104,32 @@ class ActivityLogsTable
 
                             'revision.created' => 'Created a new snapshot: <strong>Revision #'.e((string) ($payload['revision_number'] ?? '?')).'</strong>',
 
+                            'revision.approved' => 'Approved and locked <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
+
+                            'validation.issue_approved' => (function () use ($payload): string {
+                                $lines = $payload['lines'] ?? [];
+                                $items = implode(', ', array_map(function (array $line): string {
+                                    $code = e((string) ($line['code'] ?? ''));
+                                    $desc = e((string) ($line['description'] ?? ''));
+
+                                    return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
+                                }, $lines));
+
+                                return 'Approved validation warning'.($items !== '' ? " for <strong>{$items}</strong>" : '');
+                            })(),
+
+                            'validation.issue_approval_undone' => (function () use ($payload): string {
+                                $lines = $payload['lines'] ?? [];
+                                $items = implode(', ', array_map(function (array $line): string {
+                                    $code = e((string) ($line['code'] ?? ''));
+                                    $desc = e((string) ($line['description'] ?? ''));
+
+                                    return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
+                                }, $lines));
+
+                                return 'Undid validation approval'.($items !== '' ? " for <strong>{$items}</strong>" : '');
+                            })(),
+
                             'schedule_pdf.generated' => 'Generated schedule PDF <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
 
                             'quote_pdf.generated' => 'Generated quote PDF <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
@@ -201,6 +227,9 @@ class ActivityLogsTable
                         'project.updated' => 'Project Updated',
                         'project.deleted' => 'Project Deleted',
                         'revision.created' => 'Revision Created',
+                        'revision.approved' => 'Revision Approved',
+                        'validation.issue_approved' => 'Validation Issue Approved',
+                        'validation.issue_approval_undone' => 'Validation Issue Approval Undone',
                         'schedule_pdf.generated' => 'Schedule PDF Generated',
                         'quote_pdf.generated' => 'Quote PDF Generated',
                         'salesforce_pdf.uploaded' => 'Salesforce PDF Uploaded',

@@ -247,6 +247,31 @@ class AdminProjectResourceTest extends TestCase
             ->assertCanNotSeeTableRecords([$draftProject]);
     }
 
+    public function test_project_status_tracks_draft_in_progress_and_approval_requested_states(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+
+        $this->assertSame(ProjectStatus::Draft, $project->fresh()->status);
+
+        $project->activeRevision->areas()->first()->lines()->create([
+            'code' => 'STATUS-SKU',
+            'description' => 'Status product',
+            'qty' => 1,
+            'type' => ProjectLineType::Standard->value,
+            'unit_price' => 10,
+            'sort_order' => 0,
+        ]);
+
+        $this->assertSame(ProjectStatus::InProgress, $project->fresh()->status);
+
+        $project->fresh()->markApprovalRequested();
+
+        $this->assertSame(ProjectStatus::ApprovalRequested, $project->fresh()->status);
+    }
+
     public function test_admin_can_validate_the_active_project_revision(): void
     {
         $admin = User::factory()->admin()->create();
@@ -606,7 +631,7 @@ class AdminProjectResourceTest extends TestCase
         ]);
     }
 
-    public function test_project_line_status_shows_approved_when_line_is_approved(): void
+    public function test_project_line_status_reflects_validation_state(): void
     {
         $admin = User::factory()->admin()->create();
         $this->actingAs($admin);
@@ -626,10 +651,58 @@ class AdminProjectResourceTest extends TestCase
             'approved_by' => $admin->id,
             'sort_order' => 0,
         ]);
+        $area->lines()->create([
+            'code' => 'PENDING-SKU',
+            'description' => 'Pending product',
+            'qty' => 1,
+            'type' => ProjectLineType::Standard->value,
+            'unit_price' => 12.00,
+            'status' => 'Priced',
+            'sort_order' => 1,
+        ]);
+        $area->lines()->create([
+            'code' => 'FLAGGED-SKU',
+            'description' => 'Flagged product',
+            'qty' => 1,
+            'type' => ProjectLineType::Standard->value,
+            'unit_price' => 14.00,
+            'status' => 'Priced',
+            'approved' => true,
+            'validation_flagged' => true,
+            'sort_order' => 2,
+        ]);
 
         Livewire::test(ViewProject::class, ['record' => $project->id])
             ->assertSee('Approved')
+            ->assertSee('Pending')
+            ->assertSee('Flagged')
             ->assertDontSee('Priced');
+    }
+
+    public function test_project_line_status_column_is_hidden_without_price_visibility(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $project = Project::factory()->for($user)->create();
+        $area = $project->activeRevision->areas()->first();
+
+        $area->lines()->create([
+            'code' => 'HIDDEN-STATUS-SKU',
+            'description' => 'Hidden status product',
+            'qty' => 1,
+            'type' => ProjectLineType::Standard->value,
+            'unit_price' => 10.00,
+            'status' => 'Pending',
+            'sort_order' => 0,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->assertSee('HIDDEN-STATUS-SKU')
+            ->assertSee('Notes')
+            ->assertDontSeeHtml('<div>Status</div>')
+            ->assertDontSee('Pending')
+            ->assertDontSee('Unit Price');
     }
 
     public function test_schedule_pdf_generation_is_recorded_in_activity_logs(): void
@@ -871,6 +944,8 @@ class AdminProjectResourceTest extends TestCase
         ]))
             ->assertOk()
             ->assertSee('fake quote pdf');
+
+        $this->assertSame(ProjectStatus::Quoted, $project->fresh()->status);
     }
 
     public function test_priced_quote_template_displays_totals(): void

@@ -117,6 +117,69 @@ class AdminDashboardTest extends TestCase
             ->assertDontSee('Restricted Quote Output');
     }
 
+    public function test_dashboard_hides_archived_projects_from_all_project_tables(): void
+    {
+        $this->travelTo('2026-06-29 10:30:00');
+
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $visibleProject = Project::factory()->for($admin, 'user')->create([
+            'name' => 'Visible Dashboard Project',
+        ]);
+        $this->activityLog($admin, $visibleProject, 'project.updated', now()->subMinutes(6));
+
+        $archivedRecentProject = Project::factory()->create([
+            'name' => 'Archived Recent Project',
+            'status' => ProjectStatus::Archived,
+        ]);
+        $this->activityLog($admin, $archivedRecentProject, 'project.updated', now()->subMinutes(5));
+
+        Project::factory()->for($admin, 'user')->create([
+            'name' => 'Archived Owned Project',
+            'status' => ProjectStatus::Archived,
+        ]);
+
+        $archivedScheduleProject = Project::factory()->create([
+            'name' => 'Archived Schedule Project',
+            'status' => ProjectStatus::Archived,
+        ]);
+        $this->activityLog($admin, $archivedScheduleProject, 'schedule_pdf.generated', now()->subMinutes(4), $archivedScheduleProject->activeRevision, [
+            'filename' => 'archived-schedule.pdf',
+        ]);
+
+        $archivedQuoteProject = Project::factory()->create([
+            'name' => 'Archived Quote Project',
+            'status' => ProjectStatus::Archived,
+        ]);
+        $this->activityLog($admin, $archivedQuoteProject, 'quote_pdf.generated', now()->subMinutes(3), $archivedQuoteProject->activeRevision, [
+            'filename' => 'archived-quote.pdf',
+        ]);
+
+        $archivedPackProject = Project::factory()->create([
+            'name' => 'Archived Pack Project',
+            'status' => ProjectStatus::Archived,
+        ]);
+        $archivedPack = DocumentPack::factory()->for($archivedPackProject)->create(['name' => 'Archived Pack']);
+        $this->activityLog($admin, $archivedPackProject, 'document_pack.generated', now()->subMinutes(2), $archivedPackProject->activeRevision, [
+            'document_pack_id' => $archivedPack->id,
+            'document_pack_name' => $archivedPack->name,
+            'filename' => 'archived-pack.pdf',
+        ]);
+
+        Livewire::test(Dashboard::class)
+            ->assertSee('Visible Dashboard Project')
+            ->assertDontSee('Archived Recent Project')
+            ->assertDontSee('Archived Owned Project')
+            ->assertDontSee('Archived Schedule Project')
+            ->assertDontSee('Archived Quote Project')
+            ->assertDontSee('Archived Pack Project')
+            ->assertDontSee('Archived Pack')
+            ->assertDontSee('archived-schedule.pdf')
+            ->assertDontSee('archived-quote.pdf')
+            ->assertDontSee('archived-pack.pdf');
+    }
+
     public function test_dashboard_hides_document_packs_with_quotes_from_users_without_pricing_permission(): void
     {
         $user = User::factory()->create();

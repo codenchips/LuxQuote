@@ -1,4 +1,4 @@
-<header class="fi-header sticky top-0 z-10 border-b border-gray-200 bg-white/95 py-4 backdrop-blur dark:border-white/10 dark:bg-gray-950/95">
+<header class="fi-header sticky top-16 z-10 border-b border-gray-200 bg-white/95 py-4 backdrop-blur dark:border-white/10 dark:bg-gray-950/95">
     <div class="flex w-full items-start justify-between gap-4">
 
         {{-- Heading block (left side) --}}

@@ -62,6 +62,11 @@
                                 <span class="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
                                     Warning
                                 </span>
+                                @if($issue['flagged'])
+                                    <span class="rounded-md bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                                        Issue flagged
+                                    </span>
+                                @endif
                             </div>
 
                             <p class="mt-2 text-sm text-gray-950 dark:text-white">{{ $issue['message'] }}</p>
@@ -97,17 +102,29 @@
 
                         <div
                             @class([
-                                'flex w-48 shrink-0 items-center justify-end gap-2',
+                                'flex w-[28rem] shrink-0 items-center justify-end gap-2',
                                 'self-start pt-5' => $issue['type'] === 'price_mismatch',
                             ])
                         >
+                            @if($canFlagValidationLines && ! $issue['flagged'])
+                                <x-filament::button
+                                    wire:click="flagIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
+                                    color="gray"
+                                    size="sm"
+                                    icon="heroicon-o-flag"
+                                    class="h-[34px] min-h-[34px] whitespace-nowrap"
+                                >
+                                    Flag Issue
+                                </x-filament::button>
+                            @endif
+
                             @if($issue['type'] === 'duplicate_sku' && $canMergeValidationLines)
                                 <x-filament::button
                                     wire:click="mergeIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
                                     color="gray"
                                     size="sm"
                                     icon="heroicon-o-arrows-pointing-in"
-                                    class="h-[34px] min-h-[34px]"
+                                    class="h-[34px] min-h-[34px] whitespace-nowrap"
                                 >
                                     Merge
                                 </x-filament::button>
@@ -119,9 +136,9 @@
                                     color="gray"
                                     size="sm"
                                     icon="heroicon-o-arrows-right-left"
-                                    class="h-[34px] min-h-[34px]"
+                                    class="h-[34px] min-h-[34px] whitespace-nowrap"
                                 >
-                                    Match
+                                    Match and Approve
                                 </x-filament::button>
                             @endif
 
@@ -130,7 +147,7 @@
                                     wire:click="approveIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
                                     size="sm"
                                     icon="heroicon-o-hand-thumb-up"
-                                    class="h-[34px] min-h-[34px]"
+                                    class="h-[34px] min-h-[34px] whitespace-nowrap"
                                 >
                                     Approve
                                 </x-filament::button>
@@ -158,7 +175,7 @@
                     <div class="text-right">Quote</div>
                 @endif
                 <div>Status</div>
-                <div>Note</div>
+                <div>Validation note</div>
                 <div></div>
             </div>
 
