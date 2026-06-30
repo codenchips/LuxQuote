@@ -108,7 +108,7 @@ class ProjectsTable
                     ->sortable()
                     ->placeholder('Never')
                     ->tooltip(fn ($record): ?string => $record->last_edited_at
-                        ? $record->last_edited_at->format('d M Y, H:i').($record->lastEditor ? ' by '.$record->lastEditor->name : '')
+                        ? $record->last_edited_at->format('M d Y H:i').($record->lastEditor ? ' by '.$record->lastEditor->name : '')
                         : null
                     )
                     ->width('9rem'),

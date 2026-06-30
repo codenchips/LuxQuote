@@ -55,6 +55,7 @@ class AuthenticationTest extends TestCase
         auth()->login($user);
 
         $this->assertAuthenticatedAs($user);
+        $this->assertNotNull($user->fresh()->last_login_at);
 
         $this->assertDatabaseHas('activity_logs', [
             'user_id' => $user->id,

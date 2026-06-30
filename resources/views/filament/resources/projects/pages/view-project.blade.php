@@ -661,7 +661,7 @@
                         </div>
                         <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                             Created by {{ $revision->creator?->name ?? $revision->creator?->email ?? 'Unknown' }}
-                            &middot; {{ $revision->created_at->format('d M Y, H:i') }}
+                            &middot; {{ $revision->created_at->format('M d Y H:i') }}
                         </div>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">

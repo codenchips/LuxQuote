@@ -183,7 +183,7 @@ class ActivityLogsTable
 
                 TextColumn::make('created_at')
                     ->label('Date & Time')
-                    ->dateTime('d M Y H:i')
+                    ->dateTime('M d Y H:i')
                     ->sortable()
                     ->width('11rem')
                     ->extraCellAttributes([

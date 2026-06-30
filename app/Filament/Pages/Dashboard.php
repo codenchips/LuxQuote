@@ -303,6 +303,6 @@ class Dashboard extends BaseDashboard
             return '';
         }
 
-        return $date->format('d/m/y H:i');
+        return $date->format('M d Y H:i');
     }
 }

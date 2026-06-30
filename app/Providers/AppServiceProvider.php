@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
@@ -43,6 +44,12 @@ class AppServiceProvider extends ServiceProvider
         }
 
         Event::listen(Login::class, function (Login $event): void {
+            if (Schema::hasColumn('users', 'last_login_at')) {
+                $event->user->updateQuietly([
+                    'last_login_at' => now(),
+                ]);
+            }
+
             ActivityLog::create([
                 'user_id' => $event->user->id,
                 'project_id' => null,

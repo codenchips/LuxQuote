@@ -40,7 +40,7 @@ class ProjectSchedulePdfService
             ->orderBy('sort_order')
             ->get();
 
-        $generatedAt = now()->format('d/m/Y g:ia');
+        $generatedAt = now()->format('M d Y H:i');
 
         $footerHtml = '<style>
             * { box-sizing: border-box; margin: 0; padding: 0; }

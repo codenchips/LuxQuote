@@ -27,12 +27,21 @@ class UsersTable
                     ->color(fn (?string $state): string => $state === 'Admin' ? 'danger' : 'primary')
                     ->placeholder('No group')
                     ->sortable(),
+                TextColumn::make('last_login_at')
+                    ->label('Last login')
+                    ->dateTime('M d Y H:i')
+                    ->placeholder('Never')
+                    ->sortable(),
+                TextColumn::make('projects_count')
+                    ->label('Num Projects')
+                    ->counts('projects')
+                    ->sortable(),
                 TextColumn::make('created_at')
                     ->label('Joined')
-                    ->dateTime()
+                    ->dateTime('M d Y H:i')
                     ->sortable(),
                 TextColumn::make('updated_at')
-                    ->dateTime()
+                    ->dateTime('M d Y H:i')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])

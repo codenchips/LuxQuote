@@ -69,7 +69,7 @@ class AdminDashboardTest extends TestCase
             ->assertSee('Private')
             ->assertSee('Your Projects')
             ->assertSee('Own Latest Project')
-            ->assertSee('29/06/26 10:10')
+            ->assertSee('Jun 29 2026 10:10')
             ->assertSee('Recent Schedules')
             ->assertSee('Schedule Output Project')
             ->assertSee(route('projects.pdf.schedule', [

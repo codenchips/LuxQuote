@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\Users\Pages\CreateUser;
 use App\Filament\Resources\Users\Pages\EditUser;
 use App\Filament\Resources\Users\Pages\ListUsers;
+use App\Models\Project;
 use App\Models\User;
 use Filament\Actions\DeleteAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -24,12 +25,19 @@ class AdminUserResourceTest extends TestCase
     public function test_admin_can_list_users(): void
     {
         $admin = $this->adminUser();
-        User::factory()->count(3)->create();
+        $user = User::factory()->create([
+            'name' => 'Project Creator',
+            'last_login_at' => '2026-06-29 14:30:00',
+        ]);
+        Project::factory()->count(3)->for($user)->create();
 
         $this->actingAs($admin);
 
         Livewire::test(ListUsers::class)
-            ->assertSuccessful();
+            ->assertSuccessful()
+            ->assertSee('Project Creator')
+            ->assertSee('Jun 29 2026 14:30')
+            ->assertSee('3');
     }
 
     public function test_admin_can_render_create_user_page(): void

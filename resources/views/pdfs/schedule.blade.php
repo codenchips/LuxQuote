@@ -335,7 +335,7 @@
                     <div><span class="ref-label">Rev: </span><span class="ref-val">{{ $revision->label() }}</span></div>
                 @endif
                 <div><span class="ref-label">Date: </span><span class="ref-val">{{ $project->date?->format('d M Y') ?? '-' }}</span></div>
-                <div><span class="ref-label">Generated: </span><span class="ref-val">{{ now()->format('d M Y H:i') }}</span></div>
+                <div><span class="ref-label">Generated: </span><span class="ref-val">{{ now()->format('M d Y H:i') }}</span></div>
             </div>
         </div>
 
