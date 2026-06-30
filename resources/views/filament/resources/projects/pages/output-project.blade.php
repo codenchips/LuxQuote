@@ -20,7 +20,7 @@
         $documentPackGenerationBlockReason = $this->documentPackGenerationBlockReason();
         $selectedGenerationRevision = $this->selectedGenerationRevision();
         $panelClasses = 'rounded-lg border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#171b22]';
-        $primaryButtonClasses = 'inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-amber-400 px-4 text-sm font-semibold text-gray-950 shadow-sm transition hover:bg-amber-300 dark:bg-amber-400 dark:hover:bg-amber-300';
+        $primaryButtonClasses = 'fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action w-full';
         $secondaryButtonClasses = 'inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-white/70 px-4 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-100 dark:hover:bg-white/[0.06]';
         $disabledOutputButtonClasses = 'inline-flex h-10 w-full cursor-not-allowed items-center justify-center gap-2 rounded-md bg-gray-200 px-4 text-sm font-semibold text-gray-500 dark:bg-white/10 dark:text-gray-500';
         $validationUrl = \App\Filament\Resources\Projects\Pages\ValidationProject::getUrl(['record' => $this->record->getKey()]);
@@ -50,7 +50,7 @@
                         <button
                             type="button"
                             wire:click="requestQuoteApproval"
-                            class="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-amber-400 px-4 text-sm font-semibold text-gray-950 shadow-sm transition hover:bg-amber-300"
+                            class="fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action"
                         >
                             <x-heroicon-o-paper-airplane class="h-4 w-4" />
                             Request Approval
@@ -114,7 +114,7 @@
                     aria-selected="{{ $outputTab === 'single' ? 'true' : 'false' }}"
                     @class([
                         'relative -mb-px inline-flex h-11 items-center text-sm font-semibold transition',
-                        'border-b-2 border-amber-400 text-gray-950 dark:text-white' => $outputTab === 'single',
+                        'border-b-2 border-orange-500 text-gray-950 dark:border-orange-400 dark:text-white' => $outputTab === 'single',
                         'border-b-2 border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white' => $outputTab !== 'single',
                     ])
                 >
@@ -129,7 +129,7 @@
                         aria-selected="{{ $outputTab === 'packs' ? 'true' : 'false' }}"
                         @class([
                             'relative -mb-px inline-flex h-11 items-center text-sm font-semibold transition',
-                            'border-b-2 border-amber-400 text-gray-950 dark:text-white' => $outputTab === 'packs',
+                            'border-b-2 border-orange-500 text-gray-950 dark:border-orange-400 dark:text-white' => $outputTab === 'packs',
                             'border-b-2 border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white' => $outputTab !== 'packs',
                         ])
                     >
@@ -481,20 +481,18 @@
                     </button>
                 </div>
 
-                <div class="mt-5 flex flex-col gap-3 border-t border-gray-200 pt-5 sm:flex-row sm:items-center dark:border-white/10">
+                <div class="mt-5 flex flex-col gap-3 border-t border-gray-200 pt-5 sm:flex-row sm:items-center sm:justify-end dark:border-white/10">
                     @if($selectedDocumentPackId)
                         <button
                             type="button"
                             wire:click="deleteDocumentPack"
                             wire:confirm="Delete this document pack and its uploaded PDFs?"
-                            class="inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-danger-600 transition hover:bg-danger-50 dark:hover:bg-danger-500/10"
+                            class="inline-flex h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-sm font-semibold text-danger-600 transition hover:bg-danger-50 dark:hover:bg-danger-500/10 sm:w-56"
                         >
                             <x-heroicon-o-trash class="h-4 w-4" />
                             Delete Pack
                         </button>
                     @endif
-
-                    <div class="flex-1"></div>
 
                     @if($documentPackGenerationBlockReason)
                         <span class="text-xs font-medium text-amber-600 dark:text-amber-400">{{ $documentPackGenerationBlockReason }}</span>
@@ -505,7 +503,7 @@
                         wire:click="saveDocumentPack"
                         wire:loading.attr="disabled"
                         wire:target="saveDocumentPack"
-                        class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-gray-800 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600"
+                        class="inline-flex h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-gray-800 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600 sm:w-56"
                     >
                         <x-heroicon-o-bookmark class="h-4 w-4" />
                         Save Pack
@@ -516,13 +514,13 @@
                             data-testid="generate-document-pack"
                             href="{{ $documentPackDownloadUrl }}"
                             target="_blank"
-                            class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-500"
+                            class="fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action h-10 w-full whitespace-nowrap sm:w-56"
                         >
                             <x-heroicon-o-document-arrow-down class="h-4 w-4" />
                             Generate Combined PDF
                         </a>
                     @else
-                        <button data-testid="generate-document-pack" type="button" disabled class="inline-flex h-10 cursor-not-allowed items-center justify-center gap-2 rounded-lg bg-gray-300 px-4 text-sm font-semibold text-gray-500 dark:bg-white/10 dark:text-gray-500">
+                        <button data-testid="generate-document-pack" type="button" disabled class="inline-flex h-10 w-full cursor-not-allowed items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-gray-300 px-4 text-sm font-semibold text-gray-500 dark:bg-white/10 dark:text-gray-500 sm:w-56">
                             <x-heroicon-o-document-arrow-down class="h-4 w-4" />
                             Generate Combined PDF
                         </button>
