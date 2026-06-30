@@ -807,13 +807,15 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('Output Project')
             ->assertSee('Open')
             ->assertSee('P0')
-            ->assertSee('Quote Approval')
-            ->assertSee('Approval Not Requested')
-            ->assertSee('Approval can be requested now')
-            ->assertSee('Quote PDF requires')
+            ->assertSee('Quote status')
+            ->assertSee('Approval Required')
+            ->assertSee('Validation')
+            ->assertSee('Not passed')
+            ->assertSee('All outputs include links to product datasheets.')
+            ->assertSee('Generate a document')
             ->assertSee('Quote PDF')
-            ->assertSee('Priced Schedule')
-            ->assertSee('Unpriced Schedule')
+            ->assertSee('Schedule PDF')
+            ->assertSee('Download as CSV')
             ->assertSee(e(route('projects.pdf.schedule', [
                 'project' => $project,
                 'revision' => $project->active_revision_id,
@@ -840,10 +842,10 @@ class AdminProjectResourceTest extends TestCase
         ]);
 
         Livewire::test(OutputProject::class, ['record' => $project->id])
-            ->assertSee('Approval Not Requested')
+            ->assertSee('Approval Required')
             ->assertSee('Request Approval')
             ->call('requestQuoteApproval')
-            ->assertSee('Approval Requested')
+            ->assertSee('Approval has been requested')
             ->assertSee('Requested');
 
         $this->assertSame(ProjectStatus::ApprovalRequested, $project->fresh()->status);
@@ -868,11 +870,12 @@ class AdminProjectResourceTest extends TestCase
         $project = Project::factory()->for($user)->create();
 
         Livewire::test(OutputProject::class, ['record' => $project->id])
-            ->assertSee('Approval Not Requested')
+            ->assertSee('Approval Required')
             ->assertSee('Request Approval')
-            ->assertSee('Approval can be requested now')
+            ->assertDontSee('View Validation')
+            ->assertDontSee('Validation must pass before outputs can be generated.')
             ->call('requestQuoteApproval')
-            ->assertSee('Approval Requested');
+            ->assertSee('Requested');
 
         $this->assertFalse($project->activeRevision->fresh()->validated);
         $this->assertSame(ProjectStatus::ApprovalRequested, $project->fresh()->status);
@@ -887,25 +890,24 @@ class AdminProjectResourceTest extends TestCase
 
         $component = Livewire::test(OutputProject::class, ['record' => $project->id])
             ->assertSet('outputTab', 'single')
-            ->assertSee('Quote Approval')
-            ->assertSee('Quick PDF/CSV Output')
+            ->assertSee('Quote status')
+            ->assertSee('Quick Output')
             ->assertSee('Document Packs')
-            ->assertSee('Priced quote with branding, cover percentage, totals and approval.')
-            ->assertSee('Schedule export with pricing. Requires validation passed.')
+            ->assertSee('Quote with pricing.')
             ->assertSee('Schedule without pricing. Always available.')
+            ->assertSee('About datasheets')
             ->assertDontSee('Build a reusable pack, drag documents into the required order');
 
         $this->assertLessThan(
             strpos($component->html(), 'role="tablist"'),
-            strpos($component->html(), 'Quote Approval'),
+            strpos($component->html(), 'Quote status'),
         );
 
         $component
             ->set('outputTab', 'packs')
-            ->assertSee('Quote Approval')
+            ->assertSee('Quote status')
             ->assertSee('Build a reusable pack, drag documents into the required order')
-            ->assertDontSee('Priced quote with branding, cover percentage, totals and approval.')
-            ->assertDontSee('Schedule export with pricing. Requires validation passed.')
+            ->assertDontSee('Quote with pricing.')
             ->assertDontSee('Schedule without pricing. Always available.');
     }
 

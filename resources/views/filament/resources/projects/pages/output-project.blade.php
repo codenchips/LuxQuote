@@ -2,84 +2,123 @@
     @php
         $validationPassed = $this->validationPassed();
         $quoteApproved = $this->quoteApproved();
-        $validationStatus = $this->validationStatusLabel();
-        $validationStatusText = $validationPassed ? 'Valid' : 'Not valid';
+        $validationStatusText = $validationPassed ? 'Passed' : 'Not passed';
         $approvalRequested = $this->quoteApprovalRequested();
+        $approvalStatusLabel = $quoteApproved ? 'Approved' : ($approvalRequested ? 'Requested' : 'Approval Required');
+        $approvalStatusClasses = $quoteApproved
+            ? 'border-success-500/30 bg-success-500/15 text-success-200'
+            : ($approvalRequested
+                ? 'border-amber-500/35 bg-amber-500/20 text-amber-100'
+                : 'border-amber-500/35 bg-amber-500/20 text-amber-100');
         $canProduceUnpricedSchedule = $this->canProduceUnpricedSchedule();
         $canProducePricedSchedule = $this->canProducePricedSchedule();
         $canProduceQuote = $this->canProduceQuote();
         $canRequestQuoteApproval = $this->canRequestQuoteApproval();
+        $canViewValidation = $this->canViewValidation();
         $canManageDocumentPacks = $this->canManageDocumentPacks();
         $documentPackDownloadUrl = $this->getDocumentPackDownloadUrl();
         $documentPackGenerationBlockReason = $this->documentPackGenerationBlockReason();
         $selectedGenerationRevision = $this->selectedGenerationRevision();
-        $disabledOutputButtonClasses = 'inline-flex h-9 w-full cursor-not-allowed items-center justify-center gap-2 rounded-md bg-gray-300 px-3 text-sm font-semibold text-gray-600 dark:bg-white/20 dark:text-gray-400';
+        $panelClasses = 'rounded-lg border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#171b22]';
+        $primaryButtonClasses = 'inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-amber-400 px-4 text-sm font-semibold text-gray-950 shadow-sm transition hover:bg-amber-300 dark:bg-amber-400 dark:hover:bg-amber-300';
+        $secondaryButtonClasses = 'inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-white/70 px-4 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-100 dark:hover:bg-white/[0.06]';
+        $disabledOutputButtonClasses = 'inline-flex h-10 w-full cursor-not-allowed items-center justify-center gap-2 rounded-md bg-gray-200 px-4 text-sm font-semibold text-gray-500 dark:bg-white/10 dark:text-gray-500';
+        $validationUrl = \App\Filament\Resources\Projects\Pages\ValidationProject::getUrl(['record' => $this->record->getKey()]);
     @endphp
 
-    <div class="space-y-6">
-        @if($canRequestQuoteApproval || $canProduceQuote || $canProducePricedSchedule)
-            <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
-            <div class="flex flex-col gap-3">
-                <div>
-                    <h2 class="text-base font-semibold text-gray-950 dark:text-white">Quote Approval</h2>
-                    <div class="mt-2 flex flex-wrap items-center gap-3">
-                        <div class="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-600 dark:bg-white/10 dark:text-gray-300">
-                            @if ($quoteApproved)
-                                <x-heroicon-o-check-circle class="h-4 w-4 text-success-500" />
-                                Quote Approved
-                            @elseif ($approvalRequested)
-                                <x-heroicon-o-paper-airplane class="h-4 w-4 text-warning-500" />
-                                Approval Requested
-                            @else
-                                <x-heroicon-o-clock class="h-4 w-4" />
-                                Approval Not Requested
-                            @endif
+    <div class="space-y-7">
+        <section class="{{ $panelClasses }} p-5">
+            <div class="grid gap-5 lg:grid-cols-[1fr_1fr_1fr]">
+                <div class="space-y-3">
+                    <div class="flex flex-wrap items-center gap-3">
+                        <h2 class="text-sm font-semibold text-gray-950 dark:text-white">Quote status</h2>
+                        <span class="inline-flex items-center rounded-md border px-3 py-1 text-xs font-semibold {{ $approvalStatusClasses }}">
+                            {{ $approvalStatusLabel }}
+                        </span>
+                    </div>
+                    <p class="max-w-md text-sm text-gray-600 dark:text-gray-300">
+                        @if($quoteApproved)
+                            This quote is approved and ready for controlled outputs.
+                        @elseif($approvalRequested)
+                            Approval has been requested. A quote cannot be generated until it has been approved.
+                        @else
+                            A quote cannot be generated until it has been approved.
+                        @endif
+                    </p>
+
+                    @if($canRequestQuoteApproval && ! $quoteApproved)
+                        <button
+                            type="button"
+                            wire:click="requestQuoteApproval"
+                            class="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-amber-400 px-4 text-sm font-semibold text-gray-950 shadow-sm transition hover:bg-amber-300"
+                        >
+                            <x-heroicon-o-paper-airplane class="h-4 w-4" />
+                            Request Approval
+                        </button>
+                    @endif
+                </div>
+
+                @if($canViewValidation)
+                    <div class="space-y-5 border-t border-gray-200 pt-5 dark:border-white/10 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+                        <div class="space-y-5">
+                            <div class="flex items-center gap-3">
+                                <h2 class="text-sm font-semibold text-gray-950 dark:text-white">Validation</h2>
+                                <span @class([
+                                    'inline-flex items-center rounded-md border px-3 py-1 text-xs font-semibold',
+                                    'border-success-500/30 bg-success-500/15 text-success-200' => $validationPassed,
+                                    'border-amber-500/35 bg-amber-500/20 text-amber-100' => ! $validationPassed,
+                                ])>
+                                    {{ $validationStatusText }}
+                                </span>
+                            </div>
+                            <p class="max-w-md text-sm text-gray-600 dark:text-gray-300">
+                                @if($validationPassed)
+                                    All validations passed. You can generate outputs.
+                                @else
+                                    Validation must pass before outputs can be generated.
+                                @endif
+                            </p>
                         </div>
 
-                        @if($canRequestQuoteApproval && ! $quoteApproved)
-                            <button
-                                type="button"
-                                wire:click="requestQuoteApproval"
-                                class="inline-flex h-8 items-center justify-center gap-2 rounded-md bg-primary-600 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-500"
-                            >
-                                <x-heroicon-o-paper-airplane class="h-4 w-4" />
-                                Request Approval
-                            </button>
-                        @endif
+                        <a href="{{ $validationUrl }}" class="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-gray-200 bg-white/70 px-4 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-100 dark:hover:bg-white/[0.08]">
+                            <x-heroicon-o-clock class="h-4 w-4" />
+                            View Validation
+                        </a>
                     </div>
-                </div>
+                @endif
 
-                @unless ($validationPassed)
-                    <div class="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/60 dark:bg-amber-500/15 dark:text-amber-100">
-                        <x-heroicon-o-exclamation-triangle class="mt-0.5 h-4 w-4 shrink-0" />
-                        <span>Approval can be requested now, but quote generation still needs validation to pass. Current status:</span>
-                        <span class="inline-flex items-center rounded-md bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-950 dark:bg-amber-400/25 dark:text-amber-100">{{ $validationStatusText }}</span>
+                <div @class([
+                    'rounded-lg border border-gray-200 bg-gray-50/80 p-5 dark:border-white/10 dark:bg-white/[0.03]',
+                    'lg:col-start-3' => $canViewValidation,
+                    'lg:col-span-2' => ! $canViewValidation,
+                ])>
+                    <div class="flex items-start gap-4">
+                        <x-heroicon-o-information-circle class="mt-0.5 h-6 w-6 shrink-0 text-info-500" />
+                        <div class="space-y-2 text-sm">
+                            <p class="font-medium text-gray-950 dark:text-white">All outputs include links to product datasheets.</p>
+                            <p class="text-gray-600 dark:text-gray-300">
+                                Include datasheets in your PDF if you need a self-contained document.
+                            </p>
+                        </div>
                     </div>
-                @endunless
-
-                <div class="flex items-start gap-2 rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:border-sky-500/60 dark:bg-sky-500/15 dark:text-sky-100">
-                    <x-heroicon-o-information-circle class="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>Quote PDF requires <strong>validation passed</strong> + <strong>quote approved</strong>. Unpriced outputs are always available. Priced CSV requires <strong>validation passed</strong>.</span>
                 </div>
             </div>
-            </section>
-        @endif
+        </section>
 
-        <div role="tablist" aria-label="Output type">
-            <div class="inline-flex gap-1 rounded-xl border border-gray-200 bg-gray-100 p-1 dark:border-white/10 dark:bg-gray-900">
+        <div role="tablist" aria-label="Output type" class="border-b border-gray-200 dark:border-white/10">
+            <div class="flex gap-7">
                 <button
                     type="button"
                     role="tab"
                     wire:click="$set('outputTab', 'single')"
                     aria-selected="{{ $outputTab === 'single' ? 'true' : 'false' }}"
                     @class([
-                        'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition',
-                        'bg-gray-700 text-white shadow-sm dark:bg-gray-700' => $outputTab === 'single',
-                        'bg-gray-200 text-gray-600 hover:bg-gray-300 hover:text-gray-900 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white' => $outputTab !== 'single',
+                        'relative -mb-px inline-flex h-11 items-center text-sm font-semibold transition',
+                        'border-b-2 border-amber-400 text-gray-950 dark:text-white' => $outputTab === 'single',
+                        'border-b-2 border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white' => $outputTab !== 'single',
                     ])
                 >
-                    <x-heroicon-o-document-text class="h-4 w-4" />
-                    Quick PDF/CSV Output
+                    Quick Output
                 </button>
 
                 @if($canManageDocumentPacks)
@@ -89,12 +128,11 @@
                         wire:click="$set('outputTab', 'packs')"
                         aria-selected="{{ $outputTab === 'packs' ? 'true' : 'false' }}"
                         @class([
-                            'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition',
-                            'bg-gray-700 text-white shadow-sm dark:bg-gray-700' => $outputTab === 'packs',
-                            'bg-gray-200 text-gray-600 hover:bg-gray-300 hover:text-gray-900 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white' => $outputTab !== 'packs',
+                            'relative -mb-px inline-flex h-11 items-center text-sm font-semibold transition',
+                            'border-b-2 border-amber-400 text-gray-950 dark:text-white' => $outputTab === 'packs',
+                            'border-b-2 border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white' => $outputTab !== 'packs',
                         ])
                     >
-                        <x-heroicon-o-document-duplicate class="h-4 w-4" />
                         Document Packs
                     </button>
                 @endif
@@ -494,127 +532,126 @@
         @endif
 
         @if($outputTab === 'single')
-            <div class="grid gap-5 lg:grid-cols-3">
-            @if($canProduceQuote)
-                <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
-                <div class="flex items-start gap-3">
-                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500 dark:bg-white/5 dark:text-gray-400">
-                        <x-heroicon-o-document-text class="h-5 w-5" />
-                    </div>
-                    <div>
-                        <h2 class="text-base font-semibold text-gray-950 dark:text-white">Quote PDF</h2>
-                        <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">Priced quote with branding, cover percentage, totals and approval.</p>
-                    </div>
+            <section class="space-y-5">
+                <div>
+                    <h2 class="text-xl font-semibold text-gray-950 dark:text-white">Generate a document</h2>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Choose the type of document you want to generate.</p>
                 </div>
 
-                <div class="mt-4 space-y-3">
-                    @unless ($validationPassed && $quoteApproved)
-                        <div class="flex items-start gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
-                            <x-heroicon-o-lock-closed class="mt-0.5 h-4 w-4 shrink-0" />
-                            <span>
-                                @unless ($validationPassed)
-                                    Validation must pass first (currently:
-                                    <span class="inline-flex items-center rounded-md bg-gray-200 px-2 py-0.5 text-xs font-semibold text-gray-700 dark:bg-white/10 dark:text-gray-300">{{ $validationStatusText }}</span>)
-                                @else
-                                    Quote approval required before generating.
+                <div class="grid gap-5 xl:grid-cols-2">
+                    @if($canProduceQuote)
+                        <article class="{{ $panelClasses }} p-5">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="flex min-w-0 items-start gap-4">
+                                    <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-gray-500 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-300">
+                                        <x-heroicon-o-document-text class="h-7 w-7" />
+                                    </div>
+                                    <div class="min-w-0">
+                                        <h3 class="text-lg font-semibold text-gray-950 dark:text-white">Quote PDF</h3>
+                                        <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Quote with pricing.</p>
+                                    </div>
+                                </div>
+
+                                @unless($quoteApproved)
+                                    <span class="shrink-0 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 dark:border-white/20 dark:text-gray-300">Requires approval</span>
                                 @endunless
-                            </span>
-                        </div>
-                    @endunless
+                            </div>
 
-                    @if ($validationPassed && $quoteApproved)
-                        <a href="{{ $this->getQuotePdfUrl() }}" target="_blank" class="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary-600 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-500">
-                            <x-heroicon-o-document-arrow-down class="h-4 w-4" />
-                            Generate Quote PDF
-                        </a>
-                    @else
-                        <button type="button" disabled class="{{ $disabledOutputButtonClasses }}">
-                            <x-heroicon-o-document-arrow-down class="h-4 w-4" />
-                            Generate Quote PDF
-                        </button>
+                            <div class="mt-5 rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                                <label class="flex min-h-9 items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-300">
+                                    <span class="inline-flex items-center gap-2">
+                                        Include datasheets
+                                        <x-heroicon-o-information-circle class="h-4 w-4 text-gray-400" />
+                                    </span>
+                                    <input type="checkbox" class="sr-only" disabled>
+                                    <span aria-hidden="true" class="relative inline-flex h-6 w-11 shrink-0 rounded-full bg-gray-300 opacity-70 transition dark:bg-white/10">
+                                        <span class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"></span>
+                                    </span>
+                                </label>
+
+                                <div class="mt-4 space-y-3">
+                                    @if($validationPassed && $quoteApproved)
+                                        <a href="{{ $this->getQuotePdfUrl() }}" target="_blank" class="{{ $primaryButtonClasses }}">
+                                            Generate Quote PDF
+                                        </a>
+                                    @else
+                                        <button type="button" disabled class="{{ $disabledOutputButtonClasses }}">
+                                            Generate Quote PDF
+                                        </button>
+                                    @endif
+
+                                    @if($canProducePricedSchedule)
+                                        @if($validationPassed)
+                                            <a href="{{ $this->getCsvExportUrl() }}" class="{{ $secondaryButtonClasses }}">
+                                                <x-heroicon-o-table-cells class="h-5 w-5" />
+                                                Download as CSV
+                                            </a>
+                                        @else
+                                            <button type="button" disabled class="{{ $disabledOutputButtonClasses }}">
+                                                <x-heroicon-o-table-cells class="h-5 w-5" />
+                                                Download as CSV
+                                            </button>
+                                        @endif
+                                    @endif
+                                </div>
+                            </div>
+                        </article>
                     @endif
 
-                    <label class="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
-                        <span class="font-medium">Include Datasheets</span>
-                        <input type="checkbox" class="sr-only" disabled>
-                        <span aria-hidden="true" class="relative inline-flex h-6 w-11 shrink-0 rounded-full bg-gray-300 opacity-60 transition dark:bg-white/20">
-                            <span class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition dark:bg-gray-500"></span>
-                        </span>
-                    </label>
-                </div>
-                </section>
-            @endif
+                    @if($canProduceUnpricedSchedule)
+                        <article class="{{ $panelClasses }} p-5">
+                            <div class="flex items-start gap-4">
+                                <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100 text-gray-500 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-300">
+                                    <x-heroicon-o-document-text class="h-7 w-7" />
+                                </div>
+                                <div class="min-w-0">
+                                    <h3 class="text-lg font-semibold text-gray-950 dark:text-white">Schedule PDF</h3>
+                                    <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Schedule without pricing. Always available.</p>
+                                </div>
+                            </div>
 
-            @if($canProducePricedSchedule)
-                <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
-                <div class="flex items-start gap-3">
-                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500 dark:bg-white/5 dark:text-gray-400">
-                        <x-heroicon-o-table-cells class="h-5 w-5" />
-                    </div>
-                    <div>
-                        <h2 class="text-base font-semibold text-gray-950 dark:text-white">Priced Schedule</h2>
-                        <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">Schedule export with pricing. Requires validation passed.</p>
-                    </div>
-                </div>
+                            <div class="mt-5 rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                                <label class="flex min-h-9 items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-300">
+                                    <span class="inline-flex items-center gap-2">
+                                        Include datasheets
+                                        <x-heroicon-o-information-circle class="h-4 w-4 text-gray-400" />
+                                    </span>
+                                    <input type="checkbox" class="sr-only" disabled>
+                                    <span aria-hidden="true" class="relative inline-flex h-6 w-11 shrink-0 rounded-full bg-gray-300 opacity-70 transition dark:bg-white/10">
+                                        <span class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"></span>
+                                    </span>
+                                </label>
 
-                <div class="mt-4 space-y-3">
-                    @unless ($validationPassed)
-                        <div class="flex items-start gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
-                            <x-heroicon-o-lock-closed class="mt-0.5 h-4 w-4 shrink-0" />
-                            <span>
-                                Validation must pass (currently:
-                                <span class="inline-flex items-center rounded-md bg-gray-200 px-2 py-0.5 text-xs font-semibold text-gray-700 dark:bg-white/10 dark:text-gray-300">{{ $validationStatusText }}</span>)
-                            </span>
-                        </div>
-                    @endunless
-
-                    @if ($validationPassed)
-                        <a href="{{ $this->getCsvExportUrl() }}" class="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md border border-gray-200 px-3 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">
-                            <x-heroicon-o-table-cells class="h-4 w-4" />
-                            Download Priced CSV
-                        </a>
-                    @else
-                        <button type="button" disabled class="{{ $disabledOutputButtonClasses }}">
-                            <x-heroicon-o-table-cells class="h-4 w-4" />
-                            Download Priced CSV
-                        </button>
+                                <div class="mt-4 space-y-3">
+                                    <a href="{{ $this->getSchedulePdfUrl() }}" target="_blank" class="{{ $primaryButtonClasses }}">
+                                        Generate Schedule PDF
+                                    </a>
+                                    <a href="{{ $this->getUnpricedCsvExportUrl() }}" class="{{ $secondaryButtonClasses }}">
+                                        <x-heroicon-o-table-cells class="h-5 w-5" />
+                                        Download as CSV
+                                    </a>
+                                </div>
+                            </div>
+                        </article>
                     @endif
                 </div>
-                </section>
-            @endif
 
-            @if($canProduceUnpricedSchedule)
-                <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
-                <div class="flex items-start gap-3">
-                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500 dark:bg-white/5 dark:text-gray-400">
-                        <x-heroicon-o-clipboard-document-list class="h-5 w-5" />
+                <aside class="{{ $panelClasses }} flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex items-start gap-4">
+                        <x-heroicon-o-information-circle class="mt-0.5 h-6 w-6 shrink-0 text-info-500" />
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-950 dark:text-white">About datasheets</h3>
+                            <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                                Datasheets are included as linked references by default. Including them in the PDF will embed the files, increasing generation time and file size.
+                            </p>
+                        </div>
                     </div>
-                    <div>
-                        <h2 class="text-base font-semibold text-gray-950 dark:text-white">Unpriced Schedule</h2>
-                        <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">Schedule without pricing. Always available.</p>
-                    </div>
-                </div>
-
-                <div class="mt-4 space-y-3">
-                    <a href="{{ $this->getSchedulePdfUrl() }}" target="_blank" class="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md border border-gray-200 px-3 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">
-                        <x-heroicon-o-clipboard-document-list class="h-4 w-4" />
-                        Generate Unpriced PDF
+                    <a href="https://quote.tamlite.co.uk" target="_blank" rel="noopener noreferrer" class="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-gray-200 bg-white/70 px-4 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-100 dark:hover:bg-white/[0.06]">
+                        Learn more
+                        <x-heroicon-o-arrow-top-right-on-square class="h-4 w-4" />
                     </a>
-                    <a href="{{ $this->getUnpricedCsvExportUrl() }}" class="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md border border-gray-200 px-3 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">
-                        <x-heroicon-o-table-cells class="h-4 w-4" />
-                        Unpriced CSV
-                    </a>
-                    <label class="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
-                        <span class="font-medium">Include Datasheets</span>
-                        <input type="checkbox" class="sr-only" disabled>
-                        <span aria-hidden="true" class="relative inline-flex h-6 w-11 shrink-0 rounded-full bg-gray-300 opacity-60 transition dark:bg-white/20">
-                            <span class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition dark:bg-gray-500"></span>
-                        </span>
-                    </label>
-                </div>
-                </section>
-            @endif
-            </div>
+                </aside>
+            </section>
         @endif
     </div>
 </x-filament-panels::page>

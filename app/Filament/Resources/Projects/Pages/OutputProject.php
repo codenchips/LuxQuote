@@ -254,7 +254,7 @@ class OutputProject extends ViewRecord
             ->whereHas('area', fn ($query) => $query->where('project_revision_id', $revision->id))
             ->max('project_lines.updated_at');
 
-        return ($lastModifiedAt !== null ? Carbon::parse($lastModifiedAt) : $revision->updated_at)?->format('M d Y H:i');
+        return ($lastModifiedAt !== null ? Carbon::parse($lastModifiedAt) : $revision->updated_at)?->format('d/m/y H:i');
     }
 
     /**
@@ -784,6 +784,11 @@ class OutputProject extends ViewRecord
     public function canRequestQuoteApproval(): bool
     {
         return auth()->user()?->can('output.view') ?? false;
+    }
+
+    public function canViewValidation(): bool
+    {
+        return auth()->user()?->can('validation.view') ?? false;
     }
 
     public function canManageDocumentPacks(): bool

@@ -3,9 +3,9 @@
         <thead class="lux-table-column-head">
             <tr class="text-left text-xs font-bold uppercase text-slate-600 dark:text-slate-300">
                 <th class="w-[42%] px-4 py-3">Project name</th>
-                <th class="w-[12%] px-4 py-3">Rev</th>
-                <th class="w-[14%] px-4 py-3">Status</th>
-                <th class="w-[14%] px-4 py-3">Visibility</th>
+                <th class="w-[7%] px-4 py-3">Rev</th>
+                <th class="w-[17%] px-4 py-3">Status</th>
+                <th class="w-[16%] px-4 py-3">Visibility</th>
                 <th class="w-[18%] px-4 py-3 text-right">Last accessed</th>
             </tr>
         </thead>
@@ -20,7 +20,7 @@
                     <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ $row['revision'] }}</td>
                     <td class="px-4 py-3">
                         <span @class([
-                            'inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset',
+                            'inline-flex items-center whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset',
                             'bg-gray-50 text-gray-700 ring-gray-600/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20' => $row['statusColor'] === 'gray',
                             'bg-sky-50 text-sky-700 ring-sky-700/10 dark:bg-sky-400/10 dark:text-sky-300 dark:ring-sky-400/20' => $row['statusColor'] === 'info',
                             'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20' => $row['statusColor'] === 'warning',
@@ -31,7 +31,7 @@
                     </td>
                     <td class="px-4 py-3">
                         <span @class([
-                            'inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset',
+                            'inline-flex items-center whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset',
                             'bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20' => $row['visibilityColor'] === 'success',
                             'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20' => $row['visibilityColor'] === 'warning',
                             'bg-gray-50 text-gray-700 ring-gray-600/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20' => $row['visibilityColor'] === 'gray',
