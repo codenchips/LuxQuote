@@ -1,6 +1,6 @@
 # Company App — Project Status
 
-_Last updated: 30 June 2026_
+_Last updated: 1 July 2026_
 
 ---
 
@@ -136,9 +136,10 @@ salesforce_pdf_uploads
 |---|---|---|
 | `/products` | `ProductResource` | List only — no create/edit pages (data comes from API) |
 | `/projects` | `ProjectResource` | List + custom View page |
-| `/projects/{id}` | `ViewProject` (custom) | Main working page — see below |
-| `/projects/{id}/validation` | `ValidationProject` | Admin-only validation, warning approval, and duplicate merge |
-| `/projects/{id}/output` | `OutputProject` | Quote approval summary, quick PDF/CSV outputs, and document-pack builder |
+| `/projects/{project}` | `ViewProject` (custom) | Main working page — project URLs use `reference_number`; legacy numeric IDs still resolve as a fallback |
+| `/projects/{project}/validation` | `ValidationProject` | Admin-only validation, warning approval, and duplicate merge |
+| `/projects/{project}/output` | `OutputProject` | Quote approval summary, quick PDF/CSV outputs, and document-pack builder |
+| `/pdf-progress/{token}` | `ProjectPdfController::progress` | Authenticated polling endpoint for PDF-generation progress messages |
 | `/projects/{project}/document-packs/{documentPack}` | `DocumentPackController` | Authenticated combined-PDF download for a selected revision |
 | `/users` | `UserResource` | Admin-only create/edit/list |
 | `/activity-logs` | `ActivityLogResource` | Admin-only history table |
@@ -369,7 +370,7 @@ The project output page is available at `/projects/{id}/output`. It starts with 
 
 - **Quote status** — shows `Approval Required`, `Requested`, or `Approved`, and includes **Request Approval** when the active revision is not approved.
 - **Validation** — shows `Passed` or `Not passed`, plus **View Validation**. This entire section is hidden from users without `validation.view`.
-- **Datasheet note** — explains that outputs include links to product datasheets and that datasheets can later be embedded when the switches become functional.
+- **Datasheet controls** — quote and schedule generation can include merged datasheets when the Include datasheets switches are enabled.
 
 The output selector tabs are:
 
@@ -377,6 +378,24 @@ The output selector tabs are:
 - **Document Packs** — named, reusable project-level definitions that combine uploaded and generated PDFs into one download.
 
 Primary generation and request actions use Filament's orange primary button convention. The active Output tab uses an orange underline that works in light and dark mode.
+
+### PDF generation UX
+
+- Quote, schedule, dashboard output, and document-pack PDF links open through a shared generation dialog instead of leaving the user on a blank browser tab.
+- The dialog shows staged progress for normal single-PDF/document-pack generation so fast responses do not jump straight from a low percentage to complete.
+- When datasheets are included, the app passes a short progress token with the PDF request and polls `/pdf-progress/{token}` for live messages.
+- Datasheet progress is written server-side as the legacy Tamlite endpoint streams JSON chunks such as `step`, `total`, and `message`.
+- Progress is scoped by authenticated user ID plus token; one user cannot read another user's generation status.
+- Progress percentages are monotonic in the browser so fallback animation cannot fight streamed datasheet progress.
+
+### Datasheet PDF embedding
+
+- Include Datasheets is now functional for quote and schedule PDFs.
+- The app POSTs a form-encoded payload to `https://tamlite.co.uk/ci_index.php/download_schedule`; the `skus` field is a JSON string because the legacy endpoint does not accept a pure JSON request body.
+- The endpoint generates a combined datasheet PDF under the configured public base URL, then the app downloads it and appends it after the quote/schedule PDF with `qpdf`.
+- Quote/schedule content always stays first; datasheets are appended afterwards.
+- Merged files use filenames ending in `-with-datasheets.pdf`.
+- Salesforce PDF upload fingerprints include the Include Datasheets state so unchanged outputs are not uploaded again, while datasheet-inclusive outputs are tracked separately from non-datasheet outputs.
 
 ### Pack workflow
 
@@ -409,13 +428,15 @@ Primary generation and request actions use Filament's orange primary button conv
 - `DOCUMENT_PACK_MAX_UPLOAD_KB` (default `25600`)
 - `DOCUMENT_PACK_PROCESS_TIMEOUT` (default `60` seconds)
 
+`config/services.php` also carries the datasheet endpoint and public base URL used by `ProjectDatasheetPdfService`.
+
 ## Test Coverage
 
 | Test file | Area covered |
 |---|---|
 | `Feature/AuthenticationTest.php` | Login / auth flows |
 | `Feature/AdminProductResourceTest.php` | Filament Products list page (admin) |
-| `Feature/AdminProjectResourceTest.php` | ViewProject server-side revision/project scoping for line actions; paste products, create form gating, status badges, Activity Logs revision display |
+| `Feature/AdminProjectResourceTest.php` | ViewProject server-side revision/project scoping for line actions; paste products, create form gating, status badges, Activity Logs revision display, project reference-number URLs, output URLs, PDF progress endpoint, and datasheet PDF merge flow |
 | `Feature/AdminProjectValidationTest.php` | Revision validation, validated-lines table, manual flagging, automatic/explicit approval, Undo, Merge, revalidation, and approval locking |
 | `Feature/AdminDocumentPackTest.php` | Pack CRUD/order, uploaded PDF validation, revision-aware merge order, permissions, project ownership, cleanup, and quote-approval generation lock |
 | `Feature/AdminUserResourceTest.php` | Filament Users CRUD (admin) |
@@ -474,11 +495,29 @@ Tracked action types include project create/update/delete, revision creation, ar
 
 ---
 
-## Salesforce Integration (updated 29 May 2026)
+## Application Timezone
+
+The app should run with:
+
+```dotenv
+APP_TIMEZONE=Europe/London
+```
+
+`Europe/London` is intentional rather than a fixed `GMT+1` offset because PHP will automatically switch between GMT and BST. After changing timezone config on any environment, clear cached config before checking visible timestamps.
+
+Local verification:
+
+```bash
+vendor/bin/sail artisan optimize:clear
+vendor/bin/sail artisan config:show app.timezone
+vendor/bin/sail artisan tinker --execute 'echo now()->format("Y-m-d H:i T").PHP_EOL;'
+```
+
+## Salesforce Integration (updated 1 July 2026)
 
 ### Status: Salesforce Opportunities page live; project import UX built
 
-Authentication uses **OAuth2 Client Credentials**. The service is bound as a singleton in `AppServiceProvider`. Gate `view-salesforce` restricts the Salesforce page to Admin users only.
+Authentication currently uses **OAuth2 Client Credentials**. The service is bound as a singleton in `AppServiceProvider`. Gate `view-salesforce` restricts the Salesforce page to Admin users only. A planned next task is to switch authentication to Salesforce JWT bearer flow before moving fully to the live Salesforce environment.
 
 Successful bearer-token responses are cached for their reported lifetime, minus a 60-second safety buffer, so normal Salesforce reads and writes do not request a fresh OAuth token for every service call.
 
@@ -582,15 +621,18 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 30 June 2026)
+## Known Gaps / Next Steps (as of 1 July 2026)
 
+- [ ] Add the short legal blurb into the footer area of the schedule PDF, on the final schedule page only
+- [ ] Add the full legal page as the final generated page for quote/schedule PDFs, before any appended datasheets
+- [ ] Make the full legal page available as a generated/template document in the Document Pack builder
+- [ ] Change Salesforce authentication from OAuth2 Client Credentials flow to JWT bearer flow
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
 - [ ] Document-pack template sources and additional roles (for example case studies) are planned but not yet implemented
 - [ ] Review the Output page visually in dark mode across desktop widths
 - [ ] Review the Output page in light mode, especially orange actions, tab underline, status chips, and disabled buttons
 - [ ] Check mobile/tablet layout for the top status panel and the two document cards
-- [ ] Decide whether Include Datasheets switches should stay disabled, become functional, or be hidden until implemented
 - [ ] Add browser-level coverage for the Output page layout if visual regressions continue
 - [ ] Standardize a shared Blade/CSS helper for Filament-style primary buttons used outside native Filament actions
 - [ ] Consider applying the same shared button helper to other custom modals and project-page actions
@@ -601,6 +643,18 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
   - `vendor/bin/sail artisan test --compact tests/Feature/AdminProjectValidationTest.php`
 
 ---
+
+## Features completed — 1 July 2026
+
+- **Project reference URLs**: Project routes now prefer `reference_number` in URLs, for example `/projects/20930`, while legacy numeric database IDs still resolve as a fallback.
+- **Datasheet embedding**: Include Datasheets is functional for quote and schedule PDFs. The app calls the legacy datasheet endpoint, downloads the generated datasheet PDF, and merges it after the quote/schedule output.
+- **Datasheet endpoint compatibility**: The datasheet request is sent as form data with `skus` as a JSON string, matching the legacy endpoint's expected shape and avoiding blank `.pdf` output.
+- **Salesforce PDF upload tracking**: Quote and schedule PDF uploads use `salesforce_pdf_uploads` fingerprints to avoid duplicate uploads for unchanged outputs; datasheet-inclusive outputs are fingerprinted separately.
+- **PDF generation dialog**: PDF-generating links now show a modal with progress messaging before opening/downloading the generated file.
+- **Live datasheet progress**: Datasheet generation streams progress into the modal through `/pdf-progress/{token}` and uses monotonic browser-side progress to avoid the bar moving backwards.
+- **Single-PDF progress polish**: Non-streaming PDF downloads use staged fallback progress messages so fast downloads do not appear stuck and then abruptly complete.
+- **Timezone correction**: The app timezone is set to `Europe/London` via `APP_TIMEZONE`, so visible times follow BST/GMT correctly.
+- **Output PDF notifications**: Successful Salesforce upload notifications from quote/schedule PDF routes were removed to avoid late, misleading notifications; failures still notify.
 
 ## Features completed — 30 June 2026
 

@@ -37,6 +37,21 @@ docker compose exec laravel.test php artisan migrate --force
 
 Use `--force` for production migrations to bypass Laravel's interactive production prompt.
 
+## Environment Configuration
+
+Production should include:
+
+```dotenv
+APP_TIMEZONE=Europe/London
+```
+
+Use `Europe/London`, not a fixed `GMT+1` offset, so PHP automatically handles GMT/BST changes. After changing `.env` or deploying a config change, clear Laravel's cached config:
+
+```bash
+docker compose exec laravel.test php artisan optimize:clear
+docker compose exec laravel.test php artisan config:show app.timezone
+```
+
 ## Reboot Recovery
 
 The production Docker services should survive VPS reboots. `compose.yaml` sets `restart: unless-stopped` for the app, MySQL, Redis, Meilisearch, and Mailpit services. The GitHub Actions runner container is also started with `--restart unless-stopped`.
@@ -163,6 +178,10 @@ DOCUMENT_PACK_MAX_UPLOAD_KB=25600
 DOCUMENT_PACK_PROCESS_TIMEOUT=60
 ```
 
+Datasheet-inclusive quote/schedule PDFs also require the datasheet endpoint configuration in `config/services.php` / `.env`. The app posts to the legacy Tamlite endpoint, downloads the generated datasheet PDF from the public merge directory, then appends it after the generated quote/schedule PDF with `qpdf`.
+
+The legacy datasheet endpoint streams JSON progress chunks while it works. The app stores those progress messages temporarily in cache for the authenticated user's browser to poll through `/pdf-progress/{token}`.
+
 ## Database Restore Workflow
 
 When restoring a raw SQL backup into the containerized MySQL service, use this exact sequence to avoid duplicate or stray table errors:
@@ -171,6 +190,24 @@ When restoring a raw SQL backup into the containerized MySQL service, use this e
 docker compose exec laravel.test php artisan db:wipe
 docker compose exec -T mysql mysql -u sail -ppassword laravel < backup.sql
 docker compose exec laravel.test php artisan migrate --force
+```
+
+For a gzipped SQL backup already placed in the app root as `backup.gz`, use:
+
+```bash
+cd /home/tamliteco/luxquote.app
+docker compose exec laravel.test sh -lc 'ls -lh /var/www/html/backup.gz && gzip -t /var/www/html/backup.gz'
+docker compose exec laravel.test php artisan optimize:clear
+docker compose exec laravel.test php artisan db:wipe --force
+docker compose exec -T laravel.test sh -lc 'gzip -dc /var/www/html/backup.gz' | docker compose exec -T mysql mysql -u sail -ppassword laravel
+docker compose exec laravel.test php artisan migrate --force
+docker compose exec laravel.test php artisan optimize:clear
+```
+
+If restoring locally with Sail from `/home/tqdeanp/development/company-app`, the equivalent import command is:
+
+```bash
+vendor/bin/sail exec -T laravel.test sh -lc 'gzip -dc /var/www/html/backup.gz' | vendor/bin/sail mysql laravel
 ```
 
 ## Deployment Method
