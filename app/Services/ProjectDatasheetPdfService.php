@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Project;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -21,6 +22,8 @@ class ProjectDatasheetPdfService
         ProjectRevision $revision,
         string $documentContent,
         string $filename,
+        ?string $progressToken = null,
+        ?int $progressUserId = null,
     ): array {
         $workingDirectory = storage_path('app/private/datasheet-merge-temp/'.Str::uuid());
         $outputDirectory = storage_path('app/private/datasheet-merge-outputs');
@@ -35,11 +38,15 @@ class ProjectDatasheetPdfService
             File::put($documentPath, $documentContent);
 
             $projectSlug = $this->projectSlug($project);
-            $datasheetFilename = $this->requestDatasheetGeneration($project, $revision, $projectSlug);
+            $this->reportProgress($progressToken, $progressUserId, 5, 'Preparing schedule PDF...');
+            $datasheetFilename = $this->requestDatasheetGeneration($project, $revision, $projectSlug, $progressToken, $progressUserId);
+            $this->reportProgress($progressToken, $progressUserId, 82, 'Downloading generated datasheets...');
             $this->downloadDatasheets($datasheetFilename, $datasheetsPath);
+            $this->reportProgress($progressToken, $progressUserId, 90, 'Merging datasheets into your PDF...');
             $this->assertValidPdf($documentPath, 'The generated document PDF could not be merged.');
             $this->assertValidPdf($datasheetsPath, 'The datasheets PDF could not be merged.');
             $this->merge([$documentPath, $datasheetsPath], $mergedPath);
+            $this->reportProgress($progressToken, $progressUserId, 100, 'PDF ready.', true);
 
             return [
                 'path' => $mergedPath,
@@ -55,18 +62,24 @@ class ProjectDatasheetPdfService
         return File::get($path);
     }
 
-    private function requestDatasheetGeneration(Project $project, ProjectRevision $revision, string $projectSlug): string
-    {
+    private function requestDatasheetGeneration(
+        Project $project,
+        ProjectRevision $revision,
+        string $projectSlug,
+        ?string $progressToken,
+        ?int $progressUserId,
+    ): string {
         $response = Http::asForm()
             ->acceptJson()
             ->timeout((int) config('services.datasheets.timeout', 60))
+            ->withOptions(['stream' => true])
             ->post((string) config('services.datasheets.endpoint'), $this->formPayload($project, $revision, $projectSlug));
 
         if (! $response->successful()) {
             throw new RuntimeException('The datasheet PDF could not be generated.');
         }
 
-        $result = $this->generationResult($response->body());
+        $result = $this->readGenerationResult($response, $progressToken, $progressUserId);
 
         if (! $result['complete']) {
             throw new RuntimeException('The datasheet PDF did not finish generating.');
@@ -86,6 +99,83 @@ class ProjectDatasheetPdfService
         }
 
         File::put($destinationPath, $response->body());
+    }
+
+    /**
+     * @return array{complete: bool, filename: string|null}
+     */
+    private function readGenerationResult(object $response, ?string $progressToken, ?int $progressUserId): array
+    {
+        $body = $response->toPsrResponse()->getBody();
+        $buffer = '';
+        $allContent = '';
+        $result = ['complete' => false, 'filename' => null];
+
+        while (! $body->eof()) {
+            $chunk = $body->read(1024);
+
+            if ($chunk === '') {
+                usleep(50_000);
+
+                continue;
+            }
+
+            $allContent .= $chunk;
+            $buffer .= $chunk;
+
+            while (preg_match('/\{[^{}]*\}/', $buffer, $match, PREG_OFFSET_CAPTURE)) {
+                $json = $match[0][0];
+                $offset = $match[0][1];
+                $buffer = substr($buffer, $offset + strlen($json));
+                $payload = json_decode($json, true);
+
+                if (! is_array($payload)) {
+                    continue;
+                }
+
+                $this->reportGenerationPayload($payload, $progressToken, $progressUserId);
+
+                if (($payload['complete'] ?? false) === true) {
+                    $filename = $payload['filename'] ?? null;
+                    $result = [
+                        'complete' => true,
+                        'filename' => filled($filename) ? basename((string) $filename) : null,
+                    ];
+                }
+            }
+        }
+
+        if (! $result['complete']) {
+            return $this->generationResult($allContent);
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function reportGenerationPayload(array $payload, ?string $progressToken, ?int $progressUserId): void
+    {
+        if (($payload['complete'] ?? false) === true) {
+            $this->reportProgress($progressToken, $progressUserId, 80, 'Datasheets generated.');
+
+            return;
+        }
+
+        $step = isset($payload['step']) ? (int) $payload['step'] : null;
+        $total = isset($payload['total']) ? max(1, (int) $payload['total']) : null;
+
+        if ($step === null || $total === null) {
+            return;
+        }
+
+        $percent = 10 + (int) floor((min($step + 1, $total) / $total) * 68);
+        $message = filled($payload['message'] ?? null)
+            ? (string) $payload['message']
+            : "Generating datasheet {$step} of {$total}...";
+
+        $this->reportProgress($progressToken, $progressUserId, $percent, $message);
     }
 
     /**
@@ -232,5 +322,18 @@ class ProjectDatasheetPdfService
     private function qpdfBinary(): string
     {
         return (string) config('document-packs.qpdf_binary', 'qpdf');
+    }
+
+    private function reportProgress(?string $token, ?int $userId, int $percent, string $message, bool $complete = false): void
+    {
+        if (blank($token) || $userId === null || ! preg_match('/^[A-Za-z0-9_-]{16,80}$/', $token)) {
+            return;
+        }
+
+        Cache::put('pdf-progress:'.$userId.':'.$token, [
+            'percent' => max(0, min(100, $percent)),
+            'message' => $message,
+            'complete' => $complete,
+        ], now()->addMinutes(15));
     }
 }

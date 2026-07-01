@@ -23,6 +23,7 @@ use App\Models\User;
 use App\Services\ProjectSchedulePdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -896,6 +897,34 @@ class AdminProjectResourceTest extends TestCase
 
         $this->assertStringContainsString('include_datasheets=1', $component->instance()->getSchedulePdfUrl());
         $this->assertStringContainsString('include_datasheets=1', $component->instance()->getQuotePdfUrl());
+    }
+
+    public function test_pdf_progress_endpoint_returns_only_the_authenticated_users_progress(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $otherUser = User::factory()->create();
+        $token = 'progress-token-123';
+
+        Cache::put('pdf-progress:'.$admin->id.':'.$token, [
+            'percent' => 54,
+            'message' => 'Page 2 of 5 generated.',
+            'complete' => false,
+        ], now()->addMinutes(5));
+
+        Cache::put('pdf-progress:'.$otherUser->id.':'.$token, [
+            'percent' => 99,
+            'message' => 'Wrong user progress.',
+            'complete' => true,
+        ], now()->addMinutes(5));
+
+        $this->actingAs($admin)
+            ->getJson(route('pdf.progress', ['token' => $token]))
+            ->assertOk()
+            ->assertExactJson([
+                'percent' => 54,
+                'message' => 'Page 2 of 5 generated.',
+                'complete' => false,
+            ]);
     }
 
     public function test_schedule_pdf_can_append_remote_datasheets(): void

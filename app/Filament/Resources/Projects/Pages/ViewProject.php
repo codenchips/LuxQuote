@@ -191,6 +191,11 @@ class ViewProject extends ViewRecord
                     'project' => $this->record,
                     'revision' => $this->viewingRevisionId,
                 ]))
+                ->extraAttributes([
+                    'data-pdf-generation' => true,
+                    'data-pdf-title' => 'Generating schedule PDF',
+                    'data-pdf-message' => 'Your schedule PDF is being generated. This can take a while.',
+                ])
                 ->openUrlInNewTab(),
         ];
     }

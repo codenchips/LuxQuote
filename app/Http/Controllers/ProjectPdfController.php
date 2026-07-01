@@ -12,7 +12,9 @@ use App\Services\ProjectSchedulePdfService;
 use App\Services\SalesforcePdfUploadTracker;
 use App\Services\SalesforceService;
 use Filament\Notifications\Notification;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
@@ -182,6 +184,17 @@ class ProjectPdfController extends Controller
     public function unpricedCsv(Request $request, Project $project): StreamedResponse
     {
         return $this->streamCsv($request, $project, false);
+    }
+
+    public function progress(Request $request, string $token): JsonResponse
+    {
+        abort_if(blank($token) || ! preg_match('/^[A-Za-z0-9_-]{16,80}$/', $token), 404);
+
+        return response()->json(Cache::get($this->progressCacheKey($request, $token), [
+            'percent' => 8,
+            'message' => 'Starting PDF generation...',
+            'complete' => false,
+        ]));
     }
 
     private function streamCsv(Request $request, Project $project, bool $includePrices): StreamedResponse
@@ -377,7 +390,14 @@ class ProjectPdfController extends Controller
             return null;
         }
 
-        return app(ProjectDatasheetPdfService::class)->appendDatasheets($project, $revision, $pdfContent(), $filename);
+        return app(ProjectDatasheetPdfService::class)->appendDatasheets(
+            project: $project,
+            revision: $revision,
+            documentContent: $pdfContent(),
+            filename: $filename,
+            progressToken: $request->string('pdf_progress_token')->toString(),
+            progressUserId: $request->user()?->id,
+        );
     }
 
     /**
@@ -394,5 +414,10 @@ class ProjectPdfController extends Controller
     {
         return $request->boolean('salesforce_upload')
             && ($project->salesforce_project || filled($project->salesforce_id));
+    }
+
+    private function progressCacheKey(Request $request, string $token): string
+    {
+        return 'pdf-progress:'.$request->user()->id.':'.$token;
     }
 }

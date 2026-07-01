@@ -42,7 +42,16 @@
                     <td class="px-2 py-3 whitespace-nowrap text-gray-700 dark:text-gray-300">{{ $row['revision'] }}</td>
                     <td class="px-3 py-3 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{{ $row['generatedAt'] }}</td>
                     <td class="px-2 py-3 text-center whitespace-nowrap">
-                        <a href="{{ $row['url'] }}" class="inline-flex align-middle text-primary-600 transition hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300" target="_blank" rel="noopener" aria-label="Open in new window">
+                        <a
+                            href="{{ $row['url'] }}"
+                            class="inline-flex align-middle text-primary-600 transition hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                            target="_blank"
+                            rel="noopener"
+                            aria-label="Open in new window"
+                            data-pdf-generation
+                            data-pdf-title="Generating PDF"
+                            data-pdf-message="Your PDF is being generated. This can take a while."
+                        >
                             <x-heroicon-o-arrow-top-right-on-square class="h-4 w-4" />
                             <span class="sr-only">Open in new window</span>
                         </a>

@@ -14,6 +14,9 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/projects/{project}/pdf/quote', [ProjectPdfController::class, 'quote'])
         ->name('projects.pdf.quote');
 
+    Route::get('/pdf-progress/{token}', [ProjectPdfController::class, 'progress'])
+        ->name('pdf.progress');
+
     Route::get('/projects/{project}/export/csv', [ProjectPdfController::class, 'csv'])
         ->name('projects.export.csv');
 

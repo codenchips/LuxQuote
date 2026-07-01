@@ -514,8 +514,10 @@
                     @if($documentPackDownloadUrl)
                         <a
                             data-testid="generate-document-pack"
+                            data-pdf-generation
+                            data-pdf-title="Generating document pack"
+                            data-pdf-message="Your document pack is being generated. Large packs can take a while."
                             href="{{ $documentPackDownloadUrl }}"
-                            target="_blank"
                             class="fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action h-10 w-full whitespace-nowrap sm:w-56"
                         >
                             <x-heroicon-o-document-arrow-down class="h-4 w-4" />
@@ -578,7 +580,14 @@
 
                                 <div class="mt-4 space-y-3">
                                     @if($validationPassed && $quoteApproved)
-                                        <a href="{{ $this->getQuotePdfUrl() }}" target="_blank" class="{{ $primaryButtonClasses }}">
+                                        <a
+                                            href="{{ $this->getQuotePdfUrl() }}"
+                                            target="_blank"
+                                            data-pdf-generation
+                                            data-pdf-title="Generating quote PDF"
+                                            data-pdf-message="Your quote PDF is being generated. Including datasheets can take a while."
+                                            class="{{ $primaryButtonClasses }}"
+                                        >
                                             Generate Quote PDF
                                         </a>
                                     @else
@@ -637,7 +646,14 @@
                                 </label>
 
                                 <div class="mt-4 space-y-3">
-                                    <a href="{{ $this->getSchedulePdfUrl() }}" target="_blank" class="{{ $primaryButtonClasses }}">
+                                    <a
+                                        href="{{ $this->getSchedulePdfUrl() }}"
+                                        target="_blank"
+                                        data-pdf-generation
+                                        data-pdf-title="Generating schedule PDF"
+                                        data-pdf-message="Your schedule PDF is being generated. Including datasheets can take a while."
+                                        class="{{ $primaryButtonClasses }}"
+                                    >
                                         Generate Schedule PDF
                                     </a>
                                     <a href="{{ $this->getUnpricedCsvExportUrl() }}" class="{{ $secondaryButtonClasses }}">
