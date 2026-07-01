@@ -8,6 +8,7 @@ document.addEventListener('click', async (event) => {
     event.preventDefault();
 
     const modal = window.luxQuotePdfGenerationModal ??= createPdfGenerationModal();
+    const startedAt = Date.now();
     const title = link.dataset.pdfTitle || 'Generating PDF';
     const message = link.dataset.pdfMessage || 'PDF generation is in progress. This can take a while.';
     const openInNewTab = link.target === '_blank';
@@ -33,11 +34,11 @@ document.addEventListener('click', async (event) => {
             throw new Error(`PDF generation failed with status ${response.status}.`);
         }
 
-        modal.update(96, 'Opening PDF...');
-
         const blob = await response.blob();
         const filename = filenameFromResponse(response) || link.dataset.pdfFilename || 'luxquote.pdf';
         const objectUrl = URL.createObjectURL(blob);
+
+        await finishProgress(modal, Date.now() - startedAt);
 
         if (openInNewTab) {
             const opened = window.open(objectUrl, '_blank', 'noopener');
@@ -51,6 +52,7 @@ document.addEventListener('click', async (event) => {
 
         setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
         modal.update(100, 'PDF ready.');
+        await sleep(300);
         modal.close();
     } catch (error) {
         modal.fail(error instanceof Error ? error.message : 'The PDF could not be generated.');
@@ -90,6 +92,8 @@ function createPdfGenerationModal() {
     const spinner = wrapper.querySelector('.animate-spin');
     const bar = wrapper.querySelector('[data-pdf-modal-bar]');
     const percent = wrapper.querySelector('[data-pdf-modal-percent]');
+    let currentPercent = 8;
+    let liveProgress = false;
 
     close.addEventListener('click', () => wrapper.classList.add('hidden'));
 
@@ -97,14 +101,23 @@ function createPdfGenerationModal() {
         open(nextTitle, nextMessage) {
             title.textContent = nextTitle;
             message.textContent = nextMessage;
-            this.update(8, nextMessage);
+            currentPercent = 0;
+            liveProgress = false;
+            this.update(8, nextMessage, { force: true });
             close.classList.add('hidden');
             spinner.classList.remove('hidden');
             wrapper.classList.remove('hidden');
             wrapper.classList.add('flex');
         },
-        update(nextPercent, nextMessage) {
-            const value = Math.max(0, Math.min(100, Number(nextPercent) || 0));
+        update(nextPercent, nextMessage, options = {}) {
+            const requestedValue = Math.max(0, Math.min(100, Number(nextPercent) || 0));
+            const value = options.force ? requestedValue : Math.max(currentPercent, requestedValue);
+
+            currentPercent = value;
+
+            if (options.live) {
+                liveProgress = true;
+            }
 
             bar.style.width = `${value}%`;
             percent.textContent = `${Math.round(value)}%`;
@@ -117,11 +130,15 @@ function createPdfGenerationModal() {
             wrapper.classList.add('hidden');
             wrapper.classList.remove('flex');
         },
+        hasLiveProgress() {
+            return liveProgress;
+        },
         fail(nextMessage) {
             title.textContent = 'PDF generation failed';
             message.textContent = nextMessage;
             bar.style.width = '100%';
             percent.textContent = '';
+            currentPercent = 100;
             close.classList.remove('hidden');
             spinner.classList.add('hidden');
         },
@@ -153,11 +170,29 @@ function downloadBlob(objectUrl, filename) {
 
 function startFallbackProgress(modal) {
     let progress = 8;
+    const stages = [
+        [18, 'Preparing PDF...'],
+        [34, 'Rendering document pages...'],
+        [52, 'Checking generated file...'],
+        [68, 'Assembling download...'],
+        [82, 'Nearly ready...'],
+    ];
+    let stage = 0;
 
     return setInterval(() => {
-        progress = Math.min(progress + Math.max(1, (84 - progress) * 0.08), 84);
-        modal.update(progress);
-    }, 900);
+        if (modal.hasLiveProgress()) {
+            return;
+        }
+
+        const [target, message] = stages[stage] ?? [88, 'Finalising PDF...'];
+
+        progress = Math.min(progress + Math.max(1, (target - progress) * 0.22), target);
+        modal.update(progress, message);
+
+        if (progress >= target - 0.5 && stage < stages.length - 1) {
+            stage += 1;
+        }
+    }, 700);
 }
 
 function startProgressPolling(token, modal) {
@@ -182,10 +217,40 @@ function startProgressPolling(token, modal) {
             const progress = await response.json();
 
             if (typeof progress.percent !== 'undefined') {
-                modal.update(progress.percent, progress.message);
+                const hasLiveProgress = progress.percent > 8 || progress.complete || progress.message !== 'Starting PDF generation...';
+
+                modal.update(progress.percent, progress.message, { live: hasLiveProgress });
             }
         } catch {
             // Keep the fallback bar moving if polling fails.
         }
     }, 700);
+}
+
+async function finishProgress(modal, elapsedMs) {
+    const animationStartedAt = Date.now();
+    const stages = [
+        [42, 'Rendering PDF pages...', 220],
+        [66, 'Assembling PDF...', 220],
+        [86, 'Finalising download...', 260],
+        [96, 'Opening PDF...', 180],
+    ];
+    const minimumVisibleMs = 1400;
+
+    for (const [percent, message, delayMs] of stages) {
+        modal.update(percent, message);
+        await sleep(delayMs);
+    }
+
+    const totalVisibleMs = elapsedMs + (Date.now() - animationStartedAt);
+
+    if (totalVisibleMs < minimumVisibleMs) {
+        await sleep(minimumVisibleMs - totalVisibleMs);
+    }
+}
+
+function sleep(milliseconds) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, milliseconds);
+    });
 }
