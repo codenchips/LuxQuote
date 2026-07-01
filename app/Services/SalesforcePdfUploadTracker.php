@@ -15,17 +15,23 @@ class SalesforcePdfUploadTracker
     /**
      * @throws JsonException
      */
-    public function fingerprint(Project $project, ProjectRevision $revision, string $documentType, bool $showPrices): string
-    {
+    public function fingerprint(
+        Project $project,
+        ProjectRevision $revision,
+        string $documentType,
+        bool $showPrices,
+        bool $includeDatasheets = false,
+    ): string {
         $areas = ProjectArea::where('project_revision_id', $revision->id)
             ->with(['lines' => fn ($query) => $query->orderBy('sort_order')])
             ->orderBy('sort_order')
             ->get();
 
         $payload = [
-            'version' => 1,
+            'version' => 2,
             'document_type' => $documentType,
             'show_prices' => $showPrices,
+            'include_datasheets' => $includeDatasheets,
             'template_hash' => $this->templateHash(),
             'project' => [
                 'id' => $project->id,

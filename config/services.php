@@ -41,4 +41,10 @@ return [
         'url' => env('SALESFORCE_BASE_URL'),
     ],
 
+    'datasheets' => [
+        'endpoint' => env('DATASHEET_MERGE_ENDPOINT', 'https://tamlite.co.uk/ci_index.php/download_schedule'),
+        'public_base_url' => env('DATASHEET_MERGE_PUBLIC_BASE_URL', 'https://tamlite.co.uk/pdfmerge'),
+        'timeout' => (int) env('DATASHEET_MERGE_TIMEOUT', 60),
+    ],
+
 ];

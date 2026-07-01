@@ -7,12 +7,14 @@ use App\Enums\ProjectVisibility;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectRevision;
+use App\Services\ProjectDatasheetPdfService;
 use App\Services\ProjectSchedulePdfService;
 use App\Services\SalesforcePdfUploadTracker;
 use App\Services\SalesforceService;
 use Filament\Notifications\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
@@ -33,16 +35,38 @@ class ProjectPdfController extends Controller
         $pdf = app(ProjectSchedulePdfService::class);
         $filename = $pdf->filename($project, $revision);
         $builder = $pdf->builder($project, $revision);
+        $pdfContent = null;
+
+        $datasheetPdf = $this->datasheetPdf(
+            request: $request,
+            project: $project,
+            revision: $revision,
+            pdfContent: fn (): string => $pdf->contentFromBuilder($builder),
+            filename: $filename,
+        );
+
+        if ($datasheetPdf !== null) {
+            $filename = $datasheetPdf['filename'];
+            $pdfContent = app(ProjectDatasheetPdfService::class)->content($datasheetPdf['path']);
+        }
 
         if ($this->shouldUploadPdfToSalesforce($request, $project)) {
+            $pdfContent ??= $pdf->contentFromBuilder($builder);
+
             $this->uploadPdfToSalesforce(
                 project: $project,
                 revision: $revision,
                 filename: $filename,
-                pdfContent: $pdf->contentFromBuilder($builder),
+                pdfContent: $pdfContent,
                 documentLabel: 'Lighting Schedule',
                 documentType: 'schedule',
-                fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint($project, $revision, 'schedule', false),
+                fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint(
+                    $project,
+                    $revision,
+                    'schedule',
+                    false,
+                    $request->boolean('include_datasheets'),
+                ),
             );
         }
 
@@ -57,6 +81,10 @@ class ProjectPdfController extends Controller
                 'filename' => $filename,
             ],
         ]);
+
+        if ($datasheetPdf !== null) {
+            return $this->downloadMergedPdf($datasheetPdf);
+        }
 
         return $builder
             ->inline($filename)
@@ -85,16 +113,38 @@ class ProjectPdfController extends Controller
         $pdf = app(ProjectSchedulePdfService::class);
         $filename = $pdf->quoteFilename($project, $revision);
         $builder = $pdf->quoteBuilder($project, $revision);
+        $pdfContent = null;
+
+        $datasheetPdf = $this->datasheetPdf(
+            request: $request,
+            project: $project,
+            revision: $revision,
+            pdfContent: fn (): string => $pdf->contentFromBuilder($builder),
+            filename: $filename,
+        );
+
+        if ($datasheetPdf !== null) {
+            $filename = $datasheetPdf['filename'];
+            $pdfContent = app(ProjectDatasheetPdfService::class)->content($datasheetPdf['path']);
+        }
 
         if ($this->shouldUploadPdfToSalesforce($request, $project)) {
+            $pdfContent ??= $pdf->contentFromBuilder($builder);
+
             $this->uploadPdfToSalesforce(
                 project: $project,
                 revision: $revision,
                 filename: $filename,
-                pdfContent: $pdf->contentFromBuilder($builder),
+                pdfContent: $pdfContent,
                 documentLabel: 'Lighting Quote',
                 documentType: 'quote',
-                fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint($project, $revision, 'quote', true),
+                fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint(
+                    $project,
+                    $revision,
+                    'quote',
+                    true,
+                    $request->boolean('include_datasheets'),
+                ),
             );
         }
 
@@ -111,6 +161,10 @@ class ProjectPdfController extends Controller
         ]);
 
         $project->markQuoted($revision);
+
+        if ($datasheetPdf !== null) {
+            return $this->downloadMergedPdf($datasheetPdf);
+        }
 
         return $builder
             ->inline($filename)
@@ -307,6 +361,33 @@ class ProjectPdfController extends Controller
             ],
         ]);
 
+    }
+
+    /**
+     * @return array{path: string, filename: string}|null
+     */
+    private function datasheetPdf(
+        Request $request,
+        Project $project,
+        ProjectRevision $revision,
+        callable $pdfContent,
+        string $filename,
+    ): ?array {
+        if (! $request->boolean('include_datasheets')) {
+            return null;
+        }
+
+        return app(ProjectDatasheetPdfService::class)->appendDatasheets($project, $revision, $pdfContent(), $filename);
+    }
+
+    /**
+     * @param  array{path: string, filename: string}  $pdf
+     */
+    private function downloadMergedPdf(array $pdf): BinaryFileResponse
+    {
+        return response()
+            ->download($pdf['path'], $pdf['filename'], ['Content-Type' => 'application/pdf'])
+            ->deleteFileAfterSend(true);
     }
 
     private function shouldUploadPdfToSalesforce(Request $request, Project $project): bool

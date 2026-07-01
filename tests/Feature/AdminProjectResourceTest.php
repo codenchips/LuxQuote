@@ -871,6 +871,236 @@ class AdminProjectResourceTest extends TestCase
             ]), false);
     }
 
+    public function test_output_pdf_urls_include_datasheet_flag_when_enabled(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'DS-URL',
+        ]);
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id]);
+
+        $this->assertStringNotContainsString('include_datasheets', $component->instance()->getSchedulePdfUrl());
+
+        $component
+            ->set('includeScheduleDatasheets', true)
+            ->set('includeQuoteDatasheets', true);
+
+        $this->assertStringContainsString('include_datasheets=1', $component->instance()->getSchedulePdfUrl());
+        $this->assertStringContainsString('include_datasheets=1', $component->instance()->getQuotePdfUrl());
+    }
+
+    public function test_schedule_pdf_can_append_remote_datasheets(): void
+    {
+        config([
+            'services.datasheets.endpoint' => 'https://tamlite.co.uk/ci_index.php/download_schedule',
+            'services.datasheets.public_base_url' => 'https://tamlite.co.uk/pdfmerge',
+        ]);
+
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Datasheet Project',
+            'reference_number' => 'DS-001',
+        ]);
+        $area = $project->activeRevision->areas()->first();
+        $product = Product::factory()->create([
+            'site' => 'tamlite',
+            'sku' => 'TAM-SKU',
+        ]);
+
+        $area->lines()->createMany([
+            [
+                'product_id' => $product->id,
+                'code' => 'TAM-SKU',
+                'ref' => 'A1',
+                'description' => 'Tamlite line',
+                'qty' => 2,
+                'type' => ProjectLineType::Standard->value,
+                'notes' => 'Fit near door',
+                'sort_order' => 0,
+            ],
+            [
+                'code' => 'CUSTOM-SKU',
+                'ref' => '',
+                'description' => 'Custom line',
+                'qty' => 1,
+                'type' => ProjectLineType::Custom->value,
+                'notes' => null,
+                'sort_order' => 1,
+            ],
+        ]);
+
+        $this->instance(ProjectSchedulePdfService::class, new class
+        {
+            public function filename(Project $project, ProjectRevision $revision): string
+            {
+                return 'schedule-DS-001-P0.pdf';
+            }
+
+            public function builder(Project $project, ProjectRevision $revision): object
+            {
+                return new class
+                {
+                    public function inline(string $filename): self
+                    {
+                        return $this;
+                    }
+
+                    public function toResponse($request)
+                    {
+                        return response('fake pdf');
+                    }
+                };
+            }
+
+            public function contentFromBuilder(object $builder): string
+            {
+                return AdminProjectResourceTest::pdfFixtureContent();
+            }
+        });
+
+        Http::fake(function (Request $request) {
+            if ($request->url() === 'https://tamlite.co.uk/ci_index.php/download_schedule') {
+                return Http::response(str_repeat(' ', 1024).implode("\n", [
+                    '{"step":0,"total":2,"message":"Page 0 of 2 generated."}',
+                    '{"step":1,"total":2,"message":"Page 1 of 2 generated."}',
+                    '{"complete":true,"message":"Processing completed!","filename":"datasheet-project.pdf"}',
+                ]));
+            }
+
+            if ($request->url() === 'https://tamlite.co.uk/pdfmerge/datasheet-project.pdf') {
+                return Http::response(self::pdfFixtureContent(), 200, [
+                    'Content-Type' => 'application/pdf',
+                ]);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $this->get(route('projects.pdf.schedule', [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+            'include_datasheets' => true,
+        ]))
+            ->assertOk()
+            ->assertDownload('schedule-DS-001-P0-with-datasheets.pdf');
+
+        $datasheetRequest = Http::recorded()
+            ->map(fn (array $record) => $record[0])
+            ->first(fn (Request $request): bool => $request->url() === 'https://tamlite.co.uk/ci_index.php/download_schedule');
+
+        $this->assertNotNull($datasheetRequest);
+        $this->assertFalse($datasheetRequest->isJson());
+        $this->assertSame('datasheet-project', $datasheetRequest->data()['project_slug']);
+        $this->assertSame(0, $datasheetRequest->data()['project_version']);
+        $this->assertSame('Datasheet Project', $datasheetRequest->data()['info_project_name']);
+        $this->assertSame('DS-001', $datasheetRequest->data()['info_project_id']);
+        $this->assertTrue($datasheetRequest->data()['include_datasheets']);
+        $this->assertFalse($datasheetRequest->data()['include_schedule']);
+        $this->assertJson($datasheetRequest->data()['skus']);
+        $this->assertSame([
+            [
+                'qty' => 2,
+                'sku' => 'TAM-SKU',
+                'ref' => 'A1',
+                'note' => 'Fit near door',
+                'brand' => 'Tamlite',
+            ],
+            [
+                'qty' => 1,
+                'sku' => 'CUSTOM-SKU',
+                'ref' => '',
+                'note' => null,
+                'brand' => 'Custom',
+            ],
+        ], json_decode($datasheetRequest->data()['skus'], true, 512, JSON_THROW_ON_ERROR));
+    }
+
+    public function test_quote_pdf_can_append_remote_datasheets(): void
+    {
+        config([
+            'services.datasheets.endpoint' => 'https://tamlite.co.uk/ci_index.php/download_schedule',
+            'services.datasheets.public_base_url' => 'https://tamlite.co.uk/pdfmerge',
+        ]);
+
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Quote Datasheet Project',
+            'reference_number' => 'QDS-001',
+        ]);
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        $this->instance(ProjectSchedulePdfService::class, new class
+        {
+            public function quoteFilename(Project $project, ProjectRevision $revision): string
+            {
+                return 'quote-QDS-001-P0.pdf';
+            }
+
+            public function quoteBuilder(Project $project, ProjectRevision $revision): object
+            {
+                return new class
+                {
+                    public function inline(string $filename): self
+                    {
+                        return $this;
+                    }
+
+                    public function toResponse($request)
+                    {
+                        return response('fake quote pdf');
+                    }
+                };
+            }
+
+            public function contentFromBuilder(object $builder): string
+            {
+                return AdminProjectResourceTest::pdfFixtureContent();
+            }
+        });
+
+        Http::fake(function (Request $request) {
+            if ($request->url() === 'https://tamlite.co.uk/ci_index.php/download_schedule') {
+                return Http::response('{"complete":true,"message":"Processing completed!","filename":"quote-datasheets.pdf"}');
+            }
+
+            if ($request->url() === 'https://tamlite.co.uk/pdfmerge/quote-datasheets.pdf') {
+                return Http::response(self::pdfFixtureContent(), 200, [
+                    'Content-Type' => 'application/pdf',
+                ]);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $this->get(route('projects.pdf.quote', [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+            'include_datasheets' => true,
+        ]))
+            ->assertOk()
+            ->assertDownload('quote-QDS-001-P0-with-datasheets.pdf');
+
+        $this->assertSame(ProjectStatus::Quoted, $project->fresh()->status);
+    }
+
     public function test_authorized_user_can_request_quote_approval(): void
     {
         $salesUser = User::factory()->sales()->create();
@@ -1776,5 +2006,43 @@ class AdminProjectResourceTest extends TestCase
         }
 
         $this->assertTrue($failed, 'The Livewire call should fail when scoped records do not match.');
+    }
+
+    public static function pdfFixtureContent(): string
+    {
+        return <<<'PDF'
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 40 >>
+stream
+BT /F1 12 Tf 20 100 Td (Test PDF) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000231 00000 n
+0000000321 00000 n
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+391
+%%EOF
+PDF;
     }
 }

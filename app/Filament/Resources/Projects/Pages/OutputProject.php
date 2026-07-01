@@ -70,6 +70,10 @@ class OutputProject extends ViewRecord
 
     public string $outputTab = 'single';
 
+    public bool $includeQuoteDatasheets = false;
+
+    public bool $includeScheduleDatasheets = false;
+
     public function mount(int|string $record): void
     {
         parent::mount($record);
@@ -115,22 +119,34 @@ class OutputProject extends ViewRecord
     {
         abort_unless($this->canProduceUnpricedSchedule(), 403);
 
-        return route('projects.pdf.schedule', [
+        $parameters = [
             'project' => $this->record,
             'revision' => $this->record->active_revision_id,
             'salesforce_upload' => true,
-        ]);
+        ];
+
+        if ($this->includeScheduleDatasheets) {
+            $parameters['include_datasheets'] = true;
+        }
+
+        return route('projects.pdf.schedule', $parameters);
     }
 
     public function getQuotePdfUrl(): string
     {
         abort_unless($this->canProduceQuote(), 403);
 
-        return route('projects.pdf.quote', [
+        $parameters = [
             'project' => $this->record,
             'revision' => $this->record->active_revision_id,
             'salesforce_upload' => true,
-        ]);
+        ];
+
+        if ($this->includeQuoteDatasheets) {
+            $parameters['include_datasheets'] = true;
+        }
+
+        return route('projects.pdf.quote', $parameters);
     }
 
     public function getCsvExportUrl(): string

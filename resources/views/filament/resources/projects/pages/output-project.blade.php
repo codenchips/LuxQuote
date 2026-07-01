@@ -16,6 +16,8 @@
         $canRequestQuoteApproval = $this->canRequestQuoteApproval();
         $canViewValidation = $this->canViewValidation();
         $canManageDocumentPacks = $this->canManageDocumentPacks();
+        $includeQuoteDatasheets = $this->includeQuoteDatasheets;
+        $includeScheduleDatasheets = $this->includeScheduleDatasheets;
         $documentPackDownloadUrl = $this->getDocumentPackDownloadUrl();
         $documentPackGenerationBlockReason = $this->documentPackGenerationBlockReason();
         $selectedGenerationRevision = $this->selectedGenerationRevision();
@@ -23,7 +25,7 @@
         $primaryButtonClasses = 'fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action w-full';
         $secondaryButtonClasses = 'inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-white/70 px-4 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-100 dark:hover:bg-white/[0.06]';
         $disabledOutputButtonClasses = 'inline-flex h-10 w-full cursor-not-allowed items-center justify-center gap-2 rounded-md bg-gray-200 px-4 text-sm font-semibold text-gray-500 dark:bg-white/10 dark:text-gray-500';
-        $validationUrl = \App\Filament\Resources\Projects\Pages\ValidationProject::getUrl(['record' => $this->record->getKey()]);
+        $validationUrl = \App\Filament\Resources\Projects\Pages\ValidationProject::getUrl(['record' => $this->record]);
     @endphp
 
     <div class="space-y-7">
@@ -561,9 +563,16 @@
                                         Include datasheets
                                         <x-heroicon-o-information-circle class="h-4 w-4 text-gray-400" />
                                     </span>
-                                    <input type="checkbox" class="sr-only" disabled>
-                                    <span aria-hidden="true" class="relative inline-flex h-6 w-11 shrink-0 rounded-full bg-gray-300 opacity-70 transition dark:bg-white/10">
-                                        <span class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"></span>
+                                    <input type="checkbox" wire:model.live="includeQuoteDatasheets" class="sr-only">
+                                    <span @class([
+                                        'relative inline-flex h-6 w-11 shrink-0 rounded-full transition',
+                                        'bg-orange-500' => $includeQuoteDatasheets,
+                                        'bg-gray-300 dark:bg-white/10' => ! $includeQuoteDatasheets,
+                                    ]) aria-hidden="true">
+                                        <span @class([
+                                            'absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition',
+                                            'translate-x-5' => $includeQuoteDatasheets,
+                                        ])></span>
                                     </span>
                                 </label>
 
@@ -614,9 +623,16 @@
                                         Include datasheets
                                         <x-heroicon-o-information-circle class="h-4 w-4 text-gray-400" />
                                     </span>
-                                    <input type="checkbox" class="sr-only" disabled>
-                                    <span aria-hidden="true" class="relative inline-flex h-6 w-11 shrink-0 rounded-full bg-gray-300 opacity-70 transition dark:bg-white/10">
-                                        <span class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"></span>
+                                    <input type="checkbox" wire:model.live="includeScheduleDatasheets" class="sr-only">
+                                    <span @class([
+                                        'relative inline-flex h-6 w-11 shrink-0 rounded-full transition',
+                                        'bg-orange-500' => $includeScheduleDatasheets,
+                                        'bg-gray-300 dark:bg-white/10' => ! $includeScheduleDatasheets,
+                                    ]) aria-hidden="true">
+                                        <span @class([
+                                            'absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition',
+                                            'translate-x-5' => $includeScheduleDatasheets,
+                                        ])></span>
                                     </span>
                                 </label>
 
