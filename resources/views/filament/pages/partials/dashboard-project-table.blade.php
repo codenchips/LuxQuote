@@ -1,24 +1,31 @@
-<div class="overflow-x-auto">
+<div class="overflow-hidden">
     <table class="lux-dashboard-table w-full table-fixed text-sm">
+        <colgroup>
+            <col>
+            <col style="width: 3.25rem;">
+            <col style="width: 7rem;">
+            <col style="width: 5.5rem;">
+            <col style="width: 9.25rem;">
+        </colgroup>
         <thead class="lux-table-column-head">
             <tr class="text-left text-xs font-bold uppercase text-slate-600 dark:text-slate-300">
-                <th class="w-[42%] px-4 py-3">Project name</th>
-                <th class="w-[7%] px-4 py-3">Rev</th>
-                <th class="w-[17%] px-4 py-3">Status</th>
-                <th class="w-[16%] px-4 py-3">Visibility</th>
-                <th class="w-[18%] px-4 py-3 text-right">Last accessed</th>
+                <th class="px-3 py-3">Project name</th>
+                <th class="px-2 py-3 whitespace-nowrap">Rev</th>
+                <th class="px-2 py-3 whitespace-nowrap">Status</th>
+                <th class="px-2 py-3 whitespace-nowrap">Visibility</th>
+                <th class="px-3 py-3 text-right whitespace-nowrap">Last accessed</th>
             </tr>
         </thead>
         <tbody>
             @forelse ($rows as $row)
                 <tr>
-                    <td class="px-4 py-3">
+                    <td class="min-w-0 px-3 py-3">
                         <a href="{{ $row['url'] }}" class="block truncate font-medium text-primary-600 hover:underline dark:text-primary-400" title="{{ $row['name'] }}">
                             {{ $row['name'] }}
                         </a>
                     </td>
-                    <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ $row['revision'] }}</td>
-                    <td class="px-4 py-3">
+                    <td class="px-2 py-3 whitespace-nowrap text-gray-700 dark:text-gray-300">{{ $row['revision'] }}</td>
+                    <td class="px-2 py-3 whitespace-nowrap">
                         <span @class([
                             'inline-flex items-center whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset',
                             'bg-gray-50 text-gray-700 ring-gray-600/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20' => $row['statusColor'] === 'gray',
@@ -29,7 +36,7 @@
                             'bg-rose-50 text-rose-700 ring-rose-600/20 dark:bg-rose-400/10 dark:text-rose-300 dark:ring-rose-400/20' => $row['statusColor'] === 'danger',
                         ])>{{ $row['status'] }}</span>
                     </td>
-                    <td class="px-4 py-3">
+                    <td class="px-2 py-3 whitespace-nowrap">
                         <span @class([
                             'inline-flex items-center whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset',
                             'bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-400/20' => $row['visibilityColor'] === 'success',
@@ -37,7 +44,7 @@
                             'bg-gray-50 text-gray-700 ring-gray-600/20 dark:bg-gray-400/10 dark:text-gray-300 dark:ring-gray-400/20' => $row['visibilityColor'] === 'gray',
                         ])>{{ $row['visibility'] }}</span>
                     </td>
-                    <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{{ $row['lastAccessed'] }}</td>
+                    <td class="px-3 py-3 text-right whitespace-nowrap text-gray-700 dark:text-gray-300">{{ $row['lastAccessed'] }}</td>
                 </tr>
             @empty
                 <tr>
