@@ -8,8 +8,8 @@ use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectRevision;
 use App\Services\ProjectSchedulePdfService;
+use App\Services\SalesforcePdfUploadTracker;
 use App\Services\SalesforceService;
-use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -41,6 +41,8 @@ class ProjectPdfController extends Controller
                 filename: $filename,
                 pdfContent: $pdf->contentFromBuilder($builder),
                 documentLabel: 'Lighting Schedule',
+                documentType: 'schedule',
+                fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint($project, $revision, 'schedule', false),
             );
         }
 
@@ -91,6 +93,8 @@ class ProjectPdfController extends Controller
                 filename: $filename,
                 pdfContent: $pdf->contentFromBuilder($builder),
                 documentLabel: 'Lighting Quote',
+                documentType: 'quote',
+                fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint($project, $revision, 'quote', true),
             );
         }
 
@@ -238,7 +242,15 @@ class ProjectPdfController extends Controller
         string $filename,
         string $pdfContent,
         string $documentLabel,
+        string $documentType,
+        string $fingerprintHash,
     ): void {
+        $tracker = app(SalesforcePdfUploadTracker::class);
+
+        if ($tracker->isCurrent($project, $revision, $documentType, $fingerprintHash)) {
+            return;
+        }
+
         try {
             $result = app(SalesforceService::class)->uploadPdf(
                 project: $project,
@@ -272,6 +284,15 @@ class ProjectPdfController extends Controller
 
         $salesforceUrl = $result['url'] ?? null;
 
+        $tracker->recordSuccessfulUpload(
+            project: $project,
+            revision: $revision,
+            documentType: $documentType,
+            fingerprintHash: $fingerprintHash,
+            filename: $filename,
+            salesforceResult: $result,
+        );
+
         ActivityLog::create([
             'user_id' => auth()->id(),
             'project_id' => $project->id,
@@ -286,16 +307,6 @@ class ProjectPdfController extends Controller
             ],
         ]);
 
-        Notification::make()
-            ->title($documentLabel.' uploaded to Salesforce')
-            ->body($salesforceUrl ? 'The PDF is available on the Salesforce Opportunity.' : 'The PDF was uploaded to the Salesforce Opportunity.')
-            ->actions($salesforceUrl ? [
-                Action::make('viewSalesforceFile')
-                    ->label('View in Salesforce')
-                    ->url($salesforceUrl, shouldOpenInNewTab: true),
-            ] : [])
-            ->success()
-            ->send();
     }
 
     private function shouldUploadPdfToSalesforce(Request $request, Project $project): bool

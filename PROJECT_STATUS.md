@@ -89,6 +89,13 @@ activity_logs
   id, user_id (nullable FK), project_id (nullable FK), action_type
   user_email_snapshot, project_name_snapshot, revision_number (nullable)
   payload (JSON, nullable), created_at
+
+salesforce_pdf_uploads
+  id, project_id (FK), project_revision_id (FK), document_type
+  fingerprint_hash, filename
+  salesforce_content_version_id, salesforce_content_document_id, salesforce_url
+  uploaded_at, timestamps
+  unique(project_id, project_revision_id, document_type)
 ```
 
 **Key relationships:**
@@ -475,6 +482,10 @@ Authentication uses **OAuth2 Client Credentials**. The service is bound as a sin
 
 Successful bearer-token responses are cached for their reported lifetime, minus a 60-second safety buffer, so normal Salesforce reads and writes do not request a fresh OAuth token for every service call.
 
+Salesforce PDF uploads are tracked per project, revision, and document type. When a quote or schedule PDF is requested with Salesforce upload enabled, the app compares a stable fingerprint of the output data and PDF template against `salesforce_pdf_uploads`; if it matches the last successful upload, no new Salesforce `ContentVersion` is created. Changes to the revision, line content, notes, pricing for quote output, project PDF metadata, or the schedule template produce a new fingerprint and upload a fresh version.
+
+Successful quote/schedule PDF uploads from download routes are recorded in activity history but do not queue Filament success notifications, because PDF responses can display queued notifications late on a later app page. Upload failures still send a danger notification.
+
 ### Environment variables required (`.env`)
 
 ```dotenv
@@ -488,6 +499,7 @@ SALESFORCE_BASE_URL=          # e.g. https://your-org.my.salesforce.com
 | File | Role |
 |---|---|
 | `app/Services/SalesforceService.php` | Auth + data methods (singleton) |
+| `app/Services/SalesforcePdfUploadTracker.php` | Fingerprints generated PDF output and records the last successful Salesforce upload |
 | `app/Filament/Pages/Salesforce.php` | Admin-only Filament page showing Opportunities table |
 | `resources/views/filament/pages/salesforce.blade.php` | Blade template for the page |
 | `config/services.php` | `salesforce` key: `client_id`, `client_secret`, `url` |

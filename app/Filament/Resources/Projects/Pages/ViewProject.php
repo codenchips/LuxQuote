@@ -14,6 +14,7 @@ use App\Models\ProjectLine;
 use App\Models\ProjectPresence;
 use App\Models\ProjectRevision;
 use App\Services\ProjectSchedulePdfService;
+use App\Services\SalesforcePdfUploadTracker;
 use App\Services\SalesforceService;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
@@ -248,6 +249,21 @@ class ViewProject extends ViewRecord
         try {
             $pdf = app(ProjectSchedulePdfService::class);
             $filename = $pdf->filename($this->record, $revision);
+            $tracker = app(SalesforcePdfUploadTracker::class);
+            $fingerprintHash = $tracker->fingerprint($this->record, $revision, 'schedule', false);
+
+            if ($tracker->isCurrent($this->record, $revision, 'schedule', $fingerprintHash)) {
+                Notification::make()
+                    ->title('Schedule PDF already current in Salesforce')
+                    ->body('No new upload was needed.')
+                    ->success()
+                    ->send();
+
+                $this->logProjectDetailsSaved();
+
+                return;
+            }
+
             $result = app(SalesforceService::class)->uploadSchedulePdf(
                 project: $this->record,
                 pdfContent: $pdf->content($this->record, $revision),
@@ -278,6 +294,15 @@ class ViewProject extends ViewRecord
         }
 
         $salesforceUrl = $result['url'] ?? null;
+
+        app(SalesforcePdfUploadTracker::class)->recordSuccessfulUpload(
+            project: $this->record,
+            revision: $revision,
+            documentType: 'schedule',
+            fingerprintHash: $fingerprintHash,
+            filename: $filename,
+            salesforceResult: $result,
+        );
 
         Notification::make()
             ->title('Schedule PDF uploaded to Salesforce')
