@@ -44,6 +44,44 @@ class Project extends Model
     /** @use HasFactory<ProjectFactory> */
     use HasFactory;
 
+    public function getRouteKey()
+    {
+        return $this->reference_number ?: $this->getKey();
+    }
+
+    public function getRouteKeyName(): string
+    {
+        return 'reference_number';
+    }
+
+    public function resolveRouteBinding($value, $field = null)
+    {
+        if ($field !== null && $field !== $this->getRouteKeyName()) {
+            return parent::resolveRouteBinding($value, $field);
+        }
+
+        return static::query()
+            ->where('reference_number', $value)
+            ->when(ctype_digit((string) $value), function ($query) use ($value): void {
+                $query->orWhere($this->getKeyName(), (int) $value);
+            })
+            ->first();
+    }
+
+    public function resolveRouteBindingQuery($query, $value, $field = null)
+    {
+        if ($field !== null && $field !== $this->getRouteKeyName()) {
+            return parent::resolveRouteBindingQuery($query, $value, $field);
+        }
+
+        return $query->where(function ($query) use ($value): void {
+            $query->where('reference_number', $value)
+                ->when(ctype_digit((string) $value), function ($query) use ($value): void {
+                    $query->orWhere($this->getKeyName(), (int) $value);
+                });
+        });
+    }
+
     protected function casts(): array
     {
         return [

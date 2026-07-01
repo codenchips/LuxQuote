@@ -23,7 +23,7 @@ class ProjectFactory extends Factory
         return [
             'user_id' => User::factory(),
             'name' => $this->faker->unique()->sentence(3),
-            'reference_number' => null,
+            'reference_number' => 'PRJ-'.$this->faker->unique()->numerify('######'),
             'customer_name' => $this->faker->company(),
             'contractor' => null,
             'site_location' => null,

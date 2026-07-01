@@ -12,6 +12,7 @@ use App\Filament\Resources\Projects\Pages\OutputProject;
 use App\Filament\Resources\Projects\Pages\ProjectHistory;
 use App\Filament\Resources\Projects\Pages\ValidationProject;
 use App\Filament\Resources\Projects\Pages\ViewProject;
+use App\Filament\Resources\Projects\ProjectResource;
 use App\Filament\Resources\Projects\Schemas\ProjectForm;
 use App\Models\ActivityLog;
 use App\Models\Product;
@@ -30,6 +31,49 @@ use Throwable;
 class AdminProjectResourceTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_project_urls_use_the_reference_number(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Route Key Project',
+            'reference_number' => '20930',
+        ]);
+
+        $this->assertSame('20930', $project->getRouteKey());
+        $this->assertSame('/projects/20930', ProjectResource::getUrl('view', ['record' => $project], false));
+        $this->assertStringStartsWith(
+            '/projects/20930/pdf/schedule',
+            route('projects.pdf.schedule', [
+                'project' => $project,
+                'revision' => $project->active_revision_id,
+            ], false),
+        );
+
+        $this->get(ProjectResource::getUrl('view', ['record' => $project], false))
+            ->assertOk()
+            ->assertSee('Route Key Project');
+    }
+
+    public function test_legacy_project_id_urls_still_resolve(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Legacy Route Project',
+            'reference_number' => 'LEGACY-20930',
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->assertSee('Legacy Route Project');
+
+        $this->get('/projects/'.$project->id)
+            ->assertOk()
+            ->assertSee('Legacy Route Project');
+    }
 
     public function test_project_revisions_progress_from_p0_to_r1_and_r2(): void
     {

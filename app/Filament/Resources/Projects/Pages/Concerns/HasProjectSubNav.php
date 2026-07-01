@@ -25,26 +25,26 @@ trait HasProjectSubNav
     /** @return array<array{label: string, url: string, icon: string, active: bool}> */
     private function buildProjectSubLinks(): array
     {
-        $recordId = $this->record->getKey();
+        $record = $this->record;
         $currentUrl = request()->url();
 
         $user = auth()->user();
         $links = [];
 
         if ($user?->can('projects.view')) {
-            $links[] = ['label' => 'Edit', 'icon' => 'heroicon-o-pencil-square', 'url' => ProjectResource::getUrl('view', ['record' => $recordId])];
+            $links[] = ['label' => 'Edit', 'icon' => 'heroicon-o-pencil-square', 'url' => ProjectResource::getUrl('view', ['record' => $record])];
         }
 
         if ($user?->can('validation.view')) {
-            $links[] = ['label' => 'Validation', 'icon' => 'heroicon-o-shield-check', 'url' => ValidationProject::getUrl(['record' => $recordId])];
+            $links[] = ['label' => 'Validation', 'icon' => 'heroicon-o-shield-check', 'url' => ValidationProject::getUrl(['record' => $record])];
         }
 
         if ($user?->can('output.view')) {
-            $links[] = ['label' => 'Output', 'icon' => 'heroicon-o-arrow-down-tray', 'url' => OutputProject::getUrl(['record' => $recordId])];
+            $links[] = ['label' => 'Output', 'icon' => 'heroicon-o-arrow-down-tray', 'url' => OutputProject::getUrl(['record' => $record])];
         }
 
         if ($user?->can('project-history.view')) {
-            $links[] = ['label' => 'Project History', 'icon' => 'heroicon-o-clock', 'url' => ProjectHistory::getUrl(['record' => $recordId])];
+            $links[] = ['label' => 'Project History', 'icon' => 'heroicon-o-clock', 'url' => ProjectHistory::getUrl(['record' => $record])];
         }
 
         return array_map(function (array $item) use ($currentUrl): array {
