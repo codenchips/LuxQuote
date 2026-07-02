@@ -68,6 +68,35 @@ curl -I https://quote.tamlite.co.uk
 
 If the runner is not listed, recreate it using the runner container command in the Deployment Method section with a fresh GitHub runner token.
 
+## Emergency Stack Recovery
+
+If production is returning HTTP 500 because the Docker stack or MySQL container is wedged, use the checked-in emergency recovery script from the production app directory:
+
+```bash
+cd /home/tamliteco/luxquote.app
+bash emergency_recover.sh
+```
+
+`emergency_recover.sh` performs a volume-preserving stack refresh:
+
+- runs `docker compose down`
+- runs `docker compose up -d --force-recreate`
+- waits briefly for MySQL to initialize
+- clears Laravel caches with `docker compose exec -T laravel.test php artisan optimize:clear`
+- checks `https://quote.tamlite.co.uk` and accepts HTTP `200` or `302` as healthy
+
+This recreates containers, not Docker volumes. Do not use `docker compose down -v`, `docker volume rm`, or `docker volume prune` during incident recovery unless a restore/destroy operation is explicitly intended.
+
+If the public health check still returns an unexpected status, `emergency_recover.sh` calls:
+
+```bash
+bash luxquote_restore_to_last_deploy.sh
+```
+
+`luxquote_restore_to_last_deploy.sh` finds the newest `backups/*.sql.gz` file, reads the production database name/user/password from `.env`, streams the backup into the `mysql` container, and clears Laravel caches after a successful import.
+
+Use the restore fallback only when container recreation is not enough and restoring to the latest deploy backup is acceptable. It overwrites database data with the selected backup.
+
 ## Docker Disk Cleanup
 
 Docker build cache and old images can consume significant disk space on the VPS. The deploy script prunes build cache older than 24 hours after successful deploys, and `scripts/production-docker-cleanup.sh` can be run manually or from cron for broader safe cleanup.

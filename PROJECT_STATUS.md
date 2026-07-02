@@ -1,6 +1,12 @@
 # Company App — Project Status
 
-_Last updated: 1 July 2026_
+_Last updated: 2 July 2026_
+
+---
+
+## Features completed — 2 July 2026
+
+- **Production emergency recovery documented**: Added `emergency_recover.sh` and `luxquote_restore_to_last_deploy.sh` to the deployment runbook. The recovery path recreates Docker Compose containers without deleting volumes, clears Laravel caches, health-checks `https://quote.tamlite.co.uk`, and can fall back to restoring the newest `backups/*.sql.gz` database backup when that restore is explicitly acceptable.
 
 ---
 
