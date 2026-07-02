@@ -36,9 +36,14 @@ return [
     ],
 
     'salesforce' => [
+        'auth_method' => env('SALESFORCE_AUTH_METHOD', 'client_credentials'),
         'client_id' => env('SALESFORCE_API_KEY'),
         'client_secret' => env('SALESFORCE_CONSUMER_SECRET'),
         'url' => env('SALESFORCE_BASE_URL'),
+        'jwt_subject' => env('SALESFORCE_JWT_SUBJECT'),
+        'jwt_audience' => env('SALESFORCE_JWT_AUDIENCE', env('SALESFORCE_BASE_URL')),
+        'jwt_private_key' => env('SALESFORCE_JWT_PRIVATE_KEY'),
+        'jwt_private_key_path' => env('SALESFORCE_JWT_PRIVATE_KEY_PATH'),
     ],
 
     'datasheets' => [

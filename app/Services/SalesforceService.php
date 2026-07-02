@@ -7,35 +7,48 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use JsonException;
 
 class SalesforceService
 {
     private const API_VERSION = 'v65.0';
+
+    private const AUTH_METHOD_CLIENT_CREDENTIALS = 'client_credentials';
+
+    private const AUTH_METHOD_JWT_BEARER = 'jwt_bearer';
+
+    private const JWT_BEARER_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 
     private const AUTH_CACHE_TTL_BUFFER_SECONDS = 60;
 
     private const AUTH_CACHE_DEFAULT_SECONDS = 3600;
 
     /**
-     * Authenticate via OAuth2 Client Credentials and return the token + instance URL.
+     * Authenticate and return the token + instance URL.
      *
      * @return array{token: string, instanceUrl: string}|null
      */
     private function authenticate(): ?array
     {
+        return match ((string) config('services.salesforce.auth_method', self::AUTH_METHOD_CLIENT_CREDENTIALS)) {
+            self::AUTH_METHOD_JWT_BEARER, 'jwt' => $this->authenticateWithJwtBearer(),
+            default => $this->authenticateWithClientCredentials(),
+        };
+    }
+
+    /**
+     * Authenticate via OAuth2 Client Credentials and return the token + instance URL.
+     *
+     * @return array{token: string, instanceUrl: string}|null
+     */
+    private function authenticateWithClientCredentials(): ?array
+    {
         $baseUrl = rtrim((string) config('services.salesforce.url', ''), '/');
-
-        if (str_contains($baseUrl, '/services/data/')) {
-            $baseUrl = explode('/services/data/', $baseUrl)[0];
-        }
-
-        $parsed = parse_url($baseUrl);
-        $tokenUrl = sprintf(
-            '%s://%s/services/oauth2/token',
-            $parsed['scheme'] ?? 'https',
-            $parsed['host'] ?? '',
-        );
-        $cacheKey = $this->authCacheKey($tokenUrl);
+        $tokenUrl = $this->tokenUrl($baseUrl);
+        $cacheKey = $this->authCacheKey($tokenUrl, [
+            self::AUTH_METHOD_CLIENT_CREDENTIALS,
+            (string) config('services.salesforce.client_id'),
+        ]);
 
         $cached = Cache::get($cacheKey);
 
@@ -71,17 +84,205 @@ class SalesforceService
         return $auth;
     }
 
-    private function authCacheKey(string $tokenUrl): string
+    /**
+     * Authenticate via OAuth2 JWT Bearer flow and return the token + instance URL.
+     *
+     * @return array{token: string, instanceUrl: string}|null
+     */
+    private function authenticateWithJwtBearer(): ?array
     {
-        return 'salesforce.auth.'.hash('sha256', implode('|', [
-            $tokenUrl,
-            (string) config('services.salesforce.client_id'),
-        ]));
+        $clientId = (string) config('services.salesforce.client_id');
+        $subject = (string) config('services.salesforce.jwt_subject');
+        $audience = $this->jwtAudience();
+        $privateKey = $this->jwtPrivateKey();
+
+        if (blank($clientId) || blank($subject) || blank($audience) || blank($privateKey)) {
+            Log::error('Salesforce JWT authentication is not configured.');
+
+            return null;
+        }
+
+        $tokenUrl = $this->tokenUrl($audience);
+        $cacheKey = $this->authCacheKey($tokenUrl, [
+            self::AUTH_METHOD_JWT_BEARER,
+            $clientId,
+            $subject,
+            $audience,
+        ]);
+
+        $cached = Cache::get($cacheKey);
+
+        if (is_array($cached) && isset($cached['token'], $cached['instanceUrl'])) {
+            return [
+                'token' => (string) $cached['token'],
+                'instanceUrl' => (string) $cached['instanceUrl'],
+            ];
+        }
+
+        $assertion = $this->jwtAssertion($clientId, $subject, $audience, $privateKey);
+
+        if ($assertion === null) {
+            return null;
+        }
+
+        $response = Http::asForm()->post($tokenUrl, [
+            'grant_type' => self::JWT_BEARER_GRANT_TYPE,
+            'assertion' => $assertion,
+        ]);
+
+        if ($response->failed()) {
+            Log::error('Salesforce JWT authentication failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            return null;
+        }
+
+        $auth = [
+            'token' => (string) $response->json('access_token'),
+            'instanceUrl' => rtrim((string) $response->json('instance_url'), '/'),
+        ];
+
+        Cache::put($cacheKey, $auth, $this->authCacheSeconds((int) $response->json('expires_in', self::AUTH_CACHE_DEFAULT_SECONDS)));
+
+        return $auth;
+    }
+
+    /**
+     * @param  string[]  $parts
+     */
+    private function authCacheKey(string $tokenUrl, array $parts): string
+    {
+        return 'salesforce.auth.'.hash('sha256', implode('|', [$tokenUrl, ...$parts]));
     }
 
     private function authCacheSeconds(int $expiresIn): int
     {
         return max(60, $expiresIn - self::AUTH_CACHE_TTL_BUFFER_SECONDS);
+    }
+
+    private function tokenUrl(string $baseUrl): string
+    {
+        return $this->normaliseSalesforceBaseUrl($baseUrl).'/services/oauth2/token';
+    }
+
+    private function jwtAudience(): string
+    {
+        $audience = (string) config('services.salesforce.jwt_audience', '');
+
+        if (blank($audience)) {
+            $audience = (string) config('services.salesforce.url', '');
+        }
+
+        return $this->normaliseSalesforceBaseUrl($audience);
+    }
+
+    private function normaliseSalesforceBaseUrl(string $url): string
+    {
+        $url = rtrim($url, '/');
+
+        if (str_contains($url, '/services/oauth2/token')) {
+            $url = explode('/services/oauth2/token', $url)[0];
+        }
+
+        if (str_contains($url, '/services/data/')) {
+            $url = explode('/services/data/', $url)[0];
+        }
+
+        $parsed = parse_url($url);
+
+        return sprintf(
+            '%s://%s',
+            $parsed['scheme'] ?? 'https',
+            $parsed['host'] ?? '',
+        );
+    }
+
+    private function jwtPrivateKey(): ?string
+    {
+        $path = (string) config('services.salesforce.jwt_private_key_path', '');
+
+        if (filled($path)) {
+            $resolvedPath = str_starts_with($path, '/') ? $path : base_path($path);
+            $contents = @file_get_contents($resolvedPath);
+
+            if ($contents === false) {
+                Log::error('Salesforce JWT private key file could not be read.', [
+                    'path' => $resolvedPath,
+                ]);
+
+                return null;
+            }
+
+            return $contents;
+        }
+
+        $privateKey = (string) config('services.salesforce.jwt_private_key', '');
+
+        if (blank($privateKey)) {
+            return null;
+        }
+
+        $normalised = str_replace('\\n', "\n", $privateKey);
+
+        if (str_contains($normalised, '-----BEGIN')) {
+            return $normalised;
+        }
+
+        $decoded = base64_decode($privateKey, true);
+
+        if (is_string($decoded) && str_contains($decoded, '-----BEGIN')) {
+            return $decoded;
+        }
+
+        return $normalised;
+    }
+
+    private function jwtAssertion(string $clientId, string $subject, string $audience, string $privateKey): ?string
+    {
+        try {
+            $encodedHeader = $this->base64UrlEncode(json_encode([
+                'alg' => 'RS256',
+                'typ' => 'JWT',
+            ], JSON_THROW_ON_ERROR));
+            $encodedPayload = $this->base64UrlEncode(json_encode([
+                'iss' => $clientId,
+                'sub' => $subject,
+                'aud' => $audience,
+                'exp' => now()->addMinutes(5)->timestamp,
+            ], JSON_THROW_ON_ERROR));
+        } catch (JsonException $exception) {
+            Log::error('Salesforce JWT assertion could not be encoded.', [
+                'exception' => $exception,
+            ]);
+
+            return null;
+        }
+
+        $signingInput = "{$encodedHeader}.{$encodedPayload}";
+        $key = openssl_pkey_get_private($privateKey);
+
+        if ($key === false) {
+            Log::error('Salesforce JWT private key could not be loaded.');
+
+            return null;
+        }
+
+        $signature = '';
+
+        if (! openssl_sign($signingInput, $signature, $key, OPENSSL_ALGO_SHA256)) {
+            Log::error('Salesforce JWT assertion could not be signed.');
+
+            return null;
+        }
+
+        return $signingInput.'.'.$this->base64UrlEncode($signature);
+    }
+
+    private function base64UrlEncode(string $value): string
+    {
+        return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
     }
 
     /**

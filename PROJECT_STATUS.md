@@ -7,6 +7,7 @@ _Last updated: 2 July 2026_
 ## Features completed — 2 July 2026
 
 - **Production emergency recovery documented**: Added `emergency_recover.sh` and `luxquote_restore_to_last_deploy.sh` to the deployment runbook. The recovery path recreates Docker Compose containers without deleting volumes, clears Laravel caches, health-checks `https://quote.tamlite.co.uk`, and can fall back to restoring the newest `backups/*.sql.gz` database backup when that restore is explicitly acceptable.
+- **Salesforce JWT bearer auth support**: Salesforce authentication can now be switched between the existing OAuth2 Client Credentials flow and JWT bearer flow with `SALESFORCE_AUTH_METHOD`. The existing integration service methods are unchanged; JWT signing uses PHP OpenSSL and focused Salesforce service/PDF/validation/interrogator tests cover the preserved behavior.
 
 ---
 
@@ -523,7 +524,7 @@ vendor/bin/sail artisan tinker --execute 'echo now()->format("Y-m-d H:i T").PHP_
 
 ### Status: Salesforce Opportunities page live; project import UX built
 
-Authentication currently uses **OAuth2 Client Credentials**. The service is bound as a singleton in `AppServiceProvider`. Gate `view-salesforce` restricts the Salesforce page to Admin users only. A planned next task is to switch authentication to Salesforce JWT bearer flow before moving fully to the live Salesforce environment.
+Authentication supports both **OAuth2 Client Credentials** and **OAuth2 JWT Bearer** flow. `SALESFORCE_AUTH_METHOD=client_credentials` preserves the original behavior, while `SALESFORCE_AUTH_METHOD=jwt_bearer` signs a JWT assertion with PHP OpenSSL and exchanges it for the same `access_token` / `instance_url` shape used by the existing service methods. The service is bound as a singleton in `AppServiceProvider`. Gate `view-salesforce` restricts the Salesforce page to users with `salesforce.view`.
 
 Successful bearer-token responses are cached for their reported lifetime, minus a 60-second safety buffer, so normal Salesforce reads and writes do not request a fresh OAuth token for every service call.
 
@@ -537,6 +538,11 @@ Successful quote/schedule PDF uploads from download routes are recorded in activ
 SALESFORCE_API_KEY=           # Consumer Key from the Connected App
 SALESFORCE_CONSUMER_SECRET=   # Consumer Secret
 SALESFORCE_BASE_URL=          # e.g. https://your-org.my.salesforce.com
+SALESFORCE_AUTH_METHOD=client_credentials # or jwt_bearer
+SALESFORCE_JWT_SUBJECT=       # Integration user username for JWT sub
+SALESFORCE_JWT_AUDIENCE=      # e.g. https://test.salesforce.com or https://login.salesforce.com
+SALESFORCE_JWT_PRIVATE_KEY=   # Optional inline PEM key, supports escaped \n or base64 PEM
+SALESFORCE_JWT_PRIVATE_KEY_PATH= # Optional path to PEM key; preferred for production secrets
 ```
 
 ### Files
@@ -577,7 +583,7 @@ Use `--format=ndjson` for one JSON object per line when grepping or importing in
 
 | Method | What it does |
 |---|---|
-| `authenticate(): ?array` | Private — POSTs to `{host}/services/oauth2/token`; returns `['token', 'instanceUrl']` or null |
+| `authenticate(): ?array` | Private — uses the configured auth method to POST to `/services/oauth2/token`; returns `['token', 'instanceUrl']` or null |
 | `soqlQuery(array $auth, string $soql): ?array` | Private — runs an authenticated SOQL query against API v65.0 and returns decoded JSON or null |
 | `getOpportunities(int $page, int $perPage, ?string $search, ?string $sortColumn, ?string $sortDirection, array $fields): LengthAwarePaginator` | SOQL Opportunity table query with pagination, search, allowlisted sort columns, and `ORDER BY CreatedDate DESC` fallback |
 | `searchOpportunities(string $query, int $limit = 10): array` | Typeahead — `WHERE Name LIKE '%…%' ORDER BY Name ASC`; returns `[Id => 'Name (Reference)']` for Select options |
@@ -632,7 +638,6 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [ ] Add the short legal blurb into the footer area of the schedule PDF, on the final schedule page only
 - [ ] Add the full legal page as the final generated page for quote/schedule PDFs, before any appended datasheets
 - [ ] Make the full legal page available as a generated/template document in the Document Pack builder
-- [ ] Change Salesforce authentication from OAuth2 Client Credentials flow to JWT bearer flow
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
 - [ ] Document-pack template sources and additional roles (for example case studies) are planned but not yet implemented
