@@ -520,7 +520,7 @@ vendor/bin/sail artisan config:show app.timezone
 vendor/bin/sail artisan tinker --execute 'echo now()->format("Y-m-d H:i T").PHP_EOL;'
 ```
 
-## Salesforce Integration (updated 1 July 2026)
+## Salesforce Integration (updated 2 July 2026)
 
 ### Status: Salesforce Opportunities page live; project import UX built
 
@@ -553,8 +553,76 @@ SALESFORCE_JWT_PRIVATE_KEY_PATH= # Optional path to PEM key; preferred for produ
 | `app/Services/SalesforcePdfUploadTracker.php` | Fingerprints generated PDF output and records the last successful Salesforce upload |
 | `app/Filament/Pages/Salesforce.php` | Admin-only Filament page showing Opportunities table |
 | `resources/views/filament/pages/salesforce.blade.php` | Blade template for the page |
-| `config/services.php` | `salesforce` key: `client_id`, `client_secret`, `url` |
+| `config/services.php` | `salesforce` key: auth mode, credentials, JWT subject/audience/private key config, base URL |
 | `app/Providers/AppServiceProvider.php` | Singleton binding + gate definition |
+
+### JWT bearer handoff — 2 July 2026
+
+JWT bearer support was added without replacing the existing Client Credentials flow. `SalesforceService::authenticate()` now branches internally based on `SALESFORCE_AUTH_METHOD`, but the public service methods and callers still use the same `['token', 'instanceUrl']` shape. This preserves the current Opportunity search/import, approval-time Opportunity Amount update, PDF upload, upload dedupe, and `salesforce:interrogate` behavior.
+
+Local key/certificate files were generated at:
+
+```text
+storage/app/salesforce/server.key
+storage/app/salesforce/server.crt
+```
+
+The private key remains local and is referenced through:
+
+```dotenv
+SALESFORCE_JWT_PRIVATE_KEY_PATH=storage/app/salesforce/server.key
+```
+
+The public cert was sent to the Salesforce admin for upload to the Connected App. Current cert fingerprint for admin comparison:
+
+```text
+SHA256 57:54:B0:54:FB:D2:35:25:60:EA:C7:5C:5E:98:AE:84:43:5B:CE:AA:1B:04:E0:43:E8:12:DB:93:81:E5:EA:DB
+```
+
+The local `.env` has been switched to JWT mode and production Salesforce values were supplied by the Salesforce admin. Do not commit `.env`; keep only `.env.example` in source control. `SALESFORCE_CONSUMER_SECRET` is still present for fallback Client Credentials mode but is not required for JWT bearer mode.
+
+Useful JWT smoke test:
+
+```bash
+vendor/bin/sail artisan optimize:clear
+vendor/bin/sail artisan salesforce:interrogate --limit=1 --format=json
+```
+
+The command performs:
+
+```text
+GET /services/data/v65.0/sobjects/Opportunity/describe
+SELECT <all Opportunity field names from describe> FROM Opportunity LIMIT 1
+```
+
+Current status from the latest local test:
+
+- JWT authentication now succeeds with the production Connected App API key.
+- Salesforce returns a valid `access_token` and `instance_url`.
+- `GET {instanceUrl}/services/data/` returns `200`.
+- The org supports API versions including `v65.0`, `v66.0`, and `v67.0`; the hardcoded `SalesforceService::API_VERSION = 'v65.0'` is not the blocker.
+- The smoke test fails because the integration user cannot access `Opportunity`: `sObject type 'Opportunity' is not supported` / `NOT_FOUND`.
+
+Next action for the Salesforce admin:
+
+```text
+JWT auth is working, but the integration user cannot access the Opportunity object.
+
+Please check the integration user's license/profile/permission sets:
+- API Enabled
+- Read access to Opportunity
+- Read field access to Id, Name, StageName, CreatedDate, Amount, Project_Reference_Number__c, CEF_Cover__c, Owner.Name, Owner.Email, Account.Name, IsClosed, IsWon
+- Update access to Opportunity.Amount
+- Create access to ContentVersion
+- Read access to ContentVersion and ContentDocumentLink
+- Permission to link Salesforce Files to Opportunities via FirstPublishLocationId
+```
+
+If the generic console output is unhelpful, check the real Salesforce response in:
+
+```bash
+tail -n 60 storage/logs/laravel.log
+```
 
 ### Inspecting live Opportunity fields
 
@@ -638,6 +706,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [ ] Add the short legal blurb into the footer area of the schedule PDF, on the final schedule page only
 - [ ] Add the full legal page as the final generated page for quote/schedule PDFs, before any appended datasheets
 - [ ] Make the full legal page available as a generated/template document in the Document Pack builder
+- [ ] Salesforce JWT auth is working locally, but the production integration user still needs Opportunity object/field access before `salesforce:interrogate` and the app's Opportunity workflows can run
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
 - [ ] Document-pack template sources and additional roles (for example case studies) are planned but not yet implemented
