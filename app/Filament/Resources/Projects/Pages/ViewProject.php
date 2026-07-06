@@ -407,14 +407,7 @@ class ViewProject extends ViewRecord
     #[Computed]
     public function isViewingRevisionValidated(): bool
     {
-        if (! $this->viewingRevisionId) {
-            return false;
-        }
-
-        return ProjectRevision::where('project_id', $this->record->id)
-            ->whereKey($this->viewingRevisionId)
-            ->where('status', ProjectRevisionStatus::Approved->value)
-            ->exists();
+        return $this->viewingRevisionIsApproved();
     }
 
     public function setActiveRevision(int $revisionId): void
@@ -495,7 +488,9 @@ class ViewProject extends ViewRecord
 
     public function addArea(): void
     {
-        $this->ensureViewingRevisionIsEditable();
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
 
         $this->validate(['newAreaName' => 'required|string|min:1|max:255']);
 
@@ -513,7 +508,9 @@ class ViewProject extends ViewRecord
 
     public function removeArea(int $areaId): void
     {
-        $this->ensureViewingRevisionIsEditable();
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
 
         $this->findAreaInViewingRevision($areaId)->delete();
     }
@@ -572,7 +569,9 @@ class ViewProject extends ViewRecord
 
     public function addSelectedProducts(): void
     {
-        $this->ensureViewingRevisionIsEditable();
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
 
         if (! $this->productPickerAreaId || empty($this->productSelections)) {
             return;
@@ -608,7 +607,9 @@ class ViewProject extends ViewRecord
 
     public function openPasteProductsModal(int $areaId): void
     {
-        $this->ensureViewingRevisionIsEditable();
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
 
         $this->findAreaInViewingRevision($areaId);
 
@@ -630,7 +631,9 @@ class ViewProject extends ViewRecord
 
     public function addPastedProducts(): void
     {
-        $this->ensureViewingRevisionIsEditable();
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
 
         if (! $this->pasteProductsAreaId) {
             return;
@@ -905,14 +908,18 @@ class ViewProject extends ViewRecord
 
     public function addProduct(int $areaId): void
     {
-        $this->ensureViewingRevisionIsEditable();
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
 
         $this->openProductPicker($areaId);
     }
 
     public function addBlankLine(int $areaId): void
     {
-        $this->ensureViewingRevisionIsEditable();
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
 
         $area = $this->findAreaInViewingRevision($areaId);
 
@@ -928,7 +935,9 @@ class ViewProject extends ViewRecord
 
     public function updateLineField(int $lineId, string $field, mixed $value): void
     {
-        $this->ensureViewingRevisionIsEditable();
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
 
         $allowed = ['code', 'ref', 'description', 'qty', 'unit_price', 'notes'];
 
@@ -1015,7 +1024,9 @@ class ViewProject extends ViewRecord
 
     public function duplicateLine(int $lineId): void
     {
-        $this->ensureViewingRevisionIsEditable();
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
 
         $line = $this->findLineInViewingRevision($lineId);
 
@@ -1042,14 +1053,18 @@ class ViewProject extends ViewRecord
 
     public function deleteLine(int $lineId): void
     {
-        $this->ensureViewingRevisionIsEditable();
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
 
         $this->findLineInViewingRevision($lineId)->delete();
     }
 
     public function sortLine(int $lineId, int $newPosition, int $targetAreaId): void
     {
-        $this->ensureViewingRevisionIsEditable();
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
 
         $line = $this->findLineInViewingRevision($lineId);
         $targetArea = $this->findAreaInViewingRevision($targetAreaId);
@@ -1082,15 +1097,30 @@ class ViewProject extends ViewRecord
         });
     }
 
-    private function ensureViewingRevisionIsEditable(): void
+    private function ensureViewingRevisionIsEditable(): bool
     {
         abort_unless($this->canEditLines(), 403);
 
-        if ($this->isViewingRevisionValidated) {
+        if ($this->viewingRevisionIsApproved()) {
+            unset($this->isViewingRevisionValidated);
             $this->notifyApprovedRevisionLocked();
+
+            return false;
         }
 
-        abort_if($this->isViewingRevisionValidated, 403, 'Approved revisions are locked against editing.');
+        return true;
+    }
+
+    private function viewingRevisionIsApproved(): bool
+    {
+        if (! $this->viewingRevisionId) {
+            return false;
+        }
+
+        return ProjectRevision::where('project_id', $this->record->id)
+            ->whereKey($this->viewingRevisionId)
+            ->where('status', ProjectRevisionStatus::Approved->value)
+            ->exists();
     }
 
     public function canViewPrices(): bool

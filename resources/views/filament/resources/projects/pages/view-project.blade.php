@@ -3,7 +3,6 @@
     $canViewPrices = $this->canViewPrices();
     $canEditLines = $this->canEditLines();
     $canEditPrices = $this->canEditPrices();
-    $canCreateRevisions = $this->canCreateRevisions();
     $revisionLocked = $this->isViewingRevisionValidated;
     $lineGridColumns = $canViewPrices
         ? '20px 110px 65px 1fr 60px 90px 95px 1fr 84px 60px'
@@ -50,21 +49,6 @@
             wire:click="setActiveRevision({{ $activeRevisionId }})"
             class="ml-auto shrink-0 rounded-md bg-amber-100 dark:bg-amber-800/40 px-3 py-1 text-xs font-medium hover:bg-amber-200 dark:hover:bg-amber-800/60 transition-colors"
         >Switch to active</button>
-    </div>
-    @endif
-
-    @if($revisionLocked)
-    <div class="mb-4 flex items-center gap-3 rounded-lg border border-emerald-300 bg-emerald-400 px-4 py-3 text-sm font-semibold text-emerald-950 shadow-lg shadow-emerald-500/20 dark:border-emerald-400 dark:bg-emerald-500">
-        <x-heroicon-o-check-badge class="h-5 w-5 shrink-0" />
-        <span>This revision is approved and locked. Create a new revision before changing areas or line items.</span>
-        @if($canCreateRevisions)
-            <button
-                wire:click="createNewRevision"
-                class="ml-auto shrink-0 rounded-md bg-emerald-950 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-emerald-900"
-            >
-                Create new revision
-            </button>
-        @endif
     </div>
     @endif
 

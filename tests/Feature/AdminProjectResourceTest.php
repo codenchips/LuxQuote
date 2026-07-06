@@ -354,13 +354,40 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(ViewProject::class, ['record' => $project->id])
             ->assertSee('Approved Lock Project')
             ->assertSee('Approved - locked')
-            ->assertSee('This revision is approved and locked. Create a new revision before changing areas or line items.')
             ->call('notifyApprovedRevisionLocked')
             ->assertNotified('Revision locked');
 
         Livewire::test(ViewProject::class, ['record' => $project->id])
             ->call('addBlankLine', $area->id)
-            ->assertForbidden();
+            ->assertOk()
+            ->assertNotified('Revision locked');
+
+        $this->assertSame(0, $area->lines()->count());
+    }
+
+    public function test_stale_project_page_does_not_show_403_when_revision_was_approved_elsewhere(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Stale Lock Project',
+        ]);
+        $area = $project->activeRevision->areas()->first();
+
+        $component = Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->assertSee('Stale Lock Project')
+            ->assertDontSee('Approved - locked');
+
+        $project->activeRevision->update([
+            'validated' => true,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        $component
+            ->call('addBlankLine', $area->id)
+            ->assertOk()
+            ->assertNotified('Revision locked');
 
         $this->assertSame(0, $area->lines()->count());
     }

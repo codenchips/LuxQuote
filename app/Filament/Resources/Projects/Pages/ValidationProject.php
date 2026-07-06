@@ -56,7 +56,18 @@ class ValidationProject extends ViewRecord
     protected function getHeaderActions(): array
     {
         if ($this->activeRevisionApproved) {
-            return [];
+            return [
+                Action::make('unapproveRevision')
+                    ->label('Unapprove Revision')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->color('warning')
+                    ->visible(fn (): bool => $this->canApproveRevision())
+                    ->requiresConfirmation()
+                    ->modalHeading('Unapprove this revision?')
+                    ->modalDescription('This will unlock the current revision and allow validation or schedule changes again.')
+                    ->modalSubmitActionLabel('Unapprove revision')
+                    ->action('unapproveRevision'),
+            ];
         }
 
         return [
@@ -208,6 +219,30 @@ class ValidationProject extends ViewRecord
         ]);
 
         $this->approveRevisionModalOpen = false;
+        unset($this->activeRevisionApproved);
+        unset($this->activeRevisionValidated);
+        unset($this->activeRevisionReadyForApproval);
+        $this->record->load('activeRevision');
+        $this->refreshHeaderActions();
+    }
+
+    public function unapproveRevision(): void
+    {
+        abort_unless($this->canApproveRevision(), 403);
+
+        $revision = $this->activeRevision();
+
+        abort_unless($revision->status === ProjectRevisionStatus::Approved, 403);
+
+        $revision->update([
+            'status' => ProjectRevisionStatus::Draft,
+        ]);
+
+        $this->record->syncStatusFromActiveRevision();
+        $this->logValidationActivity('revision.unapproved', [
+            'revision_label' => $revision->label(),
+        ]);
+
         unset($this->activeRevisionApproved);
         unset($this->activeRevisionValidated);
         unset($this->activeRevisionReadyForApproval);

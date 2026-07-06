@@ -105,6 +105,7 @@ class ActivityLogsTable
                             'revision.created' => 'Created a new snapshot: <strong>Revision #'.e((string) ($payload['revision_number'] ?? '?')).'</strong>',
 
                             'revision.approved' => 'Approved and locked <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
+                            'revision.unapproved' => 'Unapproved and unlocked <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
 
                             'quote_approval.requested' => 'Requested quote approval for <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
 
@@ -255,6 +256,7 @@ class ActivityLogsTable
                         'project.deleted' => 'Project Deleted',
                         'revision.created' => 'Revision Created',
                         'revision.approved' => 'Revision Approved',
+                        'revision.unapproved' => 'Revision Unapproved',
                         'quote_approval.requested' => 'Quote Approval Requested',
                         'validation.issue_approved' => 'Validation Issue Approved',
                         'validation.issue_approval_undone' => 'Validation Issue Approval Undone',

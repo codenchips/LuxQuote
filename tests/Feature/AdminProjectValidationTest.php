@@ -268,18 +268,30 @@ class AdminProjectValidationTest extends TestCase
             ->assertSet('approveRevisionModalOpen', false)
             ->assertSee('Project is approved and locked')
             ->assertDontSee('Approve Revision')
-            ->assertDontSee('Run Validation');
+            ->assertDontSee('Run Validation')
+            ->assertActionVisible('unapproveRevision')
+            ->call('unapproveRevision')
+            ->assertSee('Ready to approve')
+            ->assertSee('Approve Revision')
+            ->assertSee('Run Validation')
+            ->assertDontSee('Project is approved and locked');
 
-        $this->assertSame(ProjectRevisionStatus::Approved, $project->activeRevision->fresh()->status);
-        $this->assertSame(ProjectStatus::Approved, $project->fresh()->status);
+        $this->assertSame(ProjectRevisionStatus::Draft, $project->activeRevision->fresh()->status);
+        $this->assertSame(ProjectStatus::InProgress, $project->fresh()->status);
         $this->assertDatabaseHas(ActivityLog::class, [
             'project_id' => $project->id,
             'action_type' => 'revision.approved',
             'revision_number' => 0,
         ]);
+        $this->assertDatabaseHas(ActivityLog::class, [
+            'project_id' => $project->id,
+            'action_type' => 'revision.unapproved',
+            'revision_number' => 0,
+        ]);
 
         Livewire::test(ListActivityLogs::class)
             ->assertSee('Approved and locked')
+            ->assertSee('Unapproved and unlocked')
             ->assertSee('P0');
     }
 
