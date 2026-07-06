@@ -438,7 +438,7 @@
                     {{-- Site badge --}}
                     <div class="flex justify-center">
                         @if($product->site)
-                        <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                        <span class="lux-compact-badge {{ \App\Filament\Support\BadgeStyle::classes($product->site) }}">
                             {{ $product->site }}
                         </span>
                         @else
