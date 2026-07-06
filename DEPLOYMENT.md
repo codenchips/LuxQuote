@@ -163,7 +163,7 @@ docker compose exec laravel.test php artisan optimize:clear
 
 ## PDF Runtime
 
-PDF generation uses Spatie Laravel PDF / Browsershot, which requires Node.js, Puppeteer, and a headless Chrome binary inside the `laravel.test` container.
+PDF generation uses Spatie Laravel PDF / Browsershot, which requires Node.js, Puppeteer, and a headless Chrome binary inside the `laravel.test` container. `compose.yaml` sets `LARAVEL_PDF_TEMP_PATH=/var/www/html/storage/app/browsershot` and `PUPPETEER_CACHE_DIR=/home/sail/.cache/puppeteer`; the latter is backed by the `sail-puppeteer` named volume so the browser cache survives normal container recreation.
 
 Document-pack generation additionally uses the system `qpdf` binary to validate uploaded PDFs and merge uploaded/generated documents. The application now builds Sail from the project-owned `docker/8.5/Dockerfile` (rather than the runtime under `vendor/`), and that image installs `qpdf`. `compose.yaml` also uses the project-owned `docker/mysql/create-testing-database.sh`.
 
@@ -179,9 +179,10 @@ docker compose exec laravel.test php artisan optimize:clear
 
 Do not install `qpdf` manually only in a running container; that change would be lost the next time the container is rebuilt.
 
-Run npm and Puppeteer install/update commands as the `sail` user. Running them as root can create permission problems for the web process.
+The production deploy script creates the Browsershot temp directory, fixes Puppeteer cache ownership, installs the Puppeteer `chrome-headless-shell` browser, and runs `app:diagnose-pdf-environment` before migrations. If PDFs fail after a manual container rebuild, run npm and Puppeteer install/update commands as the `sail` user. Running them as root can create permission problems for the web process.
 
 ```bash
+docker compose exec laravel.test sh -lc 'mkdir -p /var/www/html/storage/app/browsershot /home/sail/.cache/puppeteer && chown -R sail:sail /var/www/html/storage/app/browsershot /home/sail/.cache'
 docker compose exec -u sail laravel.test npm install
 docker compose exec -u sail laravel.test npx puppeteer browsers install chrome-headless-shell
 docker compose exec laravel.test php artisan optimize:clear
@@ -194,7 +195,7 @@ If PDFs fail in production, check `storage/logs/laravel.log` for Browsershot err
 Error: Cannot find module 'puppeteer'
 ```
 
-That means the container cannot find the Node dependency required by Browsershot. Re-run the npm/Puppeteer commands above inside the `laravel.test` container.
+That means the container cannot find the Node dependency required by Browsershot. Re-run the npm/Puppeteer commands above inside the `laravel.test` container. If the error is `Could not find Chrome` or `mkdir(): Invalid path`, verify `LARAVEL_PDF_TEMP_PATH`, `PUPPETEER_CACHE_DIR`, and rerun `app:diagnose-pdf-environment`.
 
 If document-pack uploads or generation fail, verify `qpdf --version` in the container and check `storage/logs/laravel.log`. Uploaded files are checked with `qpdf --check`; corrupt, encrypted, or unsupported PDFs are intentionally rejected.
 

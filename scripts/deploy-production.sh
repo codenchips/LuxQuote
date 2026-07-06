@@ -83,12 +83,14 @@ rm -f public/hot
 log "Ensuring container file ownership"
 docker compose exec laravel.test chown -R sail:sail /var/www/html
 docker compose exec laravel.test rm -rf /var/www/html/node_modules/.vite-temp
+docker compose exec laravel.test sh -lc 'mkdir -p /var/www/html/storage/app/browsershot /home/sail/.cache/puppeteer && chown -R sail:sail /var/www/html/storage/app/browsershot /home/sail/.cache'
 
 log "Installing Composer dependencies without framework scripts"
 docker compose exec laravel.test composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
 
 log "Installing npm dependencies and building assets"
 docker compose exec -u sail laravel.test npm install
+docker compose exec -u sail laravel.test npx puppeteer browsers install chrome-headless-shell
 docker compose exec -u sail laravel.test npm run build
 
 log "Completing Composer autoload and framework discovery"
@@ -99,6 +101,9 @@ docker compose restart laravel.test
 
 log "Verifying qpdf runtime"
 docker compose exec laravel.test qpdf --version
+
+log "Verifying PDF runtime"
+docker compose exec laravel.test php artisan app:diagnose-pdf-environment
 
 log "Running migrations"
 docker compose exec laravel.test php artisan migrate --force

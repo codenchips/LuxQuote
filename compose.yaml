@@ -18,6 +18,8 @@ services:
             XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
             XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
+            LARAVEL_PDF_TEMP_PATH: '${LARAVEL_PDF_TEMP_PATH:-/var/www/html/storage/app/browsershot}'
+            PUPPETEER_CACHE_DIR: '${PUPPETEER_CACHE_DIR:-/home/sail/.cache/puppeteer}'
         volumes:
             - '.:/var/www/html'
             - 'sail-puppeteer:/home/sail/.cache/puppeteer'
