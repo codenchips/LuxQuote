@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Projects\Schemas;
 
+use App\Enums\ProjectRevisionStatus;
 use App\Enums\ProjectVisibility;
 use App\Models\Project;
 use App\Services\SalesforceService;
@@ -49,7 +50,7 @@ class ProjectForm
                         'unique' => 'A project with this project name already exists.',
                     ])
                     ->hidden(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true && $record === null)
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true)
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record))
                     ->columnSpanFull(),
 
                 Select::make('salesforce_id')
@@ -158,37 +159,37 @@ class ProjectForm
                         && $record === null
                         && blank($get('salesforce_id')))
                     ->dehydratedWhenHidden()
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
 
                 TextInput::make('customer_name')
                     ->label('Customer Name')
                     ->placeholder('Customer')
                     ->live()
                     ->required()
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
 
                 TextInput::make('site_location')
                     ->label('Site Location')
                     ->placeholder('Location')
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
 
                 TextInput::make('owner_email')
                     ->label('Project Owner (email)')
                     ->placeholder('owner@company.com')
                     ->email()
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
 
                 TextInput::make('created_by_email')
                     ->label('Created By (email)')
                     ->placeholder('creator@company.com')
                     ->email()
                     ->default(fn (): ?string => auth()->user()?->email)
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
 
                 DatePicker::make('date')
                     ->label('Date')
                     ->default(now())
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
 
                 ToggleButtons::make('visibility')
                     ->label('Project Visibility')
@@ -199,18 +200,19 @@ class ProjectForm
                     ->options(ProjectVisibility::class)
                     ->default(ProjectVisibility::Open)
                     ->inline()
+                    ->disabled(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record))
                     ->columnSpanFull(),
 
                 TextInput::make('branch_name')
                     ->label('Branch Name')
                     ->placeholder('e.g. Birmingham Central')
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
 
                 TextInput::make('cover_percentage')
                     ->label('Cover')
                     ->placeholder('Cover')
                     ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
 
                 TextInput::make('value')
                     ->label('Value')
@@ -218,26 +220,40 @@ class ProjectForm
                     ->numeric()
                     ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
                     ->prefix('£')
-                    ->readOnly(fn (Get $get): bool => $get('salesforce_project') === true),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
 
                 Textarea::make('quote_notes')
                     ->label('Quote Notes (shown on quote document)')
                     ->placeholder('Notes visible on the quote PDF...')
                     ->rows(3)
+                    ->readOnly(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record))
                     ->columnSpanFull(),
 
                 Textarea::make('internal_notes')
                     ->label('Internal Notes (not shown on documents)')
                     ->placeholder('Internal team notes...')
                     ->rows(3)
+                    ->readOnly(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record))
                     ->columnSpanFull(),
 
                 Textarea::make('general_notes')
                     ->label('General Notes')
                     ->placeholder('Project notes...')
                     ->rows(3)
+                    ->readOnly(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record))
                     ->columnSpanFull(),
             ]);
+    }
+
+    public static function projectDetailsAreReadOnly(?Project $record): bool
+    {
+        if ($record === null) {
+            return false;
+        }
+
+        $activeRevision = $record->activeRevision ?? $record->activeRevision()->first();
+
+        return $activeRevision?->status === ProjectRevisionStatus::Approved;
     }
 
     public static function titleCaseProjectName(?string $name): string

@@ -9,6 +9,7 @@ use App\Filament\Resources\Projects\ProjectResource;
 use App\Filament\Resources\Projects\Schemas\ProjectForm;
 use App\Models\ActivityLog;
 use App\Models\Product;
+use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectPresence;
@@ -158,8 +159,15 @@ class ViewProject extends ViewRecord
                 ->label('Details')
                 ->icon('heroicon-o-pencil')
                 ->color('gray')
-                ->tooltip('Edit project details')
-                ->visible(fn (): bool => $this->canEditProjectDetails() && ! $this->isViewingRevisionValidated)
+                ->tooltip(fn (): string => $this->isViewingRevisionValidated ? 'View project details' : 'Edit project details')
+                ->visible(fn (): bool => $this->canEditProjectDetails())
+                ->modalSubmitAction(fn (Action $action): Action|false => $this->isViewingRevisionValidated ? false : $action)
+                ->modalCancelActionLabel(fn (): string => $this->isViewingRevisionValidated ? 'Close' : 'Cancel')
+                ->using(function (Project $record, array $data): void {
+                    abort_if(ProjectForm::projectDetailsAreReadOnly($record), 403, 'Approved revisions are locked against editing.');
+
+                    $record->update($data);
+                })
                 ->after(fn () => $this->afterProjectDetailsSaved()),
 
             Action::make('manageRevisions')

@@ -273,6 +273,68 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame(1, Project::query()->where('reference_number', '25948')->count());
     }
 
+    public function test_project_table_shows_details_pencil_before_copy_action(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+
+        Livewire::test(ListProjects::class)
+            ->assertTableActionsExistInOrder(['editProject', 'duplicate'])
+            ->assertTableActionVisible('editProject', $project)
+            ->assertTableActionHasIcon('editProject', 'heroicon-o-pencil', $project)
+            ->assertTableActionVisible('duplicate', $project);
+    }
+
+    public function test_locked_project_details_drawers_remain_visible_but_cannot_save(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Locked Details Project',
+            'reference_number' => 'LOCKED-DETAILS',
+        ]);
+
+        $project->activeRevision->update([
+            'validated' => true,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        $data = [
+            'name' => 'Should Not Save',
+            'reference_number' => 'LOCKED-DETAILS',
+            'customer_name' => $project->customer_name,
+            'contractor' => $project->contractor,
+            'site_location' => $project->site_location,
+            'owner_email' => $project->owner_email,
+            'created_by_email' => $project->created_by_email,
+            'department' => $project->department,
+            'date' => $project->date?->format('Y-m-d'),
+            'revision' => $project->revision,
+            'visibility' => $project->visibility->value,
+            'branch_name' => $project->branch_name,
+            'cover_percentage' => $project->cover_percentage,
+            'value' => $project->value,
+            'quote_notes' => $project->quote_notes,
+            'internal_notes' => $project->internal_notes,
+            'general_notes' => $project->general_notes,
+        ];
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->assertActionVisible('editProject')
+            ->callAction('editProject', $data)
+            ->assertForbidden();
+
+        Livewire::test(ListProjects::class)
+            ->assertTableActionVisible('editProject', $project)
+            ->callTableAction('editProject', $project, $data)
+            ->assertForbidden();
+
+        $this->assertSame('Locked Details Project', $project->fresh()->name);
+    }
+
     public function test_project_list_hides_archived_projects_until_status_filter_requests_them(): void
     {
         $admin = User::factory()->admin()->create();

@@ -5,11 +5,14 @@ namespace App\Filament\Resources\Projects\Tables;
 use App\Enums\ProjectStatus;
 use App\Enums\ProjectVisibility;
 use App\Filament\Resources\Projects\ProjectResource;
+use App\Filament\Resources\Projects\Schemas\ProjectForm;
 use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectRevision;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
+use Filament\Actions\EditAction;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -28,22 +31,28 @@ class ProjectsTable
                     ->icon(fn (bool $state): string => $state ? 'heroicon-o-cloud' : 'heroicon-o-folder')
                     ->color(fn (bool $state): string => $state ? 'info' : 'gray')
                     ->tooltip(fn (bool $state): string => $state ? 'Salesforce project' : 'Standard project')
-                    ->width('2.5rem'),
+                    ->width('2rem'),
 
                 TextColumn::make('reference_number')
                     ->label('Reference')
                     ->placeholder('–')
                     ->searchable()
                     ->sortable()
-                    ->width('6.5rem'),
+                    ->width('5.25rem')
+                    ->extraCellAttributes(['style' => 'white-space: nowrap;'])
+                    ->extraHeaderAttributes(['style' => 'white-space: nowrap;']),
 
                 TextColumn::make('name')
                     ->label('Project Name')
                     ->searchable()
                     ->sortable()
-                    ->formatStateUsing(fn (string $state): string => mb_strlen($state) > 40 ? mb_substr($state, 0, 40).'...' : $state)
-                    ->tooltip(fn ($record): ?string => mb_strlen($record->name) > 40 ? $record->name : null)
-                    ->url(fn ($record) => ProjectResource::getUrl('view', ['record' => $record])),
+                    ->limit(42)
+                    ->tooltip(fn ($record): ?string => $record->name)
+                    ->url(fn ($record) => ProjectResource::getUrl('view', ['record' => $record]))
+                    ->grow()
+                    ->lineClamp(1)
+                    ->extraCellAttributes(['style' => 'min-width: 0; white-space: nowrap;'])
+                    ->extraHeaderAttributes(['style' => 'white-space: nowrap;']),
 
                 TextColumn::make('customer_name')
                     ->label('Customer')
@@ -57,20 +66,27 @@ class ProjectsTable
                     ->label('Owner')
                     ->placeholder('–')
                     ->searchable()
-                    ->tooltip(fn ($record): ?string => $record->user?->email),
+                    ->tooltip(fn ($record): ?string => $record->user?->email)
+                    ->limit(18)
+                    ->lineClamp(1)
+                    ->width('7.25rem')
+                    ->extraCellAttributes(['style' => 'white-space: nowrap;'])
+                    ->extraHeaderAttributes(['style' => 'white-space: nowrap;']),
 
                 TextColumn::make('date')
                     ->label('Date')
                     ->date('d M Y')
                     ->sortable()
-                    ->width('7.5rem'),
+                    ->width('6rem')
+                    ->extraCellAttributes(['style' => 'white-space: nowrap;'])
+                    ->extraHeaderAttributes(['style' => 'white-space: nowrap;']),
 
                 TextColumn::make('revision')
                     ->label('Rev')
                     ->formatStateUsing(fn (int $state): string => ProjectRevision::labelForNumber($state))
                     ->badge()
                     ->color('gray')
-                    ->width('3.5rem'),
+                    ->width('3rem'),
 
                 TextColumn::make('status')
                     ->label('Status')
@@ -78,7 +94,7 @@ class ProjectsTable
                     ->formatStateUsing(fn (ProjectStatus $state): string => $state->label())
                     ->color(fn (ProjectStatus $state): string => $state->color())
                     ->sortable()
-                    ->width('5.5rem'),
+                    ->width('5.25rem'),
 
                 TextColumn::make('visibility')
                     ->label('Visibility')
@@ -93,7 +109,7 @@ class ProjectsTable
                         ProjectVisibility::Private => 'warning',
                     })
                     ->sortable()
-                    ->width('6.5rem'),
+                    ->width('5.75rem'),
 
                 TextColumn::make('last_edited_at')
                     ->label('Last Edited')
@@ -104,7 +120,9 @@ class ProjectsTable
                         ? $record->last_edited_at->format('M d Y H:i').($record->lastEditor ? ' by '.$record->lastEditor->name : '')
                         : null
                     )
-                    ->width('9rem'),
+                    ->width('6.25rem')
+                    ->extraCellAttributes(['style' => 'white-space: nowrap;'])
+                    ->extraHeaderAttributes(['style' => 'white-space: nowrap;']),
 
                 TextColumn::make('active_viewers')
                     ->label('')
@@ -157,6 +175,23 @@ class ProjectsTable
                     }),
             ])
             ->actions([
+                EditAction::make('editProject')
+                    ->label('Details')
+                    ->icon('heroicon-o-pencil')
+                    ->iconButton()
+                    ->tooltip(fn (Project $record): string => ProjectForm::projectDetailsAreReadOnly($record) ? 'View project details' : 'Edit project details')
+                    ->color('gray')
+                    ->form(fn (Schema $schema): Schema => ProjectForm::configure($schema))
+                    ->slideOver()
+                    ->visible(fn (): bool => auth()->user()?->can('projects.update-details') ?? false)
+                    ->modalSubmitAction(fn (Action $action, Project $record): Action|false => ProjectForm::projectDetailsAreReadOnly($record) ? false : $action)
+                    ->modalCancelActionLabel(fn (Project $record): string => ProjectForm::projectDetailsAreReadOnly($record) ? 'Close' : 'Cancel')
+                    ->using(function (Project $record, array $data): void {
+                        abort_if(ProjectForm::projectDetailsAreReadOnly($record), 403, 'Approved revisions are locked against editing.');
+
+                        $record->update($data);
+                    }),
+
                 Action::make('duplicate')
                     ->icon('heroicon-o-document-duplicate')
                     ->iconButton()
