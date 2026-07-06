@@ -701,11 +701,8 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 1 July 2026)
+## Known Gaps / Next Steps (as of 6 July 2026)
 
-- [ ] Add the short legal blurb into the footer area of the schedule PDF, on the final schedule page only
-- [ ] Add the full legal page as the final generated page for quote/schedule PDFs, before any appended datasheets
-- [ ] Make the full legal page available as a generated/template document in the Document Pack builder
 - [ ] Salesforce JWT auth is working locally, but the production integration user still needs Opportunity object/field access before `salesforce:interrogate` and the app's Opportunity workflows can run
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
@@ -723,6 +720,14 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
   - `vendor/bin/sail artisan test --compact tests/Feature/AdminProjectValidationTest.php`
 
 ---
+
+## Features completed — 6 July 2026
+
+- **Standard legal PDF page**: Quote and schedule PDF downloads now append `resources/documents/legal/full-legal-page.pdf` immediately after the generated quote/schedule pages.
+- **Legal-before-datasheets order**: When datasheets are included, merge order is generated quote/schedule PDF, standard legal page, then datasheets.
+- **Document-pack template role**: The document-pack builder now includes **Standard Legal Page** as an app-owned template document, separate from the existing uploaded Legal PDF role.
+- **Salesforce PDF fingerprints**: Salesforce duplicate-upload fingerprints include the standard legal PDF hash so changes to the legal page trigger a fresh upload.
+- **Schedule legal blurb**: The generated quote/schedule template now includes the short legal blurb once at the end of the generated document body, after the schedule rows/notes, with pastel shaded sections and a medium top margin.
 
 ## Features completed — 1 July 2026
 

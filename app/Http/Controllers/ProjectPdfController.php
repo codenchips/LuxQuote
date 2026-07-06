@@ -8,6 +8,7 @@ use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectRevision;
 use App\Services\ProjectDatasheetPdfService;
+use App\Services\ProjectLegalPdfService;
 use App\Services\ProjectSchedulePdfService;
 use App\Services\SalesforcePdfUploadTracker;
 use App\Services\SalesforceService;
@@ -37,60 +38,69 @@ class ProjectPdfController extends Controller
         $pdf = app(ProjectSchedulePdfService::class);
         $filename = $pdf->filename($project, $revision);
         $builder = $pdf->builder($project, $revision);
-        $pdfContent = null;
-
-        $datasheetPdf = $this->datasheetPdf(
-            request: $request,
-            project: $project,
-            revision: $revision,
+        $legalPdf = $this->legalPdf(
             pdfContent: fn (): string => $pdf->contentFromBuilder($builder),
             filename: $filename,
         );
 
-        if ($datasheetPdf !== null) {
-            $filename = $datasheetPdf['filename'];
-            $pdfContent = app(ProjectDatasheetPdfService::class)->content($datasheetPdf['path']);
-        }
+        try {
+            $filename = $legalPdf['filename'];
+            $pdfContent = app(ProjectLegalPdfService::class)->content($legalPdf['path']);
 
-        if ($this->shouldUploadPdfToSalesforce($request, $project)) {
-            $pdfContent ??= $pdf->contentFromBuilder($builder);
-
-            $this->uploadPdfToSalesforce(
+            $datasheetPdf = $this->datasheetPdf(
+                request: $request,
                 project: $project,
                 revision: $revision,
+                pdfContent: fn (): string => $pdfContent,
                 filename: $filename,
-                pdfContent: $pdfContent,
-                documentLabel: 'Lighting Schedule',
-                documentType: 'schedule',
-                fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint(
-                    $project,
-                    $revision,
-                    'schedule',
-                    false,
-                    $request->boolean('include_datasheets'),
-                ),
             );
+
+            if ($datasheetPdf !== null) {
+                app(ProjectLegalPdfService::class)->delete($legalPdf['path']);
+                $filename = $datasheetPdf['filename'];
+                $pdfContent = app(ProjectDatasheetPdfService::class)->content($datasheetPdf['path']);
+            }
+
+            if ($this->shouldUploadPdfToSalesforce($request, $project)) {
+                $this->uploadPdfToSalesforce(
+                    project: $project,
+                    revision: $revision,
+                    filename: $filename,
+                    pdfContent: $pdfContent,
+                    documentLabel: 'Lighting Schedule',
+                    documentType: 'schedule',
+                    fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint(
+                        $project,
+                        $revision,
+                        'schedule',
+                        false,
+                        $request->boolean('include_datasheets'),
+                    ),
+                );
+            }
+
+            ActivityLog::create([
+                'user_id' => $user->id,
+                'project_id' => $project->id,
+                'action_type' => 'schedule_pdf.generated',
+                'user_email_snapshot' => $user->email,
+                'project_name_snapshot' => $project->name,
+                'revision_number' => $revision->revision_number,
+                'payload' => [
+                    'filename' => $filename,
+                ],
+            ]);
+
+            if ($datasheetPdf !== null) {
+                return $this->downloadMergedPdf($datasheetPdf);
+            }
+
+            return $this->downloadMergedPdf($legalPdf);
+        } catch (Throwable $exception) {
+            app(ProjectLegalPdfService::class)->delete($legalPdf['path']);
+
+            throw $exception;
         }
-
-        ActivityLog::create([
-            'user_id' => $user->id,
-            'project_id' => $project->id,
-            'action_type' => 'schedule_pdf.generated',
-            'user_email_snapshot' => $user->email,
-            'project_name_snapshot' => $project->name,
-            'revision_number' => $revision->revision_number,
-            'payload' => [
-                'filename' => $filename,
-            ],
-        ]);
-
-        if ($datasheetPdf !== null) {
-            return $this->downloadMergedPdf($datasheetPdf);
-        }
-
-        return $builder
-            ->inline($filename)
-            ->toResponse($request);
     }
 
     /**
@@ -115,62 +125,71 @@ class ProjectPdfController extends Controller
         $pdf = app(ProjectSchedulePdfService::class);
         $filename = $pdf->quoteFilename($project, $revision);
         $builder = $pdf->quoteBuilder($project, $revision);
-        $pdfContent = null;
-
-        $datasheetPdf = $this->datasheetPdf(
-            request: $request,
-            project: $project,
-            revision: $revision,
+        $legalPdf = $this->legalPdf(
             pdfContent: fn (): string => $pdf->contentFromBuilder($builder),
             filename: $filename,
         );
 
-        if ($datasheetPdf !== null) {
-            $filename = $datasheetPdf['filename'];
-            $pdfContent = app(ProjectDatasheetPdfService::class)->content($datasheetPdf['path']);
-        }
+        try {
+            $filename = $legalPdf['filename'];
+            $pdfContent = app(ProjectLegalPdfService::class)->content($legalPdf['path']);
 
-        if ($this->shouldUploadPdfToSalesforce($request, $project)) {
-            $pdfContent ??= $pdf->contentFromBuilder($builder);
-
-            $this->uploadPdfToSalesforce(
+            $datasheetPdf = $this->datasheetPdf(
+                request: $request,
                 project: $project,
                 revision: $revision,
+                pdfContent: fn (): string => $pdfContent,
                 filename: $filename,
-                pdfContent: $pdfContent,
-                documentLabel: 'Lighting Quote',
-                documentType: 'quote',
-                fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint(
-                    $project,
-                    $revision,
-                    'quote',
-                    true,
-                    $request->boolean('include_datasheets'),
-                ),
             );
+
+            if ($datasheetPdf !== null) {
+                app(ProjectLegalPdfService::class)->delete($legalPdf['path']);
+                $filename = $datasheetPdf['filename'];
+                $pdfContent = app(ProjectDatasheetPdfService::class)->content($datasheetPdf['path']);
+            }
+
+            if ($this->shouldUploadPdfToSalesforce($request, $project)) {
+                $this->uploadPdfToSalesforce(
+                    project: $project,
+                    revision: $revision,
+                    filename: $filename,
+                    pdfContent: $pdfContent,
+                    documentLabel: 'Lighting Quote',
+                    documentType: 'quote',
+                    fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint(
+                        $project,
+                        $revision,
+                        'quote',
+                        true,
+                        $request->boolean('include_datasheets'),
+                    ),
+                );
+            }
+
+            ActivityLog::create([
+                'user_id' => $request->user()->id,
+                'project_id' => $project->id,
+                'action_type' => 'quote_pdf.generated',
+                'user_email_snapshot' => $request->user()->email,
+                'project_name_snapshot' => $project->name,
+                'revision_number' => $revision->revision_number,
+                'payload' => [
+                    'filename' => $filename,
+                ],
+            ]);
+
+            $project->markQuoted($revision);
+
+            if ($datasheetPdf !== null) {
+                return $this->downloadMergedPdf($datasheetPdf);
+            }
+
+            return $this->downloadMergedPdf($legalPdf);
+        } catch (Throwable $exception) {
+            app(ProjectLegalPdfService::class)->delete($legalPdf['path']);
+
+            throw $exception;
         }
-
-        ActivityLog::create([
-            'user_id' => $request->user()->id,
-            'project_id' => $project->id,
-            'action_type' => 'quote_pdf.generated',
-            'user_email_snapshot' => $request->user()->email,
-            'project_name_snapshot' => $project->name,
-            'revision_number' => $revision->revision_number,
-            'payload' => [
-                'filename' => $filename,
-            ],
-        ]);
-
-        $project->markQuoted($revision);
-
-        if ($datasheetPdf !== null) {
-            return $this->downloadMergedPdf($datasheetPdf);
-        }
-
-        return $builder
-            ->inline($filename)
-            ->toResponse($request);
     }
 
     /**
@@ -398,6 +417,14 @@ class ProjectPdfController extends Controller
             progressToken: $request->string('pdf_progress_token')->toString(),
             progressUserId: $request->user()?->id,
         );
+    }
+
+    /**
+     * @return array{path: string, filename: string}
+     */
+    private function legalPdf(callable $pdfContent, string $filename): array
+    {
+        return app(ProjectLegalPdfService::class)->appendLegalPage($pdfContent(), $filename);
     }
 
     /**

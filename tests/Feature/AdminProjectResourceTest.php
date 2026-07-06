@@ -24,8 +24,10 @@ use App\Services\ProjectSchedulePdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 use Throwable;
 
@@ -782,12 +784,24 @@ class AdminProjectResourceTest extends TestCase
                     }
                 };
             }
+
+            public function contentFromBuilder(object $builder): string
+            {
+                return AdminProjectResourceTest::pdfFixtureContent();
+            }
         });
 
-        $this->get(route('projects.pdf.schedule', [
+        $response = $this->get(route('projects.pdf.schedule', [
             'project' => $project,
             'revision' => $revision->id,
-        ]))->assertOk();
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertDownload('schedule-PDF-REF-P0.pdf');
+
+        $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 2);
+        File::delete($response->baseResponse->getFile()->getPathname());
 
         $this->assertDatabaseHas('activity_logs', [
             'user_id' => $admin->id,
@@ -1016,13 +1030,18 @@ class AdminProjectResourceTest extends TestCase
             return Http::response([], 500);
         });
 
-        $this->get(route('projects.pdf.schedule', [
+        $response = $this->get(route('projects.pdf.schedule', [
             'project' => $project,
             'revision' => $project->active_revision_id,
             'include_datasheets' => true,
-        ]))
+        ]));
+
+        $response
             ->assertOk()
             ->assertDownload('schedule-DS-001-P0-with-datasheets.pdf');
+
+        $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 3);
+        File::delete($response->baseResponse->getFile()->getPathname());
 
         $datasheetRequest = Http::recorded()
             ->map(fn (array $record) => $record[0])
@@ -1119,13 +1138,18 @@ class AdminProjectResourceTest extends TestCase
             return Http::response([], 500);
         });
 
-        $this->get(route('projects.pdf.quote', [
+        $response = $this->get(route('projects.pdf.quote', [
             'project' => $project,
             'revision' => $project->active_revision_id,
             'include_datasheets' => true,
-        ]))
+        ]));
+
+        $response
             ->assertOk()
             ->assertDownload('quote-QDS-001-P0-with-datasheets.pdf');
+
+        $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 3);
+        File::delete($response->baseResponse->getFile()->getPathname());
 
         $this->assertSame(ProjectStatus::Quoted, $project->fresh()->status);
     }
@@ -1294,14 +1318,24 @@ class AdminProjectResourceTest extends TestCase
                     }
                 };
             }
+
+            public function contentFromBuilder(object $builder): string
+            {
+                return AdminProjectResourceTest::pdfFixtureContent();
+            }
         });
 
-        $this->get(route('projects.pdf.quote', [
+        $response = $this->get(route('projects.pdf.quote', [
             'project' => $project,
             'revision' => $revision->id,
-        ]))
+        ]));
+
+        $response
             ->assertOk()
-            ->assertSee('fake quote pdf');
+            ->assertDownload('quote-QUOTE-REF-P0.pdf');
+
+        $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 2);
+        File::delete($response->baseResponse->getFile()->getPathname());
 
         $this->assertSame(ProjectStatus::Quoted, $project->fresh()->status);
     }
@@ -2073,5 +2107,13 @@ startxref
 391
 %%EOF
 PDF;
+    }
+
+    private function assertPdfPageCount(string $path, int $expectedPages): void
+    {
+        $process = new Process([(string) config('document-packs.qpdf_binary', 'qpdf'), '--show-npages', $path]);
+        $process->mustRun();
+
+        $this->assertSame((string) $expectedPages, trim($process->getOutput()));
     }
 }

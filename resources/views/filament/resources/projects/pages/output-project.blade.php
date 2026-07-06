@@ -225,6 +225,7 @@
                             $role = \App\Enums\DocumentPackItemRole::tryFrom($item['role']);
                             $roleLabel = $role?->label();
                             $requiresUpload = $this->documentPackRoleRequiresUpload($item['role']);
+                            $sourceLabel = $role?->source() === \App\Enums\DocumentPackItemSource::Template ? 'Template' : 'Generated';
                             $hasReplacementUpload = $this->documentPackItemHasActiveUpload($item);
                             $hasExistingFile = $this->documentPackItemHasVisibleExistingFile($item);
                             $hasFile = $hasExistingFile || $hasReplacementUpload;
@@ -457,7 +458,7 @@
                             @elseif(filled($item['role']))
                                 <div class="mx-auto mt-3 flex h-[233px] w-[165px] flex-col items-center justify-center rounded-lg border border-primary-200 bg-primary-50 px-3 text-center dark:border-primary-500/20 dark:bg-primary-500/10">
                                     <x-heroicon-o-sparkles class="h-8 w-8 text-primary-500" />
-                                    <span class="mt-2 text-xs font-semibold text-primary-700 dark:text-primary-300">Generated</span>
+                                    <span class="mt-2 text-xs font-semibold text-primary-700 dark:text-primary-300">{{ $sourceLabel }}</span>
                                     @if($item['role'] === \App\Enums\DocumentPackItemRole::Quote->value && (! $selectedGenerationRevision?->validated || $selectedGenerationRevision?->status !== \App\Enums\ProjectRevisionStatus::Approved))
                                         <span class="mt-2 text-xs text-amber-600 dark:text-amber-400">Quote not approved</span>
                                     @endif

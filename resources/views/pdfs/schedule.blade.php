@@ -325,6 +325,39 @@
             text-transform: uppercase;
             letter-spacing: 0.3pt;
         }
+
+        /* ── Legal blurb ───────────────────────────────────────────────── */
+        .legal-blurb {
+            margin-top: 9mm;
+            font-size: 6.5pt;
+            color: #000;
+            line-height: 1.35;
+            text-align: center;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        .legal-blurb-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .legal-blurb-table td {
+            padding: 2.5mm 3mm;
+            border: 0.5pt solid #e5e7eb;
+        }
+
+        .legal-blurb-note {
+            background: #fff4f2;
+        }
+
+        .legal-blurb-controls {
+            background: #f8e7d2;
+        }
+
+        .legal-blurb p {
+            margin: 0;
+        }
     </style>
 </head>
 <body>
@@ -517,6 +550,28 @@
         @endif
     </div>
     @endif
+
+    <div class="legal-blurb">
+        <table class="legal-blurb-table">
+            <tr>
+                <td class="legal-blurb-note">
+                    <p>
+                        <strong>NOTE: ALL QUANTITIES MUST BE CROSS REFERENCED AGAINST ANY DRAWINGS AND/OR LIGHTING REPORTS PRIOR TO ORDER</strong><br>
+                        &bull; Suspension kits available where applicable, please contact TAMCO sales office for further details (01952 736500).<br>
+                        &bull; All quantities shown are strictly budgetary at this stage, subject to fully scaled drawings being submitted.<br>
+                        &bull; Emergency lighting has been designed in accordance with BS5266-1:2016 but is an indicative layout only - additional lighting may be required.
+                    </p>
+                </td>
+            </tr>
+            <tr>
+                <td class="legal-blurb-controls">
+                    <p>
+                        Please note the above project using Tamlite Vision controls requires a professional on-site commissioning service to enable correct operation of all presence/daylight sensors. Any savings outlined in the energy saving calculations will only be achieved upon the completion of this service. The costs quoted for this include setting of all necessary parameters required to allow for correct presence and/or daylight sensitivity at all times of the day/year.
+                    </p>
+                </td>
+            </tr>
+        </table>
+    </div>
 
 </div>
 

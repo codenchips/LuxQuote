@@ -420,6 +420,38 @@ class AdminDocumentPackTest extends TestCase
         File::delete($generated['path']);
     }
 
+    public function test_standard_legal_page_can_be_saved_and_generated_in_a_document_pack(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create(['reference_number' => 'LEGAL-001']);
+        $this->actingAs($admin);
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->set('documentPackName', 'Legal Template Pack');
+        $firstKey = array_key_first($component->get('documentPackItems'));
+
+        $component
+            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::StandardLegalPage->value)
+            ->call('saveDocumentPack')
+            ->assertHasNoErrors()
+            ->assertNotified('Document pack saved');
+
+        $pack = DocumentPack::where('project_id', $project->id)->firstOrFail();
+
+        $this->assertSame([DocumentPackItemRole::StandardLegalPage], $pack->items->pluck('role')->all());
+        $this->assertSame([DocumentPackItemSource::Template], $pack->items->pluck('source_type')->all());
+
+        $generated = app(DocumentPackPdfService::class)->generate($pack, $project->activeRevision, $admin);
+
+        $process = new Process(['qpdf', '--show-npages', $generated['path']]);
+        $process->mustRun();
+
+        $this->assertSame('1', trim($process->getOutput()));
+        $this->assertSame('LEGAL-001-Legal-Template-Pack-P0-document-pack.pdf', $generated['filename']);
+
+        File::delete($generated['path']);
+    }
+
     public function test_generated_items_use_the_revision_selected_at_generation_time(): void
     {
         $admin = User::factory()->admin()->create();

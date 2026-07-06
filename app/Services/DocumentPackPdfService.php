@@ -17,7 +17,14 @@ use Symfony\Component\Process\Process;
 
 class DocumentPackPdfService
 {
-    public function __construct(private ProjectSchedulePdfService $projectPdfService) {}
+    private ProjectLegalPdfService $projectLegalPdfService;
+
+    public function __construct(
+        private ProjectSchedulePdfService $projectPdfService,
+        ?ProjectLegalPdfService $projectLegalPdfService = null,
+    ) {
+        $this->projectLegalPdfService = $projectLegalPdfService ?? app(ProjectLegalPdfService::class);
+    }
 
     /**
      * @return array{path: string, filename: string}
@@ -119,6 +126,7 @@ class DocumentPackPdfService
         $content = match ($role) {
             DocumentPackItemRole::Quote => $this->quoteContent($revision, $user),
             DocumentPackItemRole::UnpricedSchedule => $this->scheduleContent($revision, $user),
+            DocumentPackItemRole::StandardLegalPage => File::get($this->projectLegalPdfService->legalPagePath()),
             default => throw new RuntimeException('The generated document role is not supported.'),
         };
 

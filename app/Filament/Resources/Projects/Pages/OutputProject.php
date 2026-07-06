@@ -594,7 +594,7 @@ class OutputProject extends ViewRecord
                         if ($oldPath !== null) {
                             $oldFilesToDelete[] = [$oldDisk ?? 'local', $oldPath];
                         }
-                    } elseif ($role->source() === DocumentPackItemSource::Generated) {
+                    } elseif (in_array($role->source(), [DocumentPackItemSource::Generated, DocumentPackItemSource::Template], true)) {
                         $attributes += [
                             'file_disk' => null,
                             'file_path' => null,
@@ -968,7 +968,9 @@ class OutputProject extends ViewRecord
         return match ($role) {
             DocumentPackItemRole::Quote => $this->canProduceQuote(),
             DocumentPackItemRole::UnpricedSchedule => $this->canProduceUnpricedSchedule(),
-            DocumentPackItemRole::Cover, DocumentPackItemRole::Legal => $this->canManageDocumentPacks(),
+            DocumentPackItemRole::Cover,
+            DocumentPackItemRole::Legal,
+            DocumentPackItemRole::StandardLegalPage => $this->canManageDocumentPacks(),
         };
     }
 

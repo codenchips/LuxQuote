@@ -28,11 +28,12 @@ class SalesforcePdfUploadTracker
             ->get();
 
         $payload = [
-            'version' => 2,
+            'version' => 3,
             'document_type' => $documentType,
             'show_prices' => $showPrices,
             'include_datasheets' => $includeDatasheets,
             'template_hash' => $this->templateHash(),
+            'legal_page_hash' => $this->legalPageHash(),
             'project' => [
                 'id' => $project->id,
                 'name' => $project->name,
@@ -96,6 +97,13 @@ class SalesforcePdfUploadTracker
     private function templateHash(): ?string
     {
         $path = resource_path('views/pdfs/schedule.blade.php');
+
+        return is_file($path) ? sha1_file($path) ?: null : null;
+    }
+
+    private function legalPageHash(): ?string
+    {
+        $path = (string) config('document-packs.legal_page_pdf');
 
         return is_file($path) ? sha1_file($path) ?: null : null;
     }
