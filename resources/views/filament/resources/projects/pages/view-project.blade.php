@@ -4,6 +4,7 @@
     $canEditLines = $this->canEditLines();
     $canEditPrices = $this->canEditPrices();
     $canCreateRevisions = $this->canCreateRevisions();
+    $revisionLocked = $this->isViewingRevisionValidated;
     $lineGridColumns = $canViewPrices
         ? '20px 110px 65px 1fr 60px 90px 95px 1fr 84px 60px'
         : '20px 110px 65px 1fr 60px 90px 1fr 60px';
@@ -49,6 +50,21 @@
             wire:click="setActiveRevision({{ $activeRevisionId }})"
             class="ml-auto shrink-0 rounded-md bg-amber-100 dark:bg-amber-800/40 px-3 py-1 text-xs font-medium hover:bg-amber-200 dark:hover:bg-amber-800/60 transition-colors"
         >Switch to active</button>
+    </div>
+    @endif
+
+    @if($revisionLocked)
+    <div class="mb-4 flex items-center gap-3 rounded-lg border border-emerald-300 bg-emerald-400 px-4 py-3 text-sm font-semibold text-emerald-950 shadow-lg shadow-emerald-500/20 dark:border-emerald-400 dark:bg-emerald-500">
+        <x-heroicon-o-check-badge class="h-5 w-5 shrink-0" />
+        <span>This revision is approved and locked. Create a new revision before changing areas or line items.</span>
+        @if($canCreateRevisions)
+            <button
+                wire:click="createNewRevision"
+                class="ml-auto shrink-0 rounded-md bg-emerald-950 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-emerald-900"
+            >
+                Create new revision
+            </button>
+        @endif
     </div>
     @endif
 
@@ -108,24 +124,24 @@
                 <div class="flex items-center gap-1" @click.stop>
 
                     <button
-                        wire:click="addProduct({{ $area->id }})"
-                        @disabled(! $canEditLines || $this->isViewingRevisionValidated)
+                        wire:click="{{ $revisionLocked ? 'notifyApprovedRevisionLocked' : 'addProduct('.$area->id.')' }}"
+                        @disabled(! $canEditLines)
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
                     >
                         <x-heroicon-o-plus class="w-3 h-3" /> Product 
                     </button>
 
                     <button
-                        wire:click="openPasteProductsModal({{ $area->id }})"
-                        @disabled(! $canEditLines || $this->isViewingRevisionValidated)
+                        wire:click="{{ $revisionLocked ? 'notifyApprovedRevisionLocked' : 'openPasteProductsModal('.$area->id.')' }}"
+                        @disabled(! $canEditLines)
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
                     >
                         <x-heroicon-o-plus class="w-3 h-3" /> Paste
                     </button>
 
                     <button
-                        wire:click="addBlankLine({{ $area->id }})"
-                        @disabled(! $canEditLines || $this->isViewingRevisionValidated)
+                        wire:click="{{ $revisionLocked ? 'notifyApprovedRevisionLocked' : 'addBlankLine('.$area->id.')' }}"
+                        @disabled(! $canEditLines)
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
                     >
                         <x-heroicon-o-plus class="w-3 h-3" /> Blank 
@@ -164,7 +180,7 @@
                 {{-- Sortable lines --}}
                 <div
                     x-sort="(id, pos) => $wire.sortLine(parseInt(id), pos, {{ $area->id }})"
-                    x-sort:config="{ group: 'projectLines', animation: 150, disabled: {{ (! $canEditLines || $this->isViewingRevisionValidated) ? 'true' : 'false' }} }"
+                    x-sort:config="{ group: 'projectLines', animation: 150, disabled: {{ (! $canEditLines || $revisionLocked) ? 'true' : 'false' }} }"
                     class="divide-y divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800"
                 >
                     @foreach($area->lines as $line)
@@ -282,16 +298,16 @@
                         {{-- Row actions --}}
                         <div class="flex items-center justify-end gap-0.5">
                             <button
-                                wire:click="duplicateLine({{ $line->id }})"
-                                @disabled(! $canEditLines || $this->isViewingRevisionValidated)
+                                wire:click="{{ $revisionLocked ? 'notifyApprovedRevisionLocked' : 'duplicateLine('.$line->id.')' }}"
+                                @disabled(! $canEditLines)
                                 title="Duplicate row"
                                 class="rounded p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             >
                                 <x-heroicon-o-document-duplicate class="w-4 h-4" />
                             </button>
                             <button
-                                @click.stop="confirmDeleteLineId = {{ $line->id }}"
-                                @disabled(! $canEditLines || $this->isViewingRevisionValidated)
+                                @click.stop="{{ $revisionLocked ? '$wire.notifyApprovedRevisionLocked()' : 'confirmDeleteLineId = '.$line->id }}"
+                                @disabled(! $canEditLines)
                                 title="Delete row"
                                 class="rounded p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700"
                             >
@@ -303,7 +319,7 @@
 
                     @if($area->lines->isEmpty())
                     <div class="px-8 py-6 text-center text-sm text-gray-400 dark:text-gray-500">
-                        @if($canEditLines && ! $this->isViewingRevisionValidated)
+                        @if($canEditLines && ! $revisionLocked)
                             No items in this area. Add a
                             <button
                                 wire:click="addBlankLine({{ $area->id }})"

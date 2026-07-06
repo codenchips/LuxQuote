@@ -37,6 +37,8 @@ class ViewProject extends ViewRecord
 {
     use HasProjectSubNav;
 
+    private const ApprovedRevisionLockedMessage = 'This project revision is approved.  To make changes you must create a new revision.';
+
     private const LineStatusPending = 'Pending';
 
     private const LineStatusPriced = 'Priced';
@@ -143,11 +145,15 @@ class ViewProject extends ViewRecord
             }
         }
 
+        $html = collect($parts)
+            ->map(fn (string $part): string => e($part))
+            ->implode(' &middot; ');
+
         if ($this->isViewingRevisionValidated) {
-            $parts[] = 'Approved (locked)';
+            $html .= ' &middot; <span class="inline-flex items-center rounded-md bg-emerald-500 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-emerald-950 ring-1 ring-emerald-300 shadow-sm shadow-emerald-500/30">Approved - locked</span>';
         }
 
-        return new HtmlString(implode(' &middot; ', $parts));
+        return new HtmlString($html);
     }
 
     protected function getHeaderActions(): array
@@ -728,6 +734,15 @@ class ViewProject extends ViewRecord
         }
     }
 
+    public function notifyApprovedRevisionLocked(): void
+    {
+        Notification::make()
+            ->title('Revision locked')
+            ->body(self::ApprovedRevisionLockedMessage)
+            ->warning()
+            ->send();
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -1070,6 +1085,11 @@ class ViewProject extends ViewRecord
     private function ensureViewingRevisionIsEditable(): void
     {
         abort_unless($this->canEditLines(), 403);
+
+        if ($this->isViewingRevisionValidated) {
+            $this->notifyApprovedRevisionLocked();
+        }
+
         abort_if($this->isViewingRevisionValidated, 403, 'Approved revisions are locked against editing.');
     }
 

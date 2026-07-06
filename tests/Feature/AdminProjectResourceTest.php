@@ -336,6 +336,35 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame('Locked Details Project', $project->fresh()->name);
     }
 
+    public function test_approved_revision_lock_is_prominent_and_explains_blocked_actions(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Approved Lock Project',
+        ]);
+        $area = $project->activeRevision->areas()->first();
+
+        $project->activeRevision->update([
+            'validated' => true,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->assertSee('Approved Lock Project')
+            ->assertSee('Approved - locked')
+            ->assertSee('This revision is approved and locked. Create a new revision before changing areas or line items.')
+            ->call('notifyApprovedRevisionLocked')
+            ->assertNotified('Revision locked');
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('addBlankLine', $area->id)
+            ->assertForbidden();
+
+        $this->assertSame(0, $area->lines()->count());
+    }
+
     public function test_project_list_hides_archived_projects_until_status_filter_requests_them(): void
     {
         $admin = User::factory()->admin()->create();
