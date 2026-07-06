@@ -897,4 +897,5 @@ Blank lines with no SKU render empty schedule cells so placeholder rows do not s
 - **Display names in UI**: Project owner column and history "Who" column now show the user's display name instead of their email address
 - **Salesforce integration foundation**: OAuth2 client credentials auth working; `InterrogateSalesforce` command printing live Opportunity records from Salesforce to the terminal
 
-# Bump
+# Bump Bump
+
