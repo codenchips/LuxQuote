@@ -18,6 +18,7 @@ use App\Models\ActivityLog;
 use App\Models\Product;
 use App\Models\Project;
 use App\Models\ProjectArea;
+use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
 use App\Models\User;
 use App\Services\ProjectSchedulePdfService;
@@ -1285,6 +1286,7 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('Quote with pricing.')
             ->assertSee('Schedule without pricing. Always available.')
             ->assertSee('About datasheets')
+            ->assertDontSee('Learn more')
             ->assertDontSee('Build a reusable pack, drag documents into the required order');
 
         $this->assertLessThan(
@@ -1481,6 +1483,47 @@ class AdminProjectResourceTest extends TestCase
             $this->assertStringContainsString('Project Location:', $html);
             $this->assertStringContainsString('Visible Project Location', $html);
         }
+    }
+
+    public function test_schedule_legal_blurb_is_grouped_with_final_line_item_table(): void
+    {
+        $user = User::factory()->create(['name' => 'PDF User']);
+        $project = Project::factory()->for($user)->create();
+        $revision = $project->activeRevision;
+        $area = $revision->areas()->firstOrFail();
+
+        ProjectLine::create([
+            'project_area_id' => $area->id,
+            'code' => 'AST110NWD',
+            'description' => 'ASTRO 10W - 4000K',
+            'qty' => 32,
+            'type' => ProjectLineType::Standard,
+            'sort_order' => 0,
+        ]);
+
+        ProjectLine::create([
+            'project_area_id' => $area->id,
+            'code' => 'AST220NWM3',
+            'description' => 'ASTRO 20W - 4000K',
+            'qty' => 3,
+            'type' => ProjectLineType::Standard,
+            'sort_order' => 1,
+        ]);
+
+        $html = view('pdfs.schedule', [
+            'project' => $project->load('user'),
+            'revision' => $revision,
+            'areas' => ProjectArea::where('project_revision_id', $revision->id)->with('lines')->get(),
+            'documentTitle' => 'Lighting Schedule',
+            'showPrices' => false,
+        ])->render();
+
+        $this->assertStringContainsString('class="final-line-and-legal"', $html);
+        $this->assertStringContainsString('class="legal-blurb-row"', $html);
+        $this->assertLessThan(
+            strpos($html, 'class="legal-blurb-row"'),
+            strpos($html, 'AST220NWM3'),
+        );
     }
 
     public function test_admin_can_paste_products_with_optional_description_and_price_columns(): void

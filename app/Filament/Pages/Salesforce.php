@@ -6,6 +6,7 @@ use App\Filament\Support\BadgeStyle;
 use App\Services\SalesforcePushControl;
 use App\Services\SalesforceService;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -40,6 +41,17 @@ class Salesforce extends Page implements HasTable
         return auth()->user()?->can('salesforce.view') ?? false;
     }
 
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('salesforcePushControl')
+                ->view('filament.pages.actions.salesforce-push-control', fn ($livewire): array => [
+                    'canManageSalesforcePush' => $livewire->canManageSalesforcePush(),
+                    'salesforcePushDisabled' => $livewire->salesforcePushDisabled,
+                ]),
+        ];
+    }
+
     public function table(Table $table): Table
     {
         return $table
@@ -72,7 +84,7 @@ class Salesforce extends Page implements HasTable
                 TextColumn::make('StageName')
                     ->label('Stage')
                     ->badge()
-                    ->color(fn (?string $state): string => BadgeStyle::filamentColor($state))
+                    ->color(fn (?string $state): string|array => BadgeStyle::filamentColor($state))
                     ->sortable(),
                 TextColumn::make('Amount')
                     ->label('Amount')
@@ -102,8 +114,10 @@ class Salesforce extends Page implements HasTable
     {
         abort_unless($this->canManageSalesforcePush(), 403);
 
-        $this->salesforcePushDisabled = ! $this->salesforcePushDisabled;
+        $pushControl = app(SalesforcePushControl::class);
 
-        app(SalesforcePushControl::class)->setDisabled($this->salesforcePushDisabled);
+        $pushControl->setDisabled(! $pushControl->disabled());
+
+        $this->salesforcePushDisabled = $pushControl->disabled();
     }
 }

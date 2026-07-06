@@ -197,6 +197,37 @@ Error: Cannot find module 'puppeteer'
 
 That means the container cannot find the Node dependency required by Browsershot. Re-run the npm/Puppeteer commands above inside the `laravel.test` container. If the error is `Could not find Chrome` or `mkdir(): Invalid path`, verify `LARAVEL_PDF_TEMP_PATH`, `PUPPETEER_CACHE_DIR`, and rerun `app:diagnose-pdf-environment`.
 
+### PDF Incident Checklist
+
+Use this checklist before changing code when production PDF downloads return HTTP 500:
+
+```bash
+cd /home/tamliteco/luxquote.app
+docker compose exec laravel.test php artisan config:show laravel-pdf.browsershot.temp_path
+docker compose exec laravel.test sh -lc 'ls -ld /var/www/html/storage/app/browsershot /home/sail/.cache /home/sail/.cache/puppeteer || true'
+docker compose exec laravel.test qpdf --version
+docker compose exec laravel.test php artisan app:diagnose-pdf-environment
+docker compose exec laravel.test tail -n 120 storage/logs/laravel.log
+```
+
+Known production failures and fixes:
+
+- `mkdir(): Invalid path` means the Browsershot temp path is empty or cached incorrectly. Set `LARAVEL_PDF_TEMP_PATH=/var/www/html/storage/app/browsershot`, then run `docker compose exec laravel.test php artisan optimize:clear`.
+- `Could not find Chrome ... /root/.cache/puppeteer` means Puppeteer is looking in the wrong user/cache or the browser cache was not installed for the web runtime. Keep `PUPPETEER_CACHE_DIR=/home/sail/.cache/puppeteer`, ensure `/home/sail/.cache` is owned by `sail:sail`, and run Puppeteer install as the `sail` user.
+- `Cannot find module 'puppeteer'` means npm dependencies are missing inside the container. Run `docker compose exec -u sail laravel.test npm install`.
+
+Recovery commands:
+
+```bash
+docker compose exec laravel.test sh -lc 'mkdir -p /var/www/html/storage/app/browsershot /home/sail/.cache/puppeteer && chown -R sail:sail /var/www/html/storage/app/browsershot /home/sail/.cache'
+docker compose exec -u sail laravel.test npm install
+docker compose exec -u sail laravel.test npx puppeteer browsers install chrome-headless-shell
+docker compose exec laravel.test php artisan optimize:clear
+docker compose exec laravel.test php artisan app:diagnose-pdf-environment
+```
+
+`app:diagnose-pdf-environment` proves the base Browsershot runtime only. It does not prove the full quote/schedule path, qpdf merge, standard legal page, datasheet endpoint, or Salesforce side effects. If user-facing PDFs are still failing after diagnostics pass, inspect `storage/logs/laravel.log` around the failing request and test the exact document type that failed.
+
 If document-pack uploads or generation fail, verify `qpdf --version` in the container and check `storage/logs/laravel.log`. Uploaded files are checked with `qpdf --check`; corrupt, encrypted, or unsupported PDFs are intentionally rejected.
 
 Optional document-pack environment overrides are:
@@ -288,6 +319,39 @@ docker run -d \
 ```
 
 Do not run the official GitHub runner directly on the CentOS 7 host; the host `libstdc++` is too old for the current runner binary.
+
+### Runner Incident Checklist
+
+If GitHub Actions shows `Waiting for a runner to pick up this job...`, check the runner container first:
+
+```bash
+docker ps --filter name=luxquote-github-runner
+docker logs --tail=120 luxquote-github-runner
+```
+
+Healthy logs should end with:
+
+```text
+Listening for Jobs
+```
+
+The workflow requires labels `self-hosted` and `luxquote-production`. The runner container should be named `luxquote-github-runner`, use `RUNNER_NAME="luxquote-production"`, and include `RUNNER_LABELS="luxquote-production"`.
+
+If the job is picked up but deploy fails while fetching GitHub:
+
+```bash
+docker exec luxquote-github-runner sh -lc 'id; echo HOME=$HOME; ls -la ~/.ssh || true'
+docker exec luxquote-github-runner sh -lc 'ssh -T git@github.com || true'
+```
+
+The runner image runs the deploy as root, so Git/SSH looks under `/root/.ssh` inside the runner container. Ensure:
+
+- `/root/.ssh/known_hosts` contains GitHub host keys.
+- `/root/.ssh/luxquote_github_repo_deploy` exists inside the runner container.
+- the private key is `chmod 600`, owned by root, and the corresponding public key is registered as a read-only deploy key on `codenchips/LuxQuote`.
+- `/home/tamliteco/luxquote.app` is mounted into the runner at `/home/runner/luxquote.app`, matching the workflow/deploy script path.
+
+If a new runner token is used, remove/recreate only the runner container. Do not remove Docker volumes.
 
 If converting the existing SFTP directory, take a database backup and preserve `.env`, `storage/`, and `backups/` before replacing the working tree with a clean clone. Do not delete the Docker MySQL volume.
 

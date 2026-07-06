@@ -212,6 +212,7 @@ class OutputProject extends ViewRecord
     public function documentPackRoleOptions(): array
     {
         return collect(DocumentPackItemRole::cases())
+            ->filter(fn (DocumentPackItemRole $role): bool => $role->selectableInBuilder())
             ->filter(fn (DocumentPackItemRole $role): bool => $this->canUseDocumentRole($role))
             ->mapWithKeys(fn (DocumentPackItemRole $role): array => [$role->value => $role->label()])
             ->all();
@@ -893,22 +894,6 @@ class OutputProject extends ViewRecord
             if ($role->source() !== DocumentPackItemSource::Uploaded) {
                 continue;
             }
-
-            $upload = $this->documentPackUploads[$state['key']] ?? null;
-
-            if ($this->documentPackItemHasActiveUpload($state) || $this->documentPackItemHasExistingFile($state)) {
-                continue;
-            }
-
-            unset(
-                $this->documentPackItems[$key],
-                $this->documentPackUploads[$key],
-                $this->documentPackUploadOriginalNames[$key],
-                $this->editingDocumentPackRoleKeys[$key],
-                $this->originalDocumentPackRoleValues[$key],
-                $this->originalDocumentPackUploadFilenames[$key],
-            );
-            $removedCount++;
         }
 
         return $removedCount;
@@ -970,6 +955,7 @@ class OutputProject extends ViewRecord
             DocumentPackItemRole::UnpricedSchedule => $this->canProduceUnpricedSchedule(),
             DocumentPackItemRole::Cover,
             DocumentPackItemRole::Legal,
+            DocumentPackItemRole::CustomPdf,
             DocumentPackItemRole::StandardLegalPage => $this->canManageDocumentPacks(),
         };
     }

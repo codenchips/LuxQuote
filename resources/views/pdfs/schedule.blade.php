@@ -14,6 +14,7 @@
     $grandTotal = $areas->sum(fn ($a) => $a->lines->sum(fn ($line) => ((int) ($line->qty ?? 0)) * (float) ($line->unit_price ?? 0)));
     $showPrices = $showPrices ?? false;
     $documentTitle = $documentTitle ?? 'Lighting Schedule';
+    $areasWithLines = $areas->filter(fn ($area) => $area->lines->isNotEmpty())->values();
 
     // Build a set of SKUs that actually exist in the products table,
     // so custom/edited codes never get a datasheet link.
@@ -258,9 +259,14 @@
             line-height: 1.4;
         }
 
-        .line-table tr:last-child td { border-bottom: none; }
+        .line-table tbody:last-child tr:last-child td { border-bottom: none; }
 
         .line-table tr { break-inside: avoid; }
+
+        .final-line-and-legal {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
 
         /* Column widths */
         .col-code { width: 12%; font-size: 8pt; white-space: nowrap; }
@@ -327,11 +333,29 @@
         }
 
         /* ── Legal blurb ───────────────────────────────────────────────── */
+        .line-table tr.keep-with-legal {
+            break-after: avoid;
+            page-break-after: avoid;
+        }
+
+        .legal-blurb-row {
+            break-before: avoid;
+            page-break-before: avoid;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        .legal-blurb-row td {
+            padding: 5mm 0 0;
+            border-bottom: none;
+        }
+
         .legal-blurb {
-            margin-top: 9mm;
-            font-size: 6.5pt;
+            width: calc(100% - 16mm);
+            margin: 0 auto;
+            font-size: 6.1pt;
             color: #000;
-            line-height: 1.35;
+            line-height: 1.24;
             text-align: center;
             break-inside: avoid;
             page-break-inside: avoid;
@@ -343,7 +367,7 @@
         }
 
         .legal-blurb-table td {
-            padding: 2.5mm 3mm;
+            padding: 1.6mm 2.2mm;
             border: 0.5pt solid #e5e7eb;
         }
 
@@ -441,11 +465,11 @@
     </div>
     @endif
 
-    @foreach ($areas as $area)
-        @if($area->lines->isNotEmpty())
+    @foreach ($areasWithLines as $area)
         @php
             $areaQty = $area->lines->sum('qty');
             $areaTotal = $area->lines->sum(fn ($line) => ((int) ($line->qty ?? 0)) * (float) ($line->unit_price ?? 0));
+            $isFinalLineItemArea = $loop->last;
         @endphp
         <div class="area-block">
 
@@ -484,13 +508,18 @@
                     @php
                         $hasSku = filled($line->code);
                         $hasLineNote = $hasSku && filled($line->notes);
+                        $isFinalLineItemRow = $isFinalLineItemArea && $loop->last;
                         $rowClass = match(true) {
                             $line->type === \App\Enums\ProjectLineType::Modified => 'row-modified',
                             $line->type === \App\Enums\ProjectLineType::Custom   => 'row-custom',
                             default => '',
                         };
                     @endphp
-                    <tr class="{{ $rowClass }}">
+                    @if($isFinalLineItemRow)
+                </tbody>
+                <tbody class="final-line-and-legal">
+                    @endif
+                    <tr @class([$rowClass, 'keep-with-legal' => $isFinalLineItemRow])>
                         <td class="col-code">{!! $hasSku ? e($line->code) : '&nbsp;' !!}</td>
                         <td class="col-ref">{!! $hasSku ? e($line->ref ?? '') : '&nbsp;' !!}</td>
                         <td class="col-desc">{!! $hasSku ? e($line->description ?? '') : '&nbsp;' !!}</td>
@@ -528,12 +557,38 @@
                             <td colspan="{{ $showPrices ? 5 : 3 }}" class="line-note-cell"><strong>Note:</strong> {{ $line->notes }}</td>
                         </tr>
                     @endif
+                    @if($isFinalLineItemRow)
+                        <tr class="legal-blurb-row">
+                            <td colspan="{{ $showPrices ? 7 : 5 }}">
+                                <div class="legal-blurb">
+                                    <table class="legal-blurb-table">
+                                        <tr>
+                                            <td class="legal-blurb-note">
+                                                <p>
+                                                    <strong>NOTE: ALL QUANTITIES MUST BE CROSS REFERENCED AGAINST ANY DRAWINGS AND/OR LIGHTING REPORTS PRIOR TO ORDER</strong><br>
+                                                    &bull; Suspension kits available where applicable, please contact TAMCO sales office for further details (01952 736500).<br>
+                                                    &bull; All quantities shown are strictly budgetary at this stage, subject to fully scaled drawings being submitted.<br>
+                                                    &bull; Emergency lighting has been designed in accordance with BS5266-1:2016 but is an indicative layout only - additional lighting may be required.
+                                                </p>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td class="legal-blurb-controls">
+                                                <p>
+                                                    Please note the above project using Tamlite Vision controls requires a professional on-site commissioning service to enable correct operation of all presence/daylight sensors. Any savings outlined in the energy saving calculations will only be achieved upon the completion of this service. The costs quoted for this include setting of all necessary parameters required to allow for correct presence and/or daylight sensitivity at all times of the day/year.
+                                                </p>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </td>
+                        </tr>
+                    @endif
                     @endforeach
                 </tbody>
             </table>
 
         </div>
-        @endif
     @endforeach
 
     {{-- Quote / general notes --}}
@@ -550,28 +605,6 @@
         @endif
     </div>
     @endif
-
-    <div class="legal-blurb">
-        <table class="legal-blurb-table">
-            <tr>
-                <td class="legal-blurb-note">
-                    <p>
-                        <strong>NOTE: ALL QUANTITIES MUST BE CROSS REFERENCED AGAINST ANY DRAWINGS AND/OR LIGHTING REPORTS PRIOR TO ORDER</strong><br>
-                        &bull; Suspension kits available where applicable, please contact TAMCO sales office for further details (01952 736500).<br>
-                        &bull; All quantities shown are strictly budgetary at this stage, subject to fully scaled drawings being submitted.<br>
-                        &bull; Emergency lighting has been designed in accordance with BS5266-1:2016 but is an indicative layout only - additional lighting may be required.
-                    </p>
-                </td>
-            </tr>
-            <tr>
-                <td class="legal-blurb-controls">
-                    <p>
-                        Please note the above project using Tamlite Vision controls requires a professional on-site commissioning service to enable correct operation of all presence/daylight sensors. Any savings outlined in the energy saving calculations will only be achieved upon the completion of this service. The costs quoted for this include setting of all necessary parameters required to allow for correct presence and/or daylight sensitivity at all times of the day/year.
-                    </p>
-                </td>
-            </tr>
-        </table>
-    </div>
 
 </div>
 

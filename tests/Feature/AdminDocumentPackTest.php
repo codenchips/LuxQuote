@@ -43,9 +43,9 @@ class AdminDocumentPackTest extends TestCase
 
         $component
             ->set('documentPackName', 'Customer Quote Pack')
-            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Cover->value)
-            ->set("documentPackUploads.{$firstKey}", UploadedFile::fake()->createWithContent('cover.pdf', $this->pdfWithText('Cover')))
-            ->set("documentPackUploadOriginalNames.{$firstKey}", 'Cover Sheet.pdf')
+            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::CustomPdf->value)
+            ->set("documentPackUploads.{$firstKey}", UploadedFile::fake()->createWithContent('custom.pdf', $this->pdfWithText('Custom PDF')))
+            ->set("documentPackUploadOriginalNames.{$firstKey}", 'Custom Attachment.pdf')
             ->call('addDocumentPackItem', $firstKey);
 
         $secondKey = array_key_last($component->get('documentPackItems'));
@@ -60,7 +60,7 @@ class AdminDocumentPackTest extends TestCase
         $this->assertSame('Customer Quote Pack', $pack->name);
         $this->assertSame($admin->id, $pack->created_by);
         $this->assertSame([
-            DocumentPackItemRole::Cover,
+            DocumentPackItemRole::CustomPdf,
             DocumentPackItemRole::UnpricedSchedule,
         ], $pack->items->pluck('role')->all());
         $this->assertSame([
@@ -69,8 +69,24 @@ class AdminDocumentPackTest extends TestCase
         ], $pack->items->pluck('source_type')->all());
 
         $cover = $pack->items->first();
-        $this->assertSame('Cover Sheet.pdf', $cover->original_filename);
+        $this->assertSame('Custom Attachment.pdf', $cover->original_filename);
         Storage::disk('local')->assertExists($cover->file_path);
+    }
+
+    public function test_document_pack_role_dropdown_uses_current_document_types(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $this->actingAs($admin);
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id]);
+
+        $this->assertSame([
+            DocumentPackItemRole::CustomPdf->value => 'Custom PDF',
+            DocumentPackItemRole::StandardLegalPage->value => 'Standard Legal Page',
+            DocumentPackItemRole::Quote->value => 'Quote',
+            DocumentPackItemRole::UnpricedSchedule->value => 'Schedule',
+        ], $component->instance()->documentPackRoleOptions());
     }
 
     public function test_document_pack_builder_uses_compact_cards_and_end_add_tile(): void
@@ -109,19 +125,19 @@ class AdminDocumentPackTest extends TestCase
             ->assertSeeHtml('xl:grid-cols-6')
             ->assertSeeHtml('h-[233px] w-[165px]')
             ->assertSeeHtml('aria-label="Add document"')
-            ->assertSee('Unpriced Schedule')
+            ->assertSee('Schedule')
             ->assertSee('Generated')
             ->assertSee("P0 - 2 SKU's, 8 Items")
             ->assertSee('Last modified 25/06/26 10:30')
             ->assertDontSee('Select a document...')
-            ->assertDontSee('The unpriced schedule generated for the revision selected at output time.')
+            ->assertDontSee('The schedule generated for the revision selected at output time.')
             ->assertDontSee('Add after')
             ->assertDontSee('Replace document type')
             ->assertDontSee('Cancel replacement');
 
         $component
-            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Cover->value)
-            ->assertSee('Cover')
+            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::CustomPdf->value)
+            ->assertSee('Custom PDF')
             ->assertSee('Drop a file here or click to choose')
             ->assertDontSee('Select a document...')
             ->assertSeeHtml('x-on:drop.prevent.stop')
@@ -133,9 +149,9 @@ class AdminDocumentPackTest extends TestCase
             ->assertSeeHtml('clearDocumentPackUpload')
             ->assertSee('Only PDF files can be uploaded.')
             ->assertSeeHtml("\$wire.set('documentPackUploadOriginalNames.")
-            ->set("documentPackUploads.{$firstKey}", UploadedFile::fake()->createWithContent('cover.pdf', $this->pdfWithText('Cover')))
-            ->set("documentPackUploadOriginalNames.{$firstKey}", 'Cover Sheet.pdf')
-            ->assertSee('Cover Sheet.pdf')
+            ->set("documentPackUploads.{$firstKey}", UploadedFile::fake()->createWithContent('custom.pdf', $this->pdfWithText('Custom PDF')))
+            ->set("documentPackUploadOriginalNames.{$firstKey}", 'Custom Attachment.pdf')
+            ->assertSee('Custom Attachment.pdf')
             ->assertSee('replace')
             ->assertDontSee('Select a document...')
             ->assertDontSee('Contents')
@@ -265,7 +281,7 @@ class AdminDocumentPackTest extends TestCase
         $this->assertCount(1, $component->get('documentPackItems'));
     }
 
-    public function test_save_removes_uploaded_document_pack_blocks_without_files_and_saves_remaining_items(): void
+    public function test_custom_pdf_document_pack_item_requires_an_upload(): void
     {
         $admin = User::factory()->admin()->create();
         $project = Project::factory()->for($admin)->create();
@@ -276,21 +292,14 @@ class AdminDocumentPackTest extends TestCase
 
         $component
             ->set('documentPackName', 'Pack Missing External File')
-            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::Cover->value)
-            ->call('addDocumentPackItem', $firstKey);
-
-        $secondKey = array_key_last($component->get('documentPackItems'));
-
-        $component
-            ->set("documentPackItems.{$secondKey}.role", DocumentPackItemRole::UnpricedSchedule->value)
+            ->set("documentPackItems.{$firstKey}.role", DocumentPackItemRole::CustomPdf->value)
             ->call('saveDocumentPack')
-            ->assertHasNoErrors()
-            ->assertNotified('Document pack saved');
+            ->assertHasErrors(["documentPackUploads.{$firstKey}"]);
 
-        $pack = DocumentPack::where('project_id', $project->id)->firstOrFail();
-
-        $this->assertSame([DocumentPackItemRole::UnpricedSchedule], $pack->items->pluck('role')->all());
-        $this->assertCount(1, $component->get('documentPackItems'));
+        $this->assertDatabaseMissing('document_packs', [
+            'project_id' => $project->id,
+            'name' => 'Pack Missing External File',
+        ]);
     }
 
     public function test_saved_pack_can_be_reordered_and_reused_for_another_revision(): void
@@ -334,7 +343,7 @@ class AdminDocumentPackTest extends TestCase
         $this->assertSame($secondKey, array_key_first($component->get('documentPackItems')));
         $component
             ->assertSet("documentPackItems.{$secondKey}.role", DocumentPackItemRole::UnpricedSchedule->value)
-            ->assertSee('Unpriced Schedule')
+            ->assertSee('Schedule')
             ->assertDontSeeHtml('wire:key="document-pack-role-'.$secondKey.'"')
             ->call('saveDocumentPack')
             ->assertHasNoErrors();

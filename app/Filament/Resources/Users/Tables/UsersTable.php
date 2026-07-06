@@ -25,7 +25,7 @@ class UsersTable
                 TextColumn::make('permissionGroup.name')
                     ->label('Group')
                     ->badge()
-                    ->color(fn (?string $state): string => BadgeStyle::filamentColor($state))
+                    ->color(fn (?string $state): string|array => BadgeStyle::filamentColor($state))
                     ->placeholder('No group')
                     ->sortable(),
                 TextColumn::make('last_login_at')

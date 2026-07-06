@@ -19,7 +19,13 @@ class SalesforcePushControl
             ->where('key', self::SettingKey)
             ->first();
 
-        return (bool) ($setting?->value['disabled'] ?? false);
+        $value = $setting?->value;
+
+        if (is_array($value)) {
+            return (bool) ($value['disabled'] ?? false);
+        }
+
+        return (bool) $value;
     }
 
     public function enabled(): bool

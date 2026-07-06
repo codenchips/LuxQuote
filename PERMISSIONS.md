@@ -123,14 +123,16 @@ New code should use the dotted permission keys from `PermissionKey`.
 
 Document packs deliberately separate editing from output:
 
-- `output.manage-document-packs` allows a user to create, rename, reorder, update, and delete packs and their uploaded PDFs.
+- `output.manage-document-packs` allows a user to create, rename, reorder, update, and delete packs, uploaded Custom PDFs, and template/generated pack entries.
 - `output.produce-document-packs` allows a user to request the merged PDF download.
 
 These permissions do not bypass the permissions of generated contents:
 
 - A Quote role also requires `pricing.view` and `output.produce-quote`.
-- An Unpriced Schedule role also requires `output.produce-unpriced-schedule`.
+- A Schedule role also requires `output.produce-unpriced-schedule`.
 - A pack containing a Quote cannot be generated until the selected revision is validated and approved.
+
+The builder currently offers **Custom PDF**, **Standard Legal Page**, **Quote**, and **Schedule** for new items. Legacy saved **Cover** and uploaded **Legal** items remain supported, but they are not offered in the new-document dropdown.
 
 The UI hides unavailable roles and disables blocked generation, while Livewire methods, the download controller, and the merge service enforce the same rules server-side. Pack and revision IDs must belong to the current project; non-admin users remain limited to Open projects or projects they own.
 
@@ -155,9 +157,9 @@ Any code that allows `pricing.update` should assume `pricing.view` is also requi
 
 ## Salesforce Push Control
 
-The Salesforce page includes a global push switch controlled by `salesforce.manage-push`.
+The Salesforce page includes a global persistent push switch controlled by `salesforce.manage-push`.
 
-Users with `salesforce.view` can still search and import Salesforce projects. Users with `salesforce.manage-push` can pause or resume outbound Salesforce writes. When pushes are paused, the app must not upload quote/schedule PDFs or update Opportunity Amount values, but read-only Salesforce pulls remain available.
+Users with `salesforce.view` can still search and import Salesforce projects. Users with `salesforce.manage-push` can pause or resume outbound Salesforce writes. The switch stores its global state in `app_settings` and must stay where it was set across logout/login and page refreshes. When pushes are paused, the app must not upload quote/schedule PDFs or update Opportunity Amount values, but read-only Salesforce pulls remain available.
 
 ## Adding New Functionality
 

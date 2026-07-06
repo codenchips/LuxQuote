@@ -677,10 +677,6 @@
                             </p>
                         </div>
                     </div>
-                    <a href="https://quote.tamlite.co.uk" target="_blank" rel="noopener noreferrer" class="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-gray-200 bg-white/70 px-4 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-100 dark:hover:bg-white/[0.06]">
-                        Learn more
-                        <x-heroicon-o-arrow-top-right-on-square class="h-4 w-4" />
-                    </a>
                 </aside>
             </section>
         @endif

@@ -1,6 +1,14 @@
 # Company App — Project Status
 
-_Last updated: 2 July 2026_
+_Last updated: 6 July 2026_
+
+---
+
+## Current Production Watch — 6 July 2026
+
+- **PDF 500s reported on the VPS**: The immediate production failure seen today was environment drift in the PDF runtime. `app:diagnose-pdf-environment` first failed with `mkdir(): Invalid path`, then with Puppeteer unable to find the expected Chrome binary. Recovery was to set `LARAVEL_PDF_TEMP_PATH=/var/www/html/storage/app/browsershot`, clear config, create/chown the temp directory, and install Puppeteer's `chrome-headless-shell` as the `sail` user with the cache under `/home/sail/.cache/puppeteer`.
+- **Production deploy runner incident**: GitHub Actions jobs were stuck waiting for the `self-hosted, luxquote-production` runner. After runner recreation, follow-up failures were caused by runner-side SSH trust/key state: `known_hosts` needed GitHub and the deploy key expected at `/root/.ssh/luxquote_github_repo_deploy` needed to be available inside the runner container. `DEPLOYMENT.md` records the recovery checklist.
+- **Primary stability concern**: Quote, schedule, datasheet-inclusive PDFs, and document packs are still generated synchronously in web requests. The current deploy smoke test verifies a trivial Browsershot render, but it does not exercise the full quote/schedule template, qpdf merge path, standard legal page, datasheet endpoint, Salesforce upload skip/upload behavior, or a real browser-facing download.
 
 ---
 
@@ -135,8 +143,8 @@ app_settings
 | `ProjectRevisionStatus` | `Draft`, `Approved` |
 | `ProjectVisibility` | `Open`, `Private` |
 | `ProjectLineType` | `Standard`, `Modified`, `Custom` |
-| `DocumentPackItemRole` | `Cover`, `Legal`, `Quote`, `UnpricedSchedule` |
-| `DocumentPackItemSource` | `Uploaded`, `Generated`, `Template` (reserved for the future template phase) |
+| `DocumentPackItemRole` | `Cover`, `Legal`, `CustomPdf`, `StandardLegalPage`, `Quote`, `UnpricedSchedule` |
+| `DocumentPackItemSource` | `Uploaded`, `Generated`, `Template` |
 
 ---
 
@@ -411,8 +419,9 @@ Primary generation and request actions use Filament's orange primary button conv
 
 - Users may save multiple uniquely named packs against a project. Packs carry across revisions.
 - Pack items are compact six-across cards. Items are draggable and may be added at the end, removed, or reordered. Stable UUID/item keys keep each role, upload, preview, and filename attached to the correct card after a drag.
-- Initial roles are **Cover** and **Legal** (uploaded PDFs), plus **Quote** and **Unpriced Schedule** (generated at output time).
+- New pack items can be **Custom PDF** (uploaded), **Standard Legal Page** (app-owned template), **Quote**, or **Schedule**. Existing saved **Cover** and uploaded **Legal** items remain supported for legacy packs, but are no longer offered in the new-document dropdown.
 - Uploaded PDFs remain project-level. Generated items always use the revision selected when the pack is generated, not the revision that was active when the pack was saved.
+- Uploaded roles require a PDF before a selected item can be saved. Blank newly-added upload cards with no role/file may still be discarded as incomplete.
 - Uploaded-file cards accept click-to-select and drag/drop. Client-side guards reject non-PDF files before upload, and server-side validation still enforces `mimes:pdf`.
 - Uploaded PDFs show a first-page thumbnail that opens the saved document in a new tab. Unsaved uploads/replacements use a local browser preview and preserve the selected filename until the pack is saved.
 - Replacement uploads explicitly clear the previous pending upload before starting the next upload so repeated replacements do not alternate against stale Livewire temporary-file state.
@@ -420,14 +429,14 @@ Primary generation and request actions use Filament's orange primary button conv
 - Pack generation uses `qpdf` server-side to concatenate every page of each selected document in the saved order. Temporary generated inputs and the merged output are cleaned up after use/download.
 - Saving, generating, and deleting packs creates `document_pack.saved`, `document_pack.generated`, and `document_pack.deleted` activity entries.
 - The Document Pack footer keeps Delete Pack, Save Pack, and Generate Combined PDF right-aligned with matching button dimensions and non-wrapping labels.
-- The `Template` source enum is reserved for a later phase where users can choose system-defined document templates.
+- Template items currently support the standard legal page PDF configured by `LEGAL_PAGE_PDF` / `config/document-packs.php`.
 
 ### Revision and approval behavior
 
 - A pack containing a Quote cannot be generated until the selected revision has passed validation and has status `approved`.
 - The Generate button is disabled with an explanatory message while approval is missing; the download controller and PDF service repeat the check server-side.
 - Generated Quote/Schedule cards show revision context as `{label} - {line count} SKU's, {qty total} Items`, plus a `Last modified dd/mm/yy hh:mm` line based on the latest project-line update in the selected revision.
-- Quote and unpriced-schedule roles also enforce their underlying output permissions. Cross-project pack/revision combinations return 404/403 rather than leaking data.
+- Quote and schedule roles also enforce their underlying output permissions. Cross-project pack/revision combinations return 404/403 rather than leaking data.
 
 ### Configuration
 
@@ -449,10 +458,12 @@ Primary generation and request actions use Filament's orange primary button conv
 | `Feature/AdminProjectResourceTest.php` | ViewProject server-side revision/project scoping for line actions; paste products, create form gating, status badges, Activity Logs revision display, project reference-number URLs, output URLs, PDF progress endpoint, and datasheet PDF merge flow |
 | `Feature/AdminProjectValidationTest.php` | Revision validation, validated-lines table, manual flagging, automatic/explicit approval, Undo, Merge, revalidation, and approval locking |
 | `Feature/AdminDocumentPackTest.php` | Pack CRUD/order, uploaded PDF validation, revision-aware merge order, permissions, project ownership, cleanup, and quote-approval generation lock |
+| `Feature/BadgeStyleTest.php` | Shared badge palette rules, including brand colours and deterministic fallback colours |
 | `Feature/AdminUserResourceTest.php` | Filament Users CRUD (admin) |
 | `Feature/FrontEndProductsTest.php` | Products list for non-admin |
 | `Feature/ProductImportTest.php` | `ProductImportService` — happy path, API failure, structure error |
 | `Feature/SalesforceServiceTest.php` | `SalesforceService` — OAuth success, auth failure, SOQL query failure, and bearer-token caching via `Http::fake()` |
+| `Feature/SalesforcePushControlTest.php` | Persistent global Salesforce push pause/resume behavior and outbound-write blocking |
 | `Feature/ExampleTest.php` | Smoke test |
 | `Unit/ExampleTest.php` | Smoke test |
 
@@ -669,6 +680,8 @@ Use `--format=ndjson` for one JSON object per line when grepping or importing in
 - Columns: Reference, Project Name, Stage, Amount, Created Date, Owner
 - Default sort: **Created Date descending** (both `->defaultSort()` on the table and the service fallback)
 - Searchable, sortable, paginated (`10`, `25`, or `50` rows per page)
+- Opportunity stage labels display the exact value returned by Salesforce. Styling may vary by label, but the app must not rename API values such as `Details`, `Design`, or `Quotation`.
+- The page title includes a permission-gated Salesforce push switch for users with `salesforce.manage-push`. The switch is global and persistent in `app_settings`.
 
 ### "Salesforce Project" toggle on the New Project form
 
@@ -706,10 +719,17 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Known Gaps / Next Steps (as of 6 July 2026)
 
+- [ ] Add a production PDF smoke command that renders a real quote/schedule PDF, appends the standard legal page, checks qpdf merge output, and optionally exercises datasheet download/merge without requiring a human to click through the UI
+- [ ] Add a broader production health command or scheduled monitor for app HTTP health, DB connectivity, queue/cache availability, writable storage paths, qpdf availability, Puppeteer browser availability, disk space, and container restart counts
+- [ ] Move long-running PDF/document-pack generation toward queued jobs with polling/download links so browser/proxy timeouts and remote datasheet delays do not surface as user-facing 500 errors
+- [ ] Add structured logging around PDF generation with project reference, revision, document type, include-datasheets flag, progress token, qpdf step, datasheet endpoint result, and exception class/message
+- [ ] Add a runner maintenance/checklist script or documented recreate command that persists the GitHub deploy key, `known_hosts`, labels, and app checkout mount for `luxquote-production`
+- [ ] Review VPS resources and Docker health: memory/swap, disk pressure, MySQL restart history, Apache proxy timeout, and whether long PDF requests are being killed or timed out
+- [ ] Add off-server database backup/restore verification and keep emergency recovery strictly volume-preserving unless a deliberate restore is chosen
 - [ ] Salesforce JWT auth is working locally, but the production integration user still needs Opportunity object/field access before `salesforce:interrogate` and the app's Opportunity workflows can run
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
-- [ ] Document-pack template sources and additional roles (for example case studies) are planned but not yet implemented
+- [ ] Additional document-pack roles/templates (for example case studies) are planned but not yet implemented
 - [ ] Review the Output page visually in dark mode across desktop widths
 - [ ] Review the Output page in light mode, especially orange actions, tab underline, status chips, and disabled buttons
 - [ ] Check mobile/tablet layout for the top status panel and the two document cards
@@ -721,17 +741,25 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
   - `vendor/bin/sail artisan test --compact tests/Feature/AdminProjectResourceTest.php`
   - `vendor/bin/sail artisan test --compact tests/Feature/AdminDocumentPackTest.php`
   - `vendor/bin/sail artisan test --compact tests/Feature/AdminProjectValidationTest.php`
+  - `vendor/bin/sail artisan test --compact tests/Feature/SalesforcePushControlTest.php tests/Feature/BadgeStyleTest.php`
 
 ---
 
 ## Features completed — 6 July 2026
 
 - **Salesforce push pause switch**: The Salesforce page includes a permission-gated push switch backed by `app_settings`. Pull/search remains available, but when pushes are paused the app skips outbound Salesforce PDF uploads and Opportunity Amount updates.
+- **Salesforce push switch persistence**: The push switch now reads/writes the persisted app setting directly, remains in the page heading action area, and stays in its chosen state across logout/login.
+- **Project details access**: The projects table now has a pencil/details action beside the copy action, and locked projects still expose Details in read-only mode rather than hiding the panel completely.
+- **Projects table laptop layout**: Project-list columns were tightened again to prioritise the project name and avoid horizontal scrollbars on laptop-width screens.
+- **Shared badge styling**: Reusable badge styling now keeps labels compact, standardises identical app labels, applies Tamlite/Xcite brand colours where applicable, and gives unknown labels deterministic colours without changing the displayed words.
 - **Standard legal PDF page**: Quote and schedule PDF downloads now append `resources/documents/legal/full-legal-page.pdf` immediately after the generated quote/schedule pages.
 - **Legal-before-datasheets order**: When datasheets are included, merge order is generated quote/schedule PDF, standard legal page, then datasheets.
 - **Document-pack template role**: The document-pack builder now includes **Standard Legal Page** as an app-owned template document, separate from the existing uploaded Legal PDF role.
+- **Document-pack selector cleanup**: New pack items no longer offer Cover or uploaded Legal in the dropdown; **Unpriced Schedule** is labelled **Schedule**, and **Custom PDF** is available for uploaded one-off documents.
 - **Salesforce PDF fingerprints**: Salesforce duplicate-upload fingerprints include the standard legal PDF hash so changes to the legal page trigger a fresh upload.
-- **Schedule legal blurb**: The generated quote/schedule template now includes the short legal blurb once at the end of the generated document body, after the schedule rows/notes, with pastel shaded sections and a medium top margin.
+- **Schedule legal blurb**: The generated quote/schedule template now includes the short legal blurb once at the end of the generated document body, grouped into the final line-item table so it stays with the last schedule rows more reliably.
+- **Output datasheet info cleanup**: The Output page datasheet info panel no longer shows the external **Learn more** action.
+- **Production PDF diagnostics**: Production PDF troubleshooting was expanded after finding temp-path and Puppeteer Chrome-cache failures on the VPS.
 
 ## Features completed — 1 July 2026
 

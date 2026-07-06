@@ -21,7 +21,7 @@ class ProductsTable
                 TextColumn::make('site')
                     ->label('Site')
                     ->badge()
-                    ->color(fn (?string $state): string => BadgeStyle::filamentColor($state))
+                    ->color(fn (?string $state): string|array => BadgeStyle::filamentColor($state))
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('description')
