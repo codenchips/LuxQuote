@@ -112,6 +112,7 @@ New code should use the dotted permission keys from `PermissionKey`.
 | View products list page | x |  |  |  | x |
 | Import / fetch products | x |  |  |  |  |
 | View Salesforce projects list page | x |  |  |  | x |
+| Manage Salesforce push switch | x |  |  |  |  |
 | View users list page | x |  |  |  |  |
 | Create users | x |  |  |  |  |
 | Edit users | x |  |  |  |  |
@@ -151,6 +152,12 @@ If a user has `pricing.view` but not `pricing.update`:
 - Server-side mutation methods must reject price updates.
 
 Any code that allows `pricing.update` should assume `pricing.view` is also required.
+
+## Salesforce Push Control
+
+The Salesforce page includes a global push switch controlled by `salesforce.manage-push`.
+
+Users with `salesforce.view` can still search and import Salesforce projects. Users with `salesforce.manage-push` can pause or resume outbound Salesforce writes. When pushes are paused, the app must not upload quote/schedule PDFs or update Opportunity Amount values, but read-only Salesforce pulls remain available.
 
 ## Adding New Functionality
 

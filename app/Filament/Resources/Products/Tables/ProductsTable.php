@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Products\Tables;
 
+use App\Filament\Support\BadgeStyle;
 use App\Models\Product;
 use Filament\Forms\Components\Select;
 use Filament\Schemas\Components\Utilities\Get;
@@ -20,6 +21,7 @@ class ProductsTable
                 TextColumn::make('site')
                     ->label('Site')
                     ->badge()
+                    ->color(fn (?string $state): string => BadgeStyle::filamentColor($state))
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('description')

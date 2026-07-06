@@ -30,7 +30,7 @@ enum ProjectStatus: string
             ProjectStatus::InProgress => 'info',
             ProjectStatus::ApprovalRequested => 'warning',
             ProjectStatus::Approved => 'success',
-            ProjectStatus::Quoted => 'primary',
+            ProjectStatus::Quoted => 'warning',
         };
     }
 }

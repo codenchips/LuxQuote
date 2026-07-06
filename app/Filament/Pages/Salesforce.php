@@ -2,6 +2,8 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\BadgeStyle;
+use App\Services\SalesforcePushControl;
 use App\Services\SalesforceService;
 use BackedEnum;
 use Filament\Pages\Page;
@@ -25,6 +27,13 @@ class Salesforce extends Page implements HasTable
     protected static ?int $navigationSort = 10;
 
     protected string $view = 'filament.pages.salesforce';
+
+    public bool $salesforcePushDisabled = false;
+
+    public function mount(): void
+    {
+        $this->salesforcePushDisabled = app(SalesforcePushControl::class)->disabled();
+    }
 
     public static function canAccess(): bool
     {
@@ -63,6 +72,7 @@ class Salesforce extends Page implements HasTable
                 TextColumn::make('StageName')
                     ->label('Stage')
                     ->badge()
+                    ->color(fn (?string $state): string => BadgeStyle::filamentColor($state))
                     ->sortable(),
                 TextColumn::make('Amount')
                     ->label('Amount')
@@ -81,5 +91,19 @@ class Salesforce extends Page implements HasTable
             ->defaultSort('CreatedDate', 'desc')
             ->striped()
             ->paginated([10, 25, 50]);
+    }
+
+    public function canManageSalesforcePush(): bool
+    {
+        return auth()->user()?->can('salesforce.manage-push') ?? false;
+    }
+
+    public function toggleSalesforcePushDisabled(): void
+    {
+        abort_unless($this->canManageSalesforcePush(), 403);
+
+        $this->salesforcePushDisabled = ! $this->salesforcePushDisabled;
+
+        app(SalesforcePushControl::class)->setDisabled($this->salesforcePushDisabled);
     }
 }

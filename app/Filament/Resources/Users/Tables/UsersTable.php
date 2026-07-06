@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Users\Tables;
 
+use App\Filament\Support\BadgeStyle;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -24,7 +25,7 @@ class UsersTable
                 TextColumn::make('permissionGroup.name')
                     ->label('Group')
                     ->badge()
-                    ->color(fn (?string $state): string => $state === 'Admin' ? 'danger' : 'primary')
+                    ->color(fn (?string $state): string => BadgeStyle::filamentColor($state))
                     ->placeholder('No group')
                     ->sortable(),
                 TextColumn::make('last_login_at')

@@ -9,6 +9,7 @@ use App\Models\ActivityLog;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
 use App\Services\ProjectRevisionValidator;
+use App\Services\SalesforcePushControl;
 use App\Services\SalesforceService;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -567,6 +568,16 @@ class ValidationProject extends ViewRecord
     private function syncApprovedRevisionValueToSalesforce(ProjectRevision $revision): void
     {
         if (! $this->record->salesforce_project) {
+            return;
+        }
+
+        if (app(SalesforcePushControl::class)->disabled()) {
+            Notification::make()
+                ->title('Salesforce value update skipped')
+                ->body('Salesforce pushes are currently paused.')
+                ->warning()
+                ->send();
+
             return;
         }
 

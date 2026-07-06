@@ -16,6 +16,7 @@ use App\Models\ProjectPresence;
 use App\Models\ProjectRevision;
 use App\Services\ProjectSchedulePdfService;
 use App\Services\SalesforcePdfUploadTracker;
+use App\Services\SalesforcePushControl;
 use App\Services\SalesforceService;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
@@ -233,6 +234,18 @@ class ViewProject extends ViewRecord
         $this->record->refresh();
 
         if (! $this->record->salesforce_project) {
+            $this->logProjectDetailsSaved();
+
+            return;
+        }
+
+        if (app(SalesforcePushControl::class)->disabled()) {
+            Notification::make()
+                ->title('Salesforce upload skipped')
+                ->body('Salesforce pushes are currently paused.')
+                ->warning()
+                ->send();
+
             $this->logProjectDetailsSaved();
 
             return;

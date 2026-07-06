@@ -14,4 +14,12 @@ enum ProjectVisibility: string
             ProjectVisibility::Private => 'Private',
         };
     }
+
+    public function color(): string
+    {
+        return match ($this) {
+            ProjectVisibility::Open => 'success',
+            ProjectVisibility::Private => 'warning',
+        };
+    }
 }

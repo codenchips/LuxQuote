@@ -104,10 +104,7 @@ class ProjectsTable
                         ProjectVisibility::Open => 'heroicon-o-globe-alt',
                         ProjectVisibility::Private => 'heroicon-o-lock-closed',
                     })
-                    ->color(fn (ProjectVisibility $state): string => match ($state) {
-                        ProjectVisibility::Open => 'success',
-                        ProjectVisibility::Private => 'warning',
-                    })
+                    ->color(fn (ProjectVisibility $state): string => $state->color())
                     ->sortable()
                     ->width('5.75rem'),
 

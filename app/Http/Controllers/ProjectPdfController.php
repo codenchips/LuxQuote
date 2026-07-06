@@ -11,6 +11,7 @@ use App\Services\ProjectDatasheetPdfService;
 use App\Services\ProjectLegalPdfService;
 use App\Services\ProjectSchedulePdfService;
 use App\Services\SalesforcePdfUploadTracker;
+use App\Services\SalesforcePushControl;
 use App\Services\SalesforceService;
 use Filament\Notifications\Notification;
 use Illuminate\Http\JsonResponse;
@@ -440,6 +441,7 @@ class ProjectPdfController extends Controller
     private function shouldUploadPdfToSalesforce(Request $request, Project $project): bool
     {
         return $request->boolean('salesforce_upload')
+            && app(SalesforcePushControl::class)->enabled()
             && ($project->salesforce_project || filled($project->salesforce_id));
     }
 

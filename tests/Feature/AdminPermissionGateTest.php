@@ -44,6 +44,8 @@ class AdminPermissionGateTest extends TestCase
         $this->assertTrue($manager->can('revisions.approve'));
         $this->assertTrue($manager->can('pricing.view'));
         $this->assertTrue($manager->can('output.manage-document-packs'));
+        $this->assertTrue($manager->can('salesforce.view'));
+        $this->assertFalse($manager->can('salesforce.manage-push'));
     }
 
     public function test_technical_user_cannot_update_line_price(): void

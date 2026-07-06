@@ -103,6 +103,9 @@ salesforce_pdf_uploads
   salesforce_content_version_id, salesforce_content_document_id, salesforce_url
   uploaded_at, timestamps
   unique(project_id, project_revision_id, document_type)
+
+app_settings
+  id, key, value (JSON), timestamps
 ```
 
 **Key relationships:**
@@ -723,6 +726,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Features completed — 6 July 2026
 
+- **Salesforce push pause switch**: The Salesforce page includes a permission-gated push switch backed by `app_settings`. Pull/search remains available, but when pushes are paused the app skips outbound Salesforce PDF uploads and Opportunity Amount updates.
 - **Standard legal PDF page**: Quote and schedule PDF downloads now append `resources/documents/legal/full-legal-page.pdf` immediately after the generated quote/schedule pages.
 - **Legal-before-datasheets order**: When datasheets are included, merge order is generated quote/schedule PDF, standard legal page, then datasheets.
 - **Document-pack template role**: The document-pack builder now includes **Standard Legal Page** as an app-owned template document, separate from the existing uploaded Legal PDF role.
@@ -898,4 +902,3 @@ Blank lines with no SKU render empty schedule cells so placeholder rows do not s
 - **Salesforce integration foundation**: OAuth2 client credentials auth working; `InterrogateSalesforce` command printing live Opportunity records from Salesforce to the terminal
 
 # Bump Bump
-

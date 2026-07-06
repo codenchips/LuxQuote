@@ -6,6 +6,7 @@ use App\Enums\DocumentPackItemRole;
 use App\Enums\ProjectStatus;
 use App\Enums\ProjectVisibility;
 use App\Filament\Resources\Projects\ProjectResource;
+use App\Filament\Support\BadgeStyle;
 use App\Models\ActivityLog;
 use App\Models\DocumentPack;
 use App\Models\Project;
@@ -233,13 +234,9 @@ class Dashboard extends BaseDashboard
             'url' => ProjectResource::getUrl('view', ['record' => $project]),
             'revision' => $project->activeRevision?->label() ?? ProjectRevision::labelForNumber((int) $project->revision),
             'status' => $project->status?->label() ?? (string) $project->status,
-            'statusColor' => $project->status?->color() ?? 'gray',
+            'statusClasses' => BadgeStyle::classes($project->status?->label() ?? $project->status),
             'visibility' => $project->visibility?->label() ?? (string) $project->visibility,
-            'visibilityColor' => match ($project->visibility?->value) {
-                'open' => 'success',
-                'private' => 'warning',
-                default => 'gray',
-            },
+            'visibilityClasses' => BadgeStyle::classes($project->visibility?->label() ?? $project->visibility),
             'lastAccessed' => $this->formatDateTime($lastAccessed),
         ];
     }

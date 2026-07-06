@@ -30,6 +30,7 @@ enum PermissionKey: string
     case ProductsView = 'products.view';
     case ProductsImport = 'products.import';
     case SalesforceView = 'salesforce.view';
+    case SalesforceManagePush = 'salesforce.manage-push';
     case UsersView = 'users.view';
     case UsersCreate = 'users.create';
     case UsersUpdate = 'users.update';
@@ -65,6 +66,7 @@ enum PermissionKey: string
             self::ProductsView => 'View products list page',
             self::ProductsImport => 'Import / fetch products',
             self::SalesforceView => 'View Salesforce projects list page',
+            self::SalesforceManagePush => 'Manage Salesforce push switch',
             self::UsersView => 'View users list page',
             self::UsersCreate => 'Create users',
             self::UsersUpdate => 'Edit users',
@@ -107,6 +109,7 @@ enum PermissionKey: string
             self::ProductsImport => 'Products',
 
             self::SalesforceView => 'Salesforce',
+            self::SalesforceManagePush => 'Salesforce',
             self::ActivityLogView => 'History',
 
             self::UsersView,
@@ -122,6 +125,7 @@ enum PermissionKey: string
         return match ($this) {
             self::PricingView => 'Global switch for price columns and price-based outputs.',
             self::PricingUpdate => 'Allows changing project line prices. Requires price visibility.',
+            self::SalesforceManagePush => 'Allows pausing and resuming outbound Salesforce writes while keeping Salesforce project import/search available.',
             self::PermissionsManage => 'Allows managing permission groups and viewing the permission catalogue.',
             default => $this->label(),
         };

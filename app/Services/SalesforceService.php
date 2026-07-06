@@ -460,6 +460,10 @@ class SalesforceService
 
     public function updateOpportunityAmount(Project $project, float $amount): array
     {
+        if (app(SalesforcePushControl::class)->disabled()) {
+            return ['success' => false, 'message' => 'Salesforce pushes are currently paused.'];
+        }
+
         $auth = $this->authenticate();
 
         if ($auth === null) {
@@ -519,6 +523,10 @@ class SalesforceService
      */
     public function uploadPdf(Project $project, string $pdfContent, string $filename): array
     {
+        if (app(SalesforcePushControl::class)->disabled()) {
+            return ['success' => false, 'message' => 'Salesforce pushes are currently paused.'];
+        }
+
         $auth = $this->authenticate();
 
         if ($auth === null) {
