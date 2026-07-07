@@ -45,14 +45,12 @@ class ProductionHealthCheck extends Command
             });
         }
 
-        $this->check('Storage is writable', function (): bool {
-            $path = storage_path('app/health-check.txt');
-            File::put($path, now()->toIso8601String());
-            $passed = File::isFile($path);
-            File::delete($path);
-
-            return $passed;
-        });
+        $this->check(
+            $this->option('pdf-only') ? 'PDF temp path is writable' : 'Storage is writable',
+            fn (): bool => $this->assertWritableDirectory(
+                $this->option('pdf-only') ? $this->pdfTempPath() : storage_path('app'),
+            ),
+        );
         $this->check('Legal PDF exists', function () use ($legalPdfService): bool {
             return File::isFile($legalPdfService->legalPagePath());
         });
@@ -122,7 +120,7 @@ class ProductionHealthCheck extends Command
 
     private function renderProbePdf(): string
     {
-        $tempPath = (string) (config('laravel-pdf.browsershot.temp_path') ?: storage_path('app/browsershot'));
+        $tempPath = $this->pdfTempPath();
 
         File::ensureDirectoryExists($tempPath);
 
@@ -151,6 +149,26 @@ class ProductionHealthCheck extends Command
             });
 
         return base64_decode($builder->base64(), true) ?: '';
+    }
+
+    private function assertWritableDirectory(string $directory): bool
+    {
+        File::ensureDirectoryExists($directory);
+
+        $path = $directory.'/health-check-'.bin2hex(random_bytes(6)).'.txt';
+
+        try {
+            File::put($path, now()->toIso8601String());
+
+            return File::isFile($path);
+        } finally {
+            File::delete($path);
+        }
+    }
+
+    private function pdfTempPath(): string
+    {
+        return (string) (config('laravel-pdf.browsershot.temp_path') ?: storage_path('app/browsershot'));
     }
 
     private function nodeModulesPath(): ?string
