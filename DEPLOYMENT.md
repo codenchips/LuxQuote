@@ -243,6 +243,152 @@ Datasheet-inclusive quote/schedule PDFs also require the datasheet endpoint conf
 
 The legacy datasheet endpoint streams JSON progress chunks while it works. The app stores those progress messages temporarily in cache for the authenticated user's browser to poll through `/pdf-progress/{token}`.
 
+## Production Monitoring
+
+Production should have two separate monitors:
+
+1. An external uptime monitor for `https://quote.tamlite.co.uk`.
+2. A cron heartbeat monitor for the deeper Docker, database, storage, cache, qpdf, Browsershot, and legal-page merge checks.
+
+The production-safe health command is:
+
+```bash
+cd /home/tamliteco/luxquote.app
+docker compose exec -T -u sail laravel.test php artisan app:production-health-check
+```
+
+It is safe to run unattended because it does not create projects, mutate business data, upload to Salesforce, or run tests with `RefreshDatabase`. It checks app boot, database connectivity, cache, storage writability, the standard legal PDF, `qpdf`, a tiny Browsershot render, and merging that generated PDF with the legal page.
+
+The cron wrapper is:
+
+```bash
+cd /home/tamliteco/luxquote.app
+bash scripts/production-health-check.sh
+```
+
+Set `HEALTHCHECK_PING_URL` in the cron environment to a heartbeat URL from a monitoring provider. The script pings `/start` before checks, the base URL on success, and `/fail` on failure. This URL is secret and should not be committed.
+
+Suggested cron entry:
+
+```cron
+*/5 * * * * cd /home/tamliteco/luxquote.app && HEALTHCHECK_PING_URL="https://example-heartbeat-url" bash scripts/production-health-check.sh >> storage/logs/health-check.log 2>&1
+```
+
+If an alert fires, inspect the latest health log and Laravel log:
+
+```bash
+cd /home/tamliteco/luxquote.app
+tail -n 120 storage/logs/health-check.log
+docker compose exec -T laravel.test tail -n 120 storage/logs/laravel.log
+docker compose ps
+```
+
+Good external monitoring options:
+
+- **Better Stack**: simple uptime checks plus heartbeat monitors, with email, Slack, Teams, phone/SMS-style incident options depending on plan. Its heartbeat URLs support `/fail`.
+- **Healthchecks.io**: excellent lightweight cron/dead-man monitoring. Free tier is generous for heartbeat checks, supports `/start`, `/fail`, and exit-code URLs, and can alert through integrations/webhooks.
+- **UptimeRobot**: simple external uptime monitoring and webhook/email alerting. Good for the public `https://quote.tamlite.co.uk` monitor; less focused than Healthchecks.io for cron health.
+- **Oh Dear**: Laravel-friendly hosted monitoring from the Spatie ecosystem, with uptime, SSL, broken-link, and cron heartbeat monitoring. Paid, but polished.
+
+### ntfy PDF Alerts
+
+If phone push notifications are handled through ntfy, use the dedicated PDF health wrapper:
+
+```bash
+cd /home/tamliteco/luxquote.app
+bash scripts/production-pdf-health-check-ntfy.sh
+```
+
+By default it posts failures to:
+
+```text
+https://ntfy.sh/LuxQuotePdfs
+```
+
+Override the topic URL without editing the script:
+
+```bash
+NTFY_URL="https://ntfy.sh/LuxQuotePdfs" bash scripts/production-pdf-health-check-ntfy.sh
+```
+
+The script runs only the PDF health checks with `app:production-health-check --pdf-only`. It sends no notification on success, deletes the temporary merged PDF created by the health command, and does not create projects, activity logs, Salesforce uploads, or persistent output PDFs.
+
+Suggested cron entry:
+
+```cron
+17 * * * * cd /home/tamliteco/luxquote.app && NTFY_URL="https://ntfy.sh/LuxQuotePdfs" bash scripts/production-pdf-health-check-ntfy.sh >/dev/null 2>&1
+```
+
+Run this hourly. It is intentionally heavier than a simple HTTP check because it launches headless Chrome and validates/merges PDFs with `qpdf`. Keep a separate external uptime monitor for `https://quote.tamlite.co.uk` every 1-5 minutes.
+
+### ntfy Login Alerts
+
+Use the login health wrapper to check the public login page through DNS, SSL, Apache, the reverse proxy, and Laravel:
+
+```bash
+bash scripts/production-login-health-check-ntfy.sh
+```
+
+By default it requests:
+
+```text
+https://quote.tamlite.co.uk/login
+```
+
+and fails unless the returned page contains:
+
+```text
+LuxQuote
+```
+
+Failures are posted to:
+
+```text
+https://ntfy.sh/LuxQuoteLogin
+```
+
+Suggested cron entry:
+
+```cron
+*/10 * * * * cd /home/tamliteco/luxquote.app && NTFY_URL="https://ntfy.sh/LuxQuoteLogin" bash scripts/production-login-health-check-ntfy.sh >/dev/null 2>&1
+```
+
+This is intentionally lightweight and can run every 10 minutes. It sends no notification on success.
+
+### ntfy Disk, Docker, Database, and Salesforce Alerts
+
+These focused wrappers are also available:
+
+| Topic | Script | What it checks | Suggested cadence |
+|---|---|---|---|
+| `LuxQuoteDisk` | `scripts/production-disk-health-check-ntfy.sh` | Host filesystem and inode usage for the app path, `/`, and `/var/lib/docker` when present | Every 15 minutes |
+| `LuxQuoteDocker` | `scripts/production-docker-health-check-ntfy.sh` | Core Docker Compose services are running, MySQL responds, Redis responds | Every 10 minutes |
+| `LuxQuoteDatabase` | `scripts/production-database-health-check-ntfy.sh` | MySQL responds and Laravel can run a `select 1` query | Every 10 minutes |
+| `LuxQuoteSalesforce` | `scripts/production-salesforce-health-check-ntfy.sh` | Read-only Salesforce auth/API smoke using `salesforce:interrogate --limit=1 --format=json` | Hourly |
+
+Suggested cron entries:
+
+```cron
+*/15 * * * * cd /home/tamliteco/luxquote.app && NTFY_URL="https://ntfy.sh/LuxQuoteDisk" bash scripts/production-disk-health-check-ntfy.sh >/dev/null 2>&1
+*/10 * * * * cd /home/tamliteco/luxquote.app && NTFY_URL="https://ntfy.sh/LuxQuoteDocker" bash scripts/production-docker-health-check-ntfy.sh >/dev/null 2>&1
+*/10 * * * * cd /home/tamliteco/luxquote.app && NTFY_URL="https://ntfy.sh/LuxQuoteDatabase" bash scripts/production-database-health-check-ntfy.sh >/dev/null 2>&1
+23 * * * * cd /home/tamliteco/luxquote.app && NTFY_URL="https://ntfy.sh/LuxQuoteSalesforce" bash scripts/production-salesforce-health-check-ntfy.sh >/dev/null 2>&1
+```
+
+Disk thresholds default to 85% for both disk space and inodes. Override them in cron if needed:
+
+```cron
+*/15 * * * * cd /home/tamliteco/luxquote.app && DISK_THRESHOLD_PERCENT=80 INODE_THRESHOLD_PERCENT=80 NTFY_URL="https://ntfy.sh/LuxQuoteDisk" bash scripts/production-disk-health-check-ntfy.sh >/dev/null 2>&1
+```
+
+The Docker check expects these Compose services by default:
+
+```text
+laravel.test mysql redis meilisearch
+```
+
+Override with `EXPECTED_SERVICES` if production service names change. The Salesforce check is read-only and does not push PDFs or update Opportunity Amounts.
+
 ## Database Restore Workflow
 
 When restoring a raw SQL backup into the containerized MySQL service, use this exact sequence to avoid duplicate or stray table errors:

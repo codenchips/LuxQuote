@@ -15,7 +15,7 @@ class DiagnosePdfEnvironment extends Command
 {
     public function handle(): int
     {
-        $tempPath = (string) config('laravel-pdf.browsershot.temp_path', storage_path('app/browsershot'));
+        $tempPath = (string) (config('laravel-pdf.browsershot.temp_path') ?: storage_path('app/browsershot'));
 
         $this->info('PDF environment');
         $this->line('Driver: '.(string) config('laravel-pdf.driver', 'browsershot'));

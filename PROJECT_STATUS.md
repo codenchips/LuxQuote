@@ -10,6 +10,15 @@ _Last updated: 6 July 2026_
 - **Production deploy runner incident**: GitHub Actions jobs were stuck waiting for the `self-hosted, luxquote-production` runner. After runner recreation, follow-up failures were caused by runner-side SSH trust/key state: `known_hosts` needed GitHub and the deploy key expected at `/root/.ssh/luxquote_github_repo_deploy` needed to be available inside the runner container. `DEPLOYMENT.md` records the recovery checklist.
 - **Primary stability concern**: Quote, schedule, datasheet-inclusive PDFs, and document packs are still generated synchronously in web requests. The current deploy smoke test verifies a trivial Browsershot render, but it does not exercise the full quote/schedule template, qpdf merge path, standard legal page, datasheet endpoint, Salesforce upload skip/upload behavior, or a real browser-facing download.
 
+## Production Monitoring Added — 7 July 2026
+
+- **PDF smoke tests added**: `tests/Feature/PdfSmokeTest.php` exercises the real Browsershot and qpdf path for the PDF diagnostic command, schedule PDF, quote PDF, and generated document-pack merge. These tests are intended for local/CI/deploy confidence, not unattended production cron.
+- **Production-safe health command added**: `app:production-health-check` checks app boot, database connectivity, cache, storage writability, standard legal PDF presence, `qpdf`, a tiny Browsershot render, and merging that generated PDF with the legal page. It does not mutate business data or contact Salesforce.
+- **Cron heartbeat wrapper added**: `scripts/production-health-check.sh` runs Docker Compose, MySQL, local/public HTTP, and Artisan health checks, then pings an optional `HEALTHCHECK_PING_URL` with `/start`, success, or `/fail`. `DEPLOYMENT.md` documents the cron entry and suggested external monitoring services.
+- **ntfy PDF alert wrapper added**: `scripts/production-pdf-health-check-ntfy.sh` runs `app:production-health-check --pdf-only` and posts failures to `https://ntfy.sh/LuxQuotePdfs` by default. Recommended cadence is hourly because it starts headless Chrome and runs qpdf checks.
+- **ntfy login alert wrapper added**: `scripts/production-login-health-check-ntfy.sh` requests `https://quote.tamlite.co.uk/login`, verifies the response contains `LuxQuote`, and posts failures to `https://ntfy.sh/LuxQuoteLogin`. Recommended cadence is every 10 minutes.
+- **Additional ntfy focused alert wrappers added**: `scripts/production-disk-health-check-ntfy.sh`, `scripts/production-docker-health-check-ntfy.sh`, `scripts/production-database-health-check-ntfy.sh`, and `scripts/production-salesforce-health-check-ntfy.sh` post failures to `LuxQuoteDisk`, `LuxQuoteDocker`, `LuxQuoteDatabase`, and `LuxQuoteSalesforce` respectively. `DEPLOYMENT.md` records the crontab lines.
+
 ---
 
 ## Features completed — 2 July 2026
