@@ -50,6 +50,10 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::BODY_START,
                 fn (): string => view('filament.partials.sidebar-default-collapsed')->render(),
             )
+            ->renderHook(
+                PanelsRenderHook::GLOBAL_SEARCH_AFTER,
+                fn (): string => view('filament.resources.projects.pages.topbar-project-sub-navigation')->render(),
+            )
             ->assets([
                 Css::make('app-styles', Vite::asset('resources/css/app.css')),
                 Js::make('app-scripts', Vite::asset('resources/js/app.js')),
