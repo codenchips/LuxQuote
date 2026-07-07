@@ -50,7 +50,7 @@ ${response}"
         return "$status"
     fi
 
-    if ! printf '%s' "$response" | grep --fixed-strings --quiet "$EXPECTED_TEXT"; then
+    if ! grep --fixed-strings --quiet "$EXPECTED_TEXT" <<< "$response"; then
         printf 'Expected text was not found in the login page response.\n'
         notify_failure "The login page responded, but the expected text was not found."
 
