@@ -97,6 +97,32 @@ bash luxquote_restore_to_last_deploy.sh
 
 Use the restore fallback only when container recreation is not enough and restoring to the latest deploy backup is acceptable. It overwrites database data with the selected backup.
 
+### Emergency Reset CGI
+
+A reference CGI wrapper is stored at:
+
+```bash
+scripts/emergency-reset-webhook.cgi
+```
+
+Install it manually into the cPanel CGI directory only when the emergency web trigger is required. Keep the live reset secret out of git. Either set `LUXQUOTE_RESET_KEY` in the CGI environment, or replace the `CHANGE_ME_ON_THE_SERVER` placeholder only in the deployed CGI copy.
+
+The CGI confirmation page shows the newest `backups/*.sql.gz` file, including its modified date/time and size. It requires the operator to type `dean`, then choose one of:
+
+- Restart containers only; do not restore the database.
+- Restart containers and restore the latest backup if recovery is still unhealthy.
+
+The CGI calls `emergency_recover.sh` with `LUXQUOTE_AUTO_DB_RESTORE=0` or `1`. `emergency_recover.sh` preserves Docker volumes and only attempts a DB restore when that flag is enabled and the post-recreate health check still fails.
+
+After copying the CGI file, ensure ownership and mode match the host cPanel setup:
+
+```bash
+chown tamliteco:tamliteco /path/to/cgi-bin/reset-app.cgi
+chmod 755 /path/to/cgi-bin/reset-app.cgi
+```
+
+Do not expose the CGI URL without the secret key. The script also enforces a five-minute cooldown with `/tmp/luxquote_reset.lock`.
+
 ## Docker Disk Cleanup
 
 Docker build cache and old images can consume significant disk space on the VPS. The deploy script prunes build cache older than 24 hours after successful deploys, and `scripts/production-docker-cleanup.sh` can be run manually or from cron for broader safe cleanup.

@@ -18,6 +18,7 @@ _Last updated: 6 July 2026_
 - **ntfy PDF alert wrapper added**: `scripts/production-pdf-health-check-ntfy.sh` runs `app:production-health-check --pdf-only` and posts failures to `https://ntfy.sh/LuxQuotePdfs` by default. Recommended cadence is hourly because it starts headless Chrome and runs qpdf checks.
 - **ntfy login alert wrapper added**: `scripts/production-login-health-check-ntfy.sh` requests `https://quote.tamlite.co.uk/login`, verifies the response contains `LuxQuote`, and posts failures to `https://ntfy.sh/LuxQuoteLogin`. Recommended cadence is every 10 minutes.
 - **Additional ntfy focused alert wrappers added**: `scripts/production-disk-health-check-ntfy.sh`, `scripts/production-docker-health-check-ntfy.sh`, `scripts/production-database-health-check-ntfy.sh`, and `scripts/production-salesforce-health-check-ntfy.sh` post failures to `LuxQuoteDisk`, `LuxQuoteDocker`, `LuxQuoteDatabase`, and `LuxQuoteSalesforce` respectively. `DEPLOYMENT.md` records the crontab lines.
+- **Emergency reset CGI reference added**: `scripts/emergency-reset-webhook.cgi` mirrors the cPanel CGI reset flow without committing the live secret. It shows the newest backup timestamp/size and requires an explicit database restore yes/no choice. `emergency_recover.sh` now respects `LUXQUOTE_AUTO_DB_RESTORE=0` to prevent an automatic DB restore when the CGI operator chooses restart-only recovery.
 
 ---
 

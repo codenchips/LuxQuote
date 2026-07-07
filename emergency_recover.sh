@@ -7,6 +7,7 @@
 APP_DIR="/home/tamliteco/luxquote.app"
 RESTORE_SCRIPT="$APP_DIR/luxquote_restore_to_last_deploy.sh"
 TARGET_URL="https://quote.tamlite.co.uk"
+AUTO_RESTORE_ON_FAILURE="${LUXQUOTE_AUTO_DB_RESTORE:-1}"
 
 echo "🚨 Starting emergency stack recovery for Luxquote..."
 
@@ -38,12 +39,18 @@ if [ "$STATUS" -eq 302 ] || [ "$STATUS" -eq 200 ]; then
     echo "✅ Success: Luxquote is completely stable and responding with HTTP $STATUS!"
 else
     echo "⚠️  Warning: Infrastructure is running, but the site returned unexpected HTTP $STATUS."
-    echo "🔄 Initiating automated database data restore fallback..."
-    
-    if [ -f "$RESTORE_SCRIPT" ]; then
-        bash "$RESTORE_SCRIPT"
+
+    if [ "$AUTO_RESTORE_ON_FAILURE" = "1" ]; then
+        echo "🔄 Initiating automated database data restore fallback..."
+
+        if [ -f "$RESTORE_SCRIPT" ]; then
+            bash "$RESTORE_SCRIPT"
+        else
+            echo "❌ Error: Database restore script missing at $RESTORE_SCRIPT"
+            exit 1
+        fi
     else
-        echo "❌ Error: Database restore script missing at $RESTORE_SCRIPT"
+        echo "ℹ️  Database restore fallback skipped because LUXQUOTE_AUTO_DB_RESTORE=$AUTO_RESTORE_ON_FAILURE."
         exit 1
     fi
 fi
