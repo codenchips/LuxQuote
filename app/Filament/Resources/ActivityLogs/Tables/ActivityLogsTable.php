@@ -102,8 +102,8 @@ class ActivityLogsTable
                                 $parts = [];
                                 foreach ($payload as $key => $change) {
                                     $label = $fieldNames[$key] ?? (string) str($key)->headline();
-                                    $old = e((string) ($change['old'] ?? 'empty'));
-                                    $new = e((string) ($change['new'] ?? 'empty'));
+                                    $old = e(self::formatChangedValue($change['old'] ?? null));
+                                    $new = e(self::formatChangedValue($change['new'] ?? null));
                                     $parts[] = "Changed <strong>{$label}</strong> from <strong>{$old}</strong> to <strong>{$new}</strong>";
                                 }
 
@@ -215,8 +215,8 @@ class ActivityLogsTable
                                 $parts = [];
                                 foreach ($changes as $field => $change) {
                                     $label = $fieldNames[$field] ?? (string) str($field)->headline();
-                                    $old = e((string) ($change['old'] ?? 'empty'));
-                                    $new = e((string) ($change['new'] ?? 'empty'));
+                                    $old = e(self::formatChangedValue($change['old'] ?? null));
+                                    $new = e(self::formatChangedValue($change['new'] ?? null));
                                     $parts[] = "Changed <strong>{$label}</strong> from <strong>{$old}</strong> to <strong>{$new}</strong>";
                                 }
 
@@ -300,6 +300,23 @@ class ActivityLogsTable
         $html = self::styleConnectorPhrases($html);
 
         return '<span class="block overflow-hidden text-ellipsis whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">'.$html.'</span>';
+    }
+
+    private static function formatChangedValue(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return 'empty';
+        }
+
+        $value = (string) $value;
+
+        if (is_numeric($value)) {
+            return $value;
+        }
+
+        return (string) str($value)
+            ->replace('_', ' ')
+            ->headline();
     }
 
     private static function referenceLabel(ActivityLog $record): string

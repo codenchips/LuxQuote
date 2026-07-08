@@ -163,6 +163,16 @@ class AdminProjectResourceTest extends TestCase
             'Hartwest Primary School',
             ProjectForm::titleCaseProjectName('HARTWEST PRIMARY SCHOOL'),
         );
+
+        $this->assertSame(
+            'NHS Eastpoint Centre',
+            ProjectForm::titleCaseProjectName('NHS EASTPOINT CENTRE'),
+        );
+
+        $this->assertSame(
+            'UK Hospital LV Room',
+            ProjectForm::titleCaseProjectName('UK HOSPITAL LV ROOM'),
+        );
     }
 
     public function test_selected_salesforce_reference_label_only_contains_the_reference_number(): void
@@ -2158,6 +2168,39 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(ListActivityLogs::class)
             ->assertSee('REF-003')
             ->assertSee('R3');
+    }
+
+    public function test_activity_logs_table_formats_changed_values_for_readability(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'REF-004',
+            'revision' => 1,
+        ]);
+
+        ActivityLog::create([
+            'user_id' => $admin->id,
+            'project_id' => $project->id,
+            'action_type' => 'project.updated',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $project->name,
+            'payload' => [
+                'status' => [
+                    'old' => 'in_progress',
+                    'new' => 'approval_requested',
+                ],
+            ],
+        ]);
+
+        Livewire::test(ListActivityLogs::class)
+            ->assertSee('Changed')
+            ->assertSee('Status')
+            ->assertSee('In Progress')
+            ->assertSee('Approval Requested')
+            ->assertDontSee('in_progress')
+            ->assertDontSee('approval_requested');
     }
 
     public function test_activity_logs_table_shows_project_name_fallback_when_reference_is_missing(): void

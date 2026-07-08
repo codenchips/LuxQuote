@@ -22,6 +22,23 @@
     $existingSkus = \App\Models\Product::whereIn('sku', $allCodes)->pluck('sku')->flip();
 
     $pdfTimestamp = now()->timestamp;
+    $formatPdfDate = static function (mixed $date, bool $includeTime = false): string {
+        if (blank($date)) {
+            return '-';
+        }
+
+        $date = $date instanceof \Carbon\CarbonInterface
+            ? $date
+            : \Illuminate\Support\Carbon::parse($date);
+
+        $formatted = e($date->format('j')).'<sup>'.e($date->format('S')).'</sup> '.e($date->format('M Y'));
+
+        if ($includeTime) {
+            $formatted .= ' '.e($date->format('H:i'));
+        }
+
+        return $formatted;
+    };
 @endphp
 <!DOCTYPE html>
 <html lang="en">
@@ -114,6 +131,12 @@
             color: #192542;
         }
 
+        .ref-val sup {
+            font-size: 55%;
+            line-height: 0;
+            vertical-align: super;
+        }
+
         /* Separator rule */
         .header-rule {
             height: 0;
@@ -135,7 +158,7 @@
             border-radius: 1.5mm;
             background: #f9fafb;
             padding: 4mm 5mm;
-            margin-bottom: 6mm;
+            margin-bottom: 4mm;
         }
 
         .project-name {
@@ -157,16 +180,6 @@
         .meta-lbl { color: #666; }
 
         .meta-sep { margin: 0 2.5mm; color: #bbb; }
-
-        /* ── Section heading ─────────────────────────────────────────────── */
-        .section-heading {
-            font-size: 10.5pt;
-            font-weight: 700;
-            color: #192542;
-            border-bottom: 1pt solid #192542;
-            padding-bottom: 1.5mm;
-            margin-bottom: 5mm;
-        }
 
         .quote-summary {
             display: flex;
@@ -210,7 +223,7 @@
         /* Area name row inside <thead> — repeats on every continuation page */
         .area-header-cell {
             background: #f5f7fa;
-            border-left: 3pt solid #192542;
+            border-left: none;
             padding: 0;
         }
 
@@ -218,11 +231,12 @@
             display: flex;
             justify-content: space-between;
             align-items: baseline;
-            padding: 1.5mm 2mm 1.5mm 3mm;
+            padding: 0.7mm 2mm;
+            line-height: 1.25;
         }
 
         .area-name {
-            font-size: 9.5pt;
+            font-size: 8.5pt;
             font-weight: 700;
             color: #192542;
         }
@@ -256,7 +270,13 @@
             padding: 3mm 2mm 2mm;
             vertical-align: top;
             border-bottom: 0.5pt solid #e8eaed;
+            border-left: none;
             line-height: 1.4;
+        }
+
+        .line-table tr,
+        .line-table th {
+            border-left: none;
         }
 
         .line-table tbody:last-child tr:last-child td { border-bottom: none; }
@@ -307,10 +327,6 @@
         .line-note-cell strong {
             color: #192542;
         }
-
-        /* Line type left-border rules */
-        .row-modified td:first-child { border-left: 2pt solid #d97706; }
-        .row-custom    td:first-child { border-left: 2pt solid #7c3aed; }
 
         /* ── Notes section ───────────────────────────────────────────────── */
         .doc-notes {
@@ -412,8 +428,8 @@
                 @if($revision->revision_number > 0)
                     <div><span class="ref-label">Rev: </span><span class="ref-val">{{ $revision->label() }}</span></div>
                 @endif
-                <div><span class="ref-label">Date: </span><span class="ref-val">{{ $project->date?->format('d M Y') ?? '-' }}</span></div>
-                <div><span class="ref-label">Generated: </span><span class="ref-val">{{ now()->format('M d Y H:i') }}</span></div>
+                <div><span class="ref-label">Date: </span><span class="ref-val">{!! $formatPdfDate($project->date) !!}</span></div>
+                <div><span class="ref-label">Generated: </span><span class="ref-val">{!! $formatPdfDate(now(), includeTime: true) !!}</span></div>
             </div>
         </div>
 
@@ -443,8 +459,6 @@
             <span class="meta-lbl">Prepared by:</span> {{ $project->user?->name ?? '-' }}
         </div>
     </div>
-
-    <h2 class="section-heading">Schedule by Area</h2>
 
     @if($showPrices)
     <div class="quote-summary">
@@ -509,17 +523,12 @@
                         $hasSku = filled($line->code);
                         $hasLineNote = $hasSku && filled($line->notes);
                         $isFinalLineItemRow = $isFinalLineItemArea && $loop->last;
-                        $rowClass = match(true) {
-                            $line->type === \App\Enums\ProjectLineType::Modified => 'row-modified',
-                            $line->type === \App\Enums\ProjectLineType::Custom   => 'row-custom',
-                            default => '',
-                        };
                     @endphp
                     @if($isFinalLineItemRow)
                 </tbody>
                 <tbody class="final-line-and-legal">
                     @endif
-                    <tr @class([$rowClass, 'keep-with-legal' => $isFinalLineItemRow])>
+                    <tr @class(['keep-with-legal' => $isFinalLineItemRow])>
                         <td class="col-code">{!! $hasSku ? e($line->code) : '&nbsp;' !!}</td>
                         <td class="col-ref">{!! $hasSku ? e($line->ref ?? '') : '&nbsp;' !!}</td>
                         <td class="col-desc">{!! $hasSku ? e($line->description ?? '') : '&nbsp;' !!}</td>
