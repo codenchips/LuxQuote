@@ -46,11 +46,7 @@ document.addEventListener('click', async (event) => {
         await finishProgress(modal, Date.now() - startedAt);
 
         if (openInNewTab) {
-            const opened = window.open(downloadUrl, '_blank', 'noopener');
-
-            if (!opened) {
-                window.location.assign(downloadUrl);
-            }
+            window.open(downloadUrl, '_blank', 'noopener');
         } else {
             downloadPreparedPdf(downloadUrl, filename);
         }
