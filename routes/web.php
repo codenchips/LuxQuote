@@ -17,6 +17,9 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/pdf-progress/{token}', [ProjectPdfController::class, 'progress'])
         ->name('pdf.progress');
 
+    Route::get('/pdf-downloads/{token}/{filename?}', [ProjectPdfController::class, 'download'])
+        ->name('pdf.downloads.show');
+
     Route::get('/projects/{project}/export/csv', [ProjectPdfController::class, 'csv'])
         ->name('projects.export.csv');
 

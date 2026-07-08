@@ -7,6 +7,7 @@ use App\Enums\ProjectVisibility;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectRevision;
+use App\Services\PdfDownloadUrlService;
 use App\Services\ProjectDatasheetPdfService;
 use App\Services\ProjectLegalPdfService;
 use App\Services\ProjectSchedulePdfService;
@@ -93,10 +94,10 @@ class ProjectPdfController extends Controller
             ]);
 
             if ($datasheetPdf !== null) {
-                return $this->downloadMergedPdf($datasheetPdf);
+                return $this->respondWithPdf($request, $datasheetPdf);
             }
 
-            return $this->downloadMergedPdf($legalPdf);
+            return $this->respondWithPdf($request, $legalPdf);
         } catch (Throwable $exception) {
             app(ProjectLegalPdfService::class)->delete($legalPdf['path']);
 
@@ -182,10 +183,10 @@ class ProjectPdfController extends Controller
             $project->markQuoted($revision);
 
             if ($datasheetPdf !== null) {
-                return $this->downloadMergedPdf($datasheetPdf);
+                return $this->respondWithPdf($request, $datasheetPdf);
             }
 
-            return $this->downloadMergedPdf($legalPdf);
+            return $this->respondWithPdf($request, $legalPdf);
         } catch (Throwable $exception) {
             app(ProjectLegalPdfService::class)->delete($legalPdf['path']);
 
@@ -215,6 +216,11 @@ class ProjectPdfController extends Controller
             'message' => 'Starting PDF generation...',
             'complete' => false,
         ]));
+    }
+
+    public function download(Request $request, string $token, PdfDownloadUrlService $downloads): BinaryFileResponse
+    {
+        return $downloads->response($token, $request->user()->id);
     }
 
     private function streamCsv(Request $request, Project $project, bool $includePrices): StreamedResponse
@@ -436,6 +442,18 @@ class ProjectPdfController extends Controller
         return response()
             ->download($pdf['path'], $pdf['filename'], ['Content-Type' => 'application/pdf'])
             ->deleteFileAfterSend(true);
+    }
+
+    /**
+     * @param  array{path: string, filename: string}  $pdf
+     */
+    private function respondWithPdf(Request $request, array $pdf): Response
+    {
+        if ($request->boolean('pdf_delivery_link')) {
+            return response()->json(app(PdfDownloadUrlService::class)->register($pdf, $request->user()->id));
+        }
+
+        return $this->downloadMergedPdf($pdf);
     }
 
     private function shouldUploadPdfToSalesforce(Request $request, Project $project): bool

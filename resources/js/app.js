@@ -16,6 +16,7 @@ document.addEventListener('click', async (event) => {
     const pdfUrl = new URL(link.href);
 
     pdfUrl.searchParams.set('pdf_progress_token', progressToken);
+    pdfUrl.searchParams.set('pdf_delivery_link', '1');
 
     modal.open(title, message);
     const fallbackProgress = startFallbackProgress(modal);
@@ -25,7 +26,7 @@ document.addEventListener('click', async (event) => {
         const response = await fetch(pdfUrl, {
             credentials: 'same-origin',
             headers: {
-                Accept: 'application/pdf,*/*',
+                Accept: 'application/json',
                 'X-Requested-With': 'XMLHttpRequest',
             },
         });
@@ -34,23 +35,26 @@ document.addEventListener('click', async (event) => {
             throw new Error(`PDF generation failed with status ${response.status}.`);
         }
 
-        const blob = await response.blob();
-        const filename = filenameFromResponse(response) || link.dataset.pdfFilename || 'luxquote.pdf';
-        const objectUrl = URL.createObjectURL(blob);
+        const preparedPdf = await response.json();
+        const filename = preparedPdf.filename || link.dataset.pdfFilename || 'luxquote.pdf';
+        const downloadUrl = preparedPdf.url;
+
+        if (!downloadUrl) {
+            throw new Error('The PDF was generated but no download URL was returned.');
+        }
 
         await finishProgress(modal, Date.now() - startedAt);
 
         if (openInNewTab) {
-            const opened = window.open(objectUrl, '_blank', 'noopener');
+            const opened = window.open(downloadUrl, '_blank', 'noopener');
 
             if (!opened) {
-                downloadBlob(objectUrl, filename);
+                window.location.assign(downloadUrl);
             }
         } else {
-            downloadBlob(objectUrl, filename);
+            downloadPreparedPdf(downloadUrl, filename);
         }
 
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
         modal.update(100, 'PDF ready.');
         await sleep(300);
         modal.close();
@@ -145,22 +149,9 @@ function createPdfGenerationModal() {
     };
 }
 
-function filenameFromResponse(response) {
-    const header = response.headers.get('Content-Disposition') || '';
-    const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
-
-    if (utf8Match) {
-        return decodeURIComponent(utf8Match[1].replaceAll('"', ''));
-    }
-
-    const match = header.match(/filename="?([^";]+)"?/i);
-
-    return match?.[1] ?? null;
-}
-
-function downloadBlob(objectUrl, filename) {
+function downloadPreparedPdf(downloadUrl, filename) {
     const anchor = document.createElement('a');
-    anchor.href = objectUrl;
+    anchor.href = downloadUrl;
     anchor.download = filename;
     anchor.className = 'hidden';
     document.body.appendChild(anchor);

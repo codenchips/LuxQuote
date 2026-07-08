@@ -11,9 +11,10 @@ use App\Models\DocumentPackItem;
 use App\Models\Project;
 use App\Models\ProjectRevision;
 use App\Services\DocumentPackPdfService;
+use App\Services\PdfDownloadUrlService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DocumentPackController extends Controller
@@ -23,7 +24,8 @@ class DocumentPackController extends Controller
         Project $project,
         DocumentPack $documentPack,
         DocumentPackPdfService $pdfService,
-    ): BinaryFileResponse {
+        PdfDownloadUrlService $downloads,
+    ): Response {
         $this->authorizeProjectAccess($request, $project);
         abort_unless($request->user()->can('output.produce-document-packs'), 403);
         abort_unless($documentPack->project_id === $project->id, 404);
@@ -50,6 +52,10 @@ class DocumentPackController extends Controller
 
         if ($containsQuote) {
             $project->markQuoted($revision);
+        }
+
+        if ($request->boolean('pdf_delivery_link')) {
+            return response()->json($downloads->register($generatedPack, $request->user()->id));
         }
 
         return response()
