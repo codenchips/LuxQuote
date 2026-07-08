@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\ProjectRevisionStatus;
+use App\Models\AppSetting;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -11,6 +12,8 @@ use RuntimeException;
 class ProductImportService
 {
     private const API_URL = 'https://tcms.tamlite.co.uk/api/luxquote_data';
+
+    public const LastPulledAtSettingKey = 'products_last_pulled_at';
 
     private const PRODUCT_SPEC_COLUMNS = [
         'length_mm',
@@ -75,6 +78,7 @@ class ProductImportService
         }
 
         $this->populateMissingProjectLinePrices();
+        $this->recordSuccessfulPull();
 
         return count($records);
     }
@@ -150,5 +154,13 @@ class ProductImportService
                 'project_lines.unit_price' => DB::raw('products.price'),
                 'project_lines.updated_at' => now(),
             ]);
+    }
+
+    private function recordSuccessfulPull(): void
+    {
+        AppSetting::query()->updateOrCreate(
+            ['key' => self::LastPulledAtSettingKey],
+            ['value' => ['pulled_at' => now()->toIso8601String()]],
+        );
     }
 }

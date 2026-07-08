@@ -54,6 +54,10 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::GLOBAL_SEARCH_AFTER,
                 fn (): string => view('filament.resources.projects.pages.topbar-project-sub-navigation')->render(),
             )
+            ->renderHook(
+                PanelsRenderHook::SIDEBAR_FOOTER,
+                fn (): string => view('filament.partials.sidebar-app-version')->render(),
+            )
             ->assets([
                 Css::make('app-styles', Vite::asset('resources/css/app.css')),
                 Js::make('app-scripts', Vite::asset('resources/js/app.js')),

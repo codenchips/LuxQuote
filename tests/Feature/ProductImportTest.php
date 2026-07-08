@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\ProjectRevisionStatus;
+use App\Models\AppSetting;
 use App\Models\Product;
 use App\Models\Project;
 use App\Services\ProductImportService;
@@ -51,6 +52,7 @@ class ProductImportTest extends TestCase
             'v_description' => 'Wide beam',
             'description' => 'Wide beam',
         ]);
+        $this->assertNotNull(AppSetting::where('key', ProductImportService::LastPulledAtSettingKey)->value('value')['pulled_at'] ?? null);
         Http::assertSent(fn ($request): bool => $request->url() === 'https://tcms.tamlite.co.uk/api/luxquote_data'
             && $request->method() === 'POST');
     }

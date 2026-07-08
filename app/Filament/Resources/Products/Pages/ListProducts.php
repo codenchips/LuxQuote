@@ -3,11 +3,13 @@
 namespace App\Filament\Resources\Products\Pages;
 
 use App\Filament\Resources\Products\ProductResource;
+use App\Models\AppSetting;
 use App\Services\ProductImportService;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Carbon;
 use RuntimeException;
 
 class ListProducts extends ListRecords
@@ -17,6 +19,14 @@ class ListProducts extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('lastProductDataPull')
+                ->label(fn (): string => 'Last Product Data Pull: '.$this->lastProductDataPullLabel())
+                ->color('gray')
+                ->disabled()
+                ->extraAttributes([
+                    'class' => 'pointer-events-none opacity-100',
+                ]),
+
             Action::make('fetchProducts')
                 ->label('Fetch Products')
                 ->icon(Heroicon::OutlinedArrowDownTray)
@@ -43,5 +53,24 @@ class ListProducts extends ListRecords
                     }
                 }),
         ];
+    }
+
+    private function lastProductDataPullLabel(): string
+    {
+        $setting = AppSetting::query()
+            ->where('key', ProductImportService::LastPulledAtSettingKey)
+            ->first();
+
+        $pulledAt = is_array($setting?->value)
+            ? ($setting->value['pulled_at'] ?? null)
+            : null;
+
+        if (blank($pulledAt)) {
+            return 'Never';
+        }
+
+        return Carbon::parse($pulledAt)
+            ->timezone(config('app.timezone'))
+            ->format('M d Y H:i');
     }
 }

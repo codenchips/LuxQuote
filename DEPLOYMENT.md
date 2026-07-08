@@ -447,6 +447,8 @@ vendor/bin/sail exec -T laravel.test sh -lc 'gzip -dc /var/www/html/backup.gz' |
 
 Code can be deployed automatically from GitHub by pushing the `production` branch. The workflow in `.github/workflows/deploy-production.yml` runs on the `luxquote-production` self-hosted GitHub Actions runner on the VPS and executes `scripts/deploy-production.sh` against the production checkout.
 
+The local `./deploy-production` helper bumps the tracked app version in `VERSION`, commits that bump on `main`, pushes `main`, fast-forwards `production`, and pushes `production`. By default it increments the beta suffix, for example `0.1.0-beta.1` to `0.1.0-beta.2`. Use `VERSION_BUMP=patch`, `VERSION_BUMP=minor`, `VERSION_BUMP=major`, or `VERSION_BUMP=none` when a deploy needs a different version bump.
+
 The deploy script:
 
 - starts Docker services so the database is available

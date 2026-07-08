@@ -17,6 +17,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Application Version
+    |--------------------------------------------------------------------------
+    |
+    | A human-facing version label for beta testers and support references.
+    |
+    */
+
+    'version' => env('APP_VERSION') ?: trim((string) @file_get_contents(base_path('VERSION'))) ?: '0.1.0-beta.1',
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\Products\Pages\ListProducts;
+use App\Models\AppSetting;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\ProductImportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -68,5 +70,31 @@ class FrontEndProductsTest extends TestCase
 
         Livewire::test(ListProducts::class)
             ->assertSee('Fetch Products');
+    }
+
+    public function test_products_page_shows_last_product_data_pull_time(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        AppSetting::query()->create([
+            'key' => ProductImportService::LastPulledAtSettingKey,
+            'value' => ['pulled_at' => '2026-07-08T14:29:00+01:00'],
+        ]);
+
+        $this->actingAs($admin);
+
+        Livewire::test(ListProducts::class)
+            ->assertSee('Last Product Data Pull:')
+            ->assertSee('Jul 08 2026 14:29');
+    }
+
+    public function test_products_page_shows_never_when_product_data_has_not_been_pulled(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin);
+
+        Livewire::test(ListProducts::class)
+            ->assertSee('Last Product Data Pull: Never');
     }
 }

@@ -31,6 +31,26 @@
     .fi-body.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar:not(.fi-sidebar-open) .fi-sidebar-item-btn {
         width: 3rem;
     }
+
+    .fi-body.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar:not(.fi-sidebar-open) .lux-sidebar-version {
+        display: none;
+    }
+}
+
+.lux-sidebar-version {
+    margin-top: auto;
+    padding: 0.85rem 1rem 1rem;
+    border-top: 1px solid rgb(148 163 184 / 0.14);
+    color: rgb(148 163 184);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    line-height: 1rem;
+    white-space: nowrap;
+}
+
+.lux-sidebar-version-number {
+    color: rgb(226 232 240);
 }
 
 .lux-dashboard-panel {
