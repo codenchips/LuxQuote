@@ -3,6 +3,7 @@
     $canViewPrices = $this->canViewPrices();
     $canEditLines = $this->canEditLines();
     $canEditPrices = $this->canEditPrices();
+    $canCreateRevisions = $this->canCreateRevisions();
     $revisionLocked = $this->isViewingRevisionValidated;
     $lineGridColumns = $canViewPrices
         ? '20px 110px 65px 1fr 60px 90px 95px 1fr 84px 60px'
@@ -332,6 +333,8 @@
     {{-- Product Picker Modal --}}
     @if($productPickerOpen)
     <div
+        x-data
+        x-on:keydown.escape.window="$wire.closeProductPicker()"
         role="dialog"
         aria-modal="true"
         aria-label="Add Products"
@@ -533,6 +536,8 @@
     {{-- Paste Products Modal --}}
     @if($pasteProductsModalOpen)
     <div
+        x-data
+        x-on:keydown.escape.window="$wire.closePasteProductsModal()"
         role="dialog"
         aria-modal="true"
         aria-label="Paste Products"
@@ -622,6 +627,8 @@
     {{-- Revisions Modal --}}
     @if($revisionsModalOpen)
     <div
+        x-data
+        x-on:keydown.escape.window="$wire.set('revisionsModalOpen', false)"
         role="dialog"
         aria-modal="true"
         aria-label="Manage Revisions"
@@ -711,6 +718,7 @@
         x-transition:leave="transition ease-in duration-100"
         x-transition:leave-start="opacity-100"
         x-transition:leave-end="opacity-0"
+        x-on:keydown.escape.window="confirmDeleteLineId = null"
         class="fixed inset-0 z-[9999] flex items-center justify-center p-4"
         style="display: none"
     >

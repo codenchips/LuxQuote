@@ -91,12 +91,17 @@ class AdminProjectResourceTest extends TestCase
 
         $component = Livewire::test(ViewProject::class, ['record' => $project->id])
             ->assertSee('P0')
+            ->set('revisionsModalOpen', true)
+            ->assertSee('Create New Revision')
             ->call('createNewRevision');
 
         $this->assertSame(1, $project->fresh()->revision);
         $this->assertSame('R1', $project->fresh()->activeRevision->label());
 
-        $component->call('createNewRevision');
+        $component
+            ->set('revisionsModalOpen', true)
+            ->assertSee('R1')
+            ->call('createNewRevision');
 
         $this->assertSame(2, $project->fresh()->revision);
         $this->assertSame('R2', $project->fresh()->activeRevision->label());
@@ -2153,6 +2158,32 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(ListActivityLogs::class)
             ->assertSee('REF-003')
             ->assertSee('R3');
+    }
+
+    public function test_activity_logs_table_shows_project_name_fallback_when_reference_is_missing(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Local Project Without Reference',
+            'reference_number' => null,
+            'revision' => 2,
+        ]);
+
+        ActivityLog::create([
+            'user_id' => $admin->id,
+            'project_id' => $project->id,
+            'action_type' => 'project.updated',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $project->name,
+            'payload' => null,
+        ]);
+
+        Livewire::test(ListActivityLogs::class)
+            ->assertSee('Local Projec...')
+            ->assertSee('R2')
+            ->assertDontSee('No project');
     }
 
     public function test_project_history_only_shows_activity_for_the_current_project(): void

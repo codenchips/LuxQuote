@@ -231,6 +231,8 @@
 
         @if($approveRevisionModalOpen)
         <div
+            x-data
+            x-on:keydown.escape.window="$wire.closeApproveRevisionModal()"
             role="dialog"
             aria-modal="true"
             aria-label="Approve and lock this revision?"

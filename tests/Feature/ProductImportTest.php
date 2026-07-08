@@ -18,35 +18,12 @@ class ProductImportTest extends TestCase
     private function apiResponse(array $extra = []): array
     {
         return array_merge([
-            'columns' => ['site', 'product_name', 'SKU', 'price', 'v_description', 'type_name',
-                'length_mm', 'width_mm', 'depth_mm', 'diameter_mm', 'cut_out_mm',
-                'weight_kg', 'luminaire_wattage_w', 'lumens_lm', 'efficacy_llm_w',
-                'beam_angle_fwhm', 'emergency_lumen_output', 'power', 'em_power',
-                'cct_k', 'colour_temp', 'cri', 'dali', 'vision_type', 'emergency_type',
-                'ip_rating', 'ik_rating', 'electrical_class', 'rl_ral'],
+            'columns' => ['id', 'product', 'type', 'sku', 'description', 'cost', 'site'],
             'data' => [
-                ['site' => 'xcite', 'product_name' => 'Test Light', 'SKU' => 'XC-001',
-                    'price' => '12.34', 'v_description' => 'A test product', 'type_name' => 'Downlights',
-                    'length_mm' => '100', 'width_mm' => null, 'depth_mm' => null,
-                    'diameter_mm' => null, 'cut_out_mm' => '', 'weight_kg' => '1.5',
-                    'luminaire_wattage_w' => '10W', 'lumens_lm' => '800',
-                    'efficacy_llm_w' => '80', 'beam_angle_fwhm' => null,
-                    'emergency_lumen_output' => null, 'power' => null, 'em_power' => null,
-                    'cct_k' => '4000K', 'colour_temp' => 'NW', 'cri' => '80',
-                    'dali' => null, 'vision_type' => null, 'emergency_type' => null,
-                    'ip_rating' => 'IP44', 'ik_rating' => null,
-                    'electrical_class' => 'Class 2', 'rl_ral' => null],
-                ['site' => 'tamlite', 'product_name' => 'Another Light', 'SKU' => 'TL-002',
-                    'price' => '', 'v_description' => 'Wide beam', 'type_name' => 'Floodlights',
-                    'length_mm' => null, 'width_mm' => null, 'depth_mm' => null,
-                    'diameter_mm' => null, 'cut_out_mm' => null, 'weight_kg' => null,
-                    'luminaire_wattage_w' => null, 'lumens_lm' => null,
-                    'efficacy_llm_w' => null, 'beam_angle_fwhm' => null,
-                    'emergency_lumen_output' => null, 'power' => null, 'em_power' => null,
-                    'cct_k' => null, 'colour_temp' => null, 'cri' => null,
-                    'dali' => null, 'vision_type' => null, 'emergency_type' => null,
-                    'ip_rating' => null, 'ik_rating' => null,
-                    'electrical_class' => null, 'rl_ral' => null],
+                ['id' => '1', 'site' => 'xcite', 'product' => 'Test Light', 'sku' => 'XC-001',
+                    'cost' => '12.34', 'description' => 'A test product', 'type' => 'Downlights'],
+                ['id' => '2', 'site' => 'Tamlite', 'product' => 'Another Light', 'sku' => 'TL-002',
+                    'cost' => '', 'description' => 'Wide beam', 'type' => 'Floodlights'],
             ],
         ], $extra);
     }
@@ -70,22 +47,91 @@ class ProductImportTest extends TestCase
         ]);
         $this->assertDatabaseHas('products', [
             'sku' => 'TL-002',
-            'site' => 'tamlite',
+            'site' => 'Tamlite',
             'v_description' => 'Wide beam',
-            'description' => 'Another Light Wide beam',
+            'description' => 'Wide beam',
         ]);
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://tcms.tamlite.co.uk/api/luxquote_data'
+            && $request->method() === 'POST');
     }
 
-    public function test_import_maps_sku_column_to_lowercase(): void
+    public function test_import_maps_new_api_columns_to_local_product_columns(): void
     {
         Http::fake(['*' => Http::response($this->apiResponse(), 200)]);
 
         app(ProductImportService::class)->import();
 
-        $this->assertDatabaseHas('products', ['sku' => 'XC-001']);
+        $this->assertDatabaseHas('products', [
+            'sku' => 'XC-001',
+            'product_name' => 'Test Light',
+            'type_name' => 'Downlights',
+            'price' => '12.34',
+            'site' => 'xcite',
+        ]);
     }
 
-    public function test_import_converts_empty_strings_to_null(): void
+    public function test_import_uses_api_description_as_is(): void
+    {
+        Http::fake(['*' => Http::response($this->apiResponse([
+            'data' => [
+                ['id' => '1', 'site' => 'Tamlite', 'product' => 'Ignored prefix', 'sku' => 'TL-001',
+                    'cost' => '1.00', 'description' => '  Keep this exact description  ', 'type' => 'Downlights'],
+            ],
+        ]), 200)]);
+
+        app(ProductImportService::class)->import();
+
+        $this->assertDatabaseHas('products', [
+            'sku' => 'TL-001',
+            'description' => '  Keep this exact description  ',
+            'v_description' => '  Keep this exact description  ',
+        ]);
+    }
+
+    public function test_import_skips_rows_without_skus(): void
+    {
+        Http::fake(['*' => Http::response($this->apiResponse([
+            'data' => [
+                ['id' => '1', 'site' => 'Tamlite', 'product' => 'Academy', 'sku' => null,
+                    'cost' => '0', 'description' => 'Academy - Surface module', 'type' => 'Surface module'],
+                ['id' => '2', 'site' => 'Tamlite', 'product' => 'Another Light', 'sku' => 'TL-002',
+                    'cost' => '5.00', 'description' => 'Another Light Description', 'type' => 'Floodlights'],
+            ],
+        ]), 200)]);
+
+        $count = app(ProductImportService::class)->import();
+
+        $this->assertSame(1, $count);
+        $this->assertDatabaseMissing('products', ['product_name' => 'Academy']);
+        $this->assertDatabaseHas('products', ['sku' => 'TL-002']);
+    }
+
+    public function test_import_skips_duplicate_skus_from_api(): void
+    {
+        Http::fake(['*' => Http::response($this->apiResponse([
+            'data' => [
+                ['id' => '1', 'site' => 'Xcite', 'product' => 'Batten', 'sku' => 'XCSBT631WWP',
+                    'cost' => '0', 'description' => 'Batten - PIR', 'type' => 'Surface Linear'],
+                ['id' => '2', 'site' => 'Xcite', 'product' => 'Batten', 'sku' => 'XCSBT631WWP',
+                    'cost' => '0', 'description' => 'Batten - PIR/Photocell', 'type' => 'Surface Linear'],
+            ],
+        ]), 200)]);
+
+        $count = app(ProductImportService::class)->import();
+
+        $this->assertSame(1, $count);
+        $this->assertDatabaseCount('products', 1);
+        $this->assertDatabaseHas('products', [
+            'sku' => 'XCSBT631WWP',
+            'description' => 'Batten - PIR',
+        ]);
+        $this->assertDatabaseMissing('products', [
+            'sku' => 'XCSBT631WWP',
+            'description' => 'Batten - PIR/Photocell',
+        ]);
+    }
+
+    public function test_import_converts_empty_nullable_values_to_null(): void
     {
         Http::fake(['*' => Http::response($this->apiResponse(), 200)]);
 

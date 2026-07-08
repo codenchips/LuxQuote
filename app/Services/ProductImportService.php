@@ -10,7 +10,33 @@ use RuntimeException;
 
 class ProductImportService
 {
-    private const API_URL = 'https://tcms.tamlite.co.uk/api/product_data';
+    private const API_URL = 'https://tcms.tamlite.co.uk/api/luxquote_data';
+
+    private const PRODUCT_SPEC_COLUMNS = [
+        'length_mm',
+        'width_mm',
+        'depth_mm',
+        'diameter_mm',
+        'cut_out_mm',
+        'weight_kg',
+        'luminaire_wattage_w',
+        'lumens_lm',
+        'efficacy_llm_w',
+        'beam_angle_fwhm',
+        'emergency_lumen_output',
+        'power',
+        'em_power',
+        'cct_k',
+        'colour_temp',
+        'cri',
+        'dali',
+        'vision_type',
+        'emergency_type',
+        'ip_rating',
+        'ik_rating',
+        'electrical_class',
+        'rl_ral',
+    ];
 
     /**
      * Fetch products from the external API and replace the local product table.
@@ -33,21 +59,14 @@ class ProductImportService
             throw new RuntimeException('Unexpected API response structure.');
         }
 
-        $columns = $payload['columns'];
         $rows = $payload['data'];
 
         /** @var array<int, array<string, mixed>> $records */
-        $records = array_map(function (array $row) use ($columns): array {
-            $record = [];
-            foreach ($columns as $column) {
-                $value = $row[$column] ?? null;
-                $record[$column === 'SKU' ? 'sku' : $column] = $value !== '' ? $value : null;
-            }
-
-            $record['description'] = $this->buildDescription($record);
-
-            return $record;
-        }, $rows);
+        $records = array_values(array_filter(array_map(
+            fn (array $row): ?array => $this->mapProductRow($row),
+            $rows,
+        )));
+        $records = $this->uniqueRecordsBySku($records);
 
         Product::query()->delete();
 
@@ -61,20 +80,61 @@ class ProductImportService
     }
 
     /**
-     * @param  array<string, mixed>  $record
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>|null
      */
-    private function buildDescription(array $record): ?string
+    private function mapProductRow(array $row): ?array
     {
-        $productName = trim((string) ($record['product_name'] ?? ''));
-        $visualDescription = trim((string) ($record['v_description'] ?? $record['description'] ?? ''));
+        $sku = $this->normaliseNullableValue($row['sku'] ?? null);
+        $productName = $this->normaliseNullableValue($row['product'] ?? null);
 
-        if (strtolower((string) ($record['site'] ?? '')) === 'xcite') {
-            return $visualDescription !== '' ? $visualDescription : null;
+        if ($sku === null || $productName === null) {
+            return null;
         }
 
-        $description = trim(implode(' ', array_filter([$productName, $visualDescription])));
+        $record = [
+            'site' => $this->normaliseNullableValue($row['site'] ?? null),
+            'product_name' => $productName,
+            'sku' => $sku,
+            'price' => $this->normaliseNullableValue($row['cost'] ?? null),
+            'description' => $row['description'] ?? null,
+            'v_description' => $row['description'] ?? null,
+            'type_name' => $this->normaliseNullableValue($row['type'] ?? null),
+        ];
 
-        return $description !== '' ? $description : null;
+        foreach (self::PRODUCT_SPEC_COLUMNS as $column) {
+            $record[$column] = null;
+        }
+
+        return $record;
+    }
+
+    private function normaliseNullableValue(mixed $value): mixed
+    {
+        return $value !== '' ? $value : null;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $records
+     * @return array<int, array<string, mixed>>
+     */
+    private function uniqueRecordsBySku(array $records): array
+    {
+        $seenSkus = [];
+        $uniqueRecords = [];
+
+        foreach ($records as $record) {
+            $sku = (string) $record['sku'];
+
+            if (isset($seenSkus[$sku])) {
+                continue;
+            }
+
+            $seenSkus[$sku] = true;
+            $uniqueRecords[] = $record;
+        }
+
+        return $uniqueRecords;
     }
 
     private function populateMissingProjectLinePrices(): void

@@ -58,6 +58,7 @@
         x-transition:leave="transition ease-in duration-100"
         x-transition:leave-start="opacity-100"
         x-transition:leave-end="opacity-0"
+        x-on:keydown.escape.window="confirmDeleteAreaId = null"
         class="fixed inset-0 z-[9999] flex items-center justify-center p-4"
         style="display: none"
     >
