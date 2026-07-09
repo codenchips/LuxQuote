@@ -66,6 +66,14 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
         return $this->hasMany(Project::class);
     }
 
+    /**
+     * @return HasMany<ProjectPresence, $this>
+     */
+    public function projectPresences(): HasMany
+    {
+        return $this->hasMany(ProjectPresence::class);
+    }
+
     public function isAdministrator(): bool
     {
         return $this->role === UserRole::Admin || $this->permissionGroup?->slug === 'admin';

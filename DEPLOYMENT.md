@@ -432,7 +432,7 @@ The Docker check expects these Compose services by default:
 laravel.test mysql redis meilisearch
 ```
 
-Override with `EXPECTED_SERVICES` if production service names change. The Salesforce check is read-only and does not push PDFs or update Opportunity Amounts.
+Override with `EXPECTED_SERVICES` if production service names change. The Docker check retries before alerting to avoid false positives during deploys or brief container recreates; defaults are `DOCKER_HEALTH_RETRIES=3` and `DOCKER_HEALTH_RETRY_DELAY_SECONDS=20`. The Salesforce check is read-only and does not push PDFs or update Opportunity Amounts.
 
 ## Database Restore Workflow
 

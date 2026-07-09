@@ -193,7 +193,7 @@ class ActivityLogsTable
                                 $detail = trim("{$code}{$ref}{$price}{$notes}", ' |');
                                 $label = $description !== '' ? "<strong>{$qty}x {$description}</strong>" : "<strong>{$qty}x</strong>";
 
-                                return 'Added '.$label.($detail !== '' ? " ({$detail})" : '').' to the schedule';
+                                return 'Added '.$label.($detail !== '' ? " ({$detail})" : '');
                             })(),
 
                             'line.updated' => (function () use ($payload): string {
@@ -215,6 +215,13 @@ class ActivityLogsTable
                                 $parts = [];
                                 foreach ($changes as $field => $change) {
                                     $label = $fieldNames[$field] ?? (string) str($field)->headline();
+
+                                    if (in_array($field, ['notes', 'validation_note'], true)) {
+                                        $parts[] = self::formatSensitiveTextChange($label, $change);
+
+                                        continue;
+                                    }
+
                                     $old = e(self::formatChangedValue($change['old'] ?? null));
                                     $new = e(self::formatChangedValue($change['new'] ?? null));
                                     $parts[] = "Changed <strong>{$label}</strong> from <strong>{$old}</strong> to <strong>{$new}</strong>";
@@ -317,6 +324,25 @@ class ActivityLogsTable
         return (string) str($value)
             ->replace('_', ' ')
             ->headline();
+    }
+
+    /**
+     * @param  array<string, mixed>  $change
+     */
+    private static function formatSensitiveTextChange(string $label, array $change): string
+    {
+        $oldBlank = blank($change['old'] ?? null);
+        $newBlank = blank($change['new'] ?? null);
+
+        if ($oldBlank && ! $newBlank) {
+            return "Added <strong>{$label}</strong>";
+        }
+
+        if (! $oldBlank && $newBlank) {
+            return "Cleared <strong>{$label}</strong>";
+        }
+
+        return "Changed <strong>{$label}</strong>";
     }
 
     private static function referenceLabel(ActivityLog $record): string

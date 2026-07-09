@@ -3,6 +3,8 @@ set -uo pipefail
 
 APP_DIR="${APP_DIR:-/home/tamliteco/luxquote.app}"
 EXPECTED_SERVICES="${EXPECTED_SERVICES:-laravel.test mysql redis meilisearch}"
+DOCKER_HEALTH_RETRIES="${DOCKER_HEALTH_RETRIES:-3}"
+DOCKER_HEALTH_RETRY_DELAY_SECONDS="${DOCKER_HEALTH_RETRY_DELAY_SECONDS:-20}"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/LuxQuoteDocker}"
 NTFY_TITLE="${NTFY_TITLE:-LuxQuote Docker health check failed}"
 NTFY_PRIORITY="${NTFY_PRIORITY:-high}"
@@ -31,19 +33,8 @@ ${trimmed_output}"
         "$NTFY_URL" >/dev/null || true
 }
 
-main() {
-    local output
-    local status
-
-    if ! cd "$APP_DIR"; then
-        output="Could not change to app directory: ${APP_DIR}"
-        printf '%s\n' "$output"
-        notify_failure "$output"
-
-        return 2
-    fi
-
-    output="$(
+run_checks() {
+    (
         {
             set -e
             docker compose ps
@@ -59,14 +50,41 @@ main() {
             docker compose exec -T mysql sh -lc 'mysqladmin ping -h 127.0.0.1 -u"$MYSQL_USER" -p"$MYSQL_PASSWORD"'
             docker compose exec -T redis redis-cli ping
         } 2>&1
-    )"
-    status=$?
+    )
+}
 
-    if [ "$status" -eq 0 ]; then
-        printf '[%s] LuxQuote Docker health check passed.\n' "$(timestamp)"
+main() {
+    local attempt
+    local output
+    local status
 
-        return 0
+    if ! cd "$APP_DIR"; then
+        output="Could not change to app directory: ${APP_DIR}"
+        printf '%s\n' "$output"
+        notify_failure "$output"
+
+        return 2
     fi
+
+    attempt=1
+    status=1
+
+    while [ "$attempt" -le "$DOCKER_HEALTH_RETRIES" ]; do
+        output="$(run_checks)"
+        status=$?
+
+        if [ "$status" -eq 0 ]; then
+            printf '[%s] LuxQuote Docker health check passed on attempt %s/%s.\n' "$(timestamp)" "$attempt" "$DOCKER_HEALTH_RETRIES"
+
+            return 0
+        fi
+
+        if [ "$attempt" -lt "$DOCKER_HEALTH_RETRIES" ]; then
+            sleep "$DOCKER_HEALTH_RETRY_DELAY_SECONDS"
+        fi
+
+        attempt=$((attempt + 1))
+    done
 
     printf '%s\n' "$output"
     notify_failure "$output"

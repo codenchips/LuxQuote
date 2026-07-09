@@ -458,10 +458,6 @@ class SalesforceService
         $record = ($result['records'] ?? [])[0] ?? null;
 
         if ($record === null) {
-            Log::warning('Salesforce Opportunity detail query returned no records', [
-                'opportunity_id' => $id,
-            ]);
-
             return $this->getOpportunitySummaryByIdUsingAuth($auth, $id);
         }
 
@@ -502,15 +498,7 @@ class SalesforceService
             "SELECT Id, Owner.Name, Owner.Email, Account.Name FROM Opportunity{$where} LIMIT 1",
         );
 
-        $record = ($result['records'] ?? [])[0] ?? null;
-
-        if ($record === null) {
-            Log::warning('Salesforce Opportunity relationship fields were unavailable during project create population', [
-                'opportunity_id' => $id,
-            ]);
-        }
-
-        return $record;
+        return ($result['records'] ?? [])[0] ?? null;
     }
 
     public function updateOpportunityAmount(Project $project, float $amount): array

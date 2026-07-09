@@ -6,6 +6,7 @@ use App\Filament\Resources\Users\Pages\CreateUser;
 use App\Filament\Resources\Users\Pages\EditUser;
 use App\Filament\Resources\Users\Pages\ListUsers;
 use App\Models\Project;
+use App\Models\ProjectPresence;
 use App\Models\User;
 use Filament\Actions\DeleteAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -24,6 +25,8 @@ class AdminUserResourceTest extends TestCase
 
     public function test_admin_can_list_users(): void
     {
+        $this->travelTo('2026-06-29 14:31:00');
+
         $admin = $this->adminUser();
         $user = User::factory()->create([
             'name' => 'Project Creator',
@@ -38,6 +41,34 @@ class AdminUserResourceTest extends TestCase
             ->assertSee('Project Creator')
             ->assertSee('Jun 29 2026 14:30')
             ->assertSee('3');
+    }
+
+    public function test_users_table_shows_active_project_presence_state(): void
+    {
+        $this->travelTo('2026-07-09 12:00:00');
+
+        $admin = $this->adminUser();
+        $activeUser = User::factory()->create(['name' => 'Active Viewer']);
+        $inactiveUser = User::factory()->create(['name' => 'Inactive Viewer']);
+        $project = Project::factory()->create();
+
+        ProjectPresence::create([
+            'project_id' => $project->id,
+            'user_id' => $activeUser->id,
+            'last_seen_at' => now()->subSeconds(30),
+        ]);
+
+        ProjectPresence::create([
+            'project_id' => $project->id,
+            'user_id' => $inactiveUser->id,
+            'last_seen_at' => now()->subMinutes(5),
+        ]);
+
+        $this->actingAs($admin);
+
+        Livewire::test(ListUsers::class)
+            ->assertTableColumnStateSet('active_project_presence', true, $activeUser)
+            ->assertTableColumnStateSet('active_project_presence', false, $inactiveUser);
     }
 
     public function test_admin_can_render_create_user_page(): void

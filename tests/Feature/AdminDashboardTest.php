@@ -240,6 +240,44 @@ class AdminDashboardTest extends TestCase
             ->assertDontSee('Interaction Project 1');
     }
 
+    public function test_recent_output_panels_show_each_project_once_with_latest_action(): void
+    {
+        $this->travelTo('2026-07-09 10:00:00');
+
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $scheduleProject = Project::factory()->create(['name' => 'Repeated Schedule Project']);
+        $this->activityLog($admin, $scheduleProject, 'schedule_pdf.generated', now()->subMinutes(8), $scheduleProject->activeRevision);
+        $this->activityLog($admin, $scheduleProject, 'schedule_pdf.generated', now()->subMinutes(2), $scheduleProject->activeRevision);
+
+        $quoteProject = Project::factory()->create(['name' => 'Repeated Quote Project']);
+        $this->activityLog($admin, $quoteProject, 'quote_pdf.generated', now()->subMinutes(7), $quoteProject->activeRevision);
+        $this->activityLog($admin, $quoteProject, 'quote_pdf.generated', now()->subMinute(), $quoteProject->activeRevision);
+
+        $packProject = Project::factory()->create(['name' => 'Repeated Pack Project']);
+        $pack = DocumentPack::factory()->for($packProject)->create(['name' => 'Latest Pack']);
+        $this->activityLog($admin, $packProject, 'document_pack.generated', now()->subMinutes(6), $packProject->activeRevision, [
+            'document_pack_id' => $pack->id,
+            'document_pack_name' => $pack->name,
+        ]);
+        $this->activityLog($admin, $packProject, 'document_pack.generated', now()->subMinutes(3), $packProject->activeRevision, [
+            'document_pack_id' => $pack->id,
+            'document_pack_name' => $pack->name,
+        ]);
+
+        $dashboard = Livewire::test(Dashboard::class)->instance();
+
+        $this->assertCount(1, $dashboard->recentSchedules()->where('project', 'Repeated Schedule Project'));
+        $this->assertSame('Jul 09 2026 09:58', $dashboard->recentSchedules()->firstWhere('project', 'Repeated Schedule Project')['generatedAt']);
+
+        $this->assertCount(1, $dashboard->recentQuotes()->where('project', 'Repeated Quote Project'));
+        $this->assertSame('Jul 09 2026 09:59', $dashboard->recentQuotes()->firstWhere('project', 'Repeated Quote Project')['generatedAt']);
+
+        $this->assertCount(1, $dashboard->recentDocumentPacks()->where('project', 'Repeated Pack Project'));
+        $this->assertSame('Jul 09 2026 09:57', $dashboard->recentDocumentPacks()->firstWhere('project', 'Repeated Pack Project')['generatedAt']);
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      */

@@ -110,6 +110,7 @@ class Dashboard extends BaseDashboard
             ->limit(40)
             ->get()
             ->filter(fn (ActivityLog $log): bool => $log->project !== null && $this->canShowProjectOnDashboard($log->project, $user))
+            ->unique('project_id')
             ->map(function (ActivityLog $log) use ($user): ?array {
                 $project = $log->project;
                 $revision = $this->revisionForLog($log);
@@ -204,6 +205,7 @@ class Dashboard extends BaseDashboard
             ->limit(40)
             ->get()
             ->filter(fn (ActivityLog $log): bool => $log->project !== null && $this->canShowProjectOnDashboard($log->project, $user))
+            ->unique('project_id')
             ->map(function (ActivityLog $log) use ($routeName): ?array {
                 $project = $log->project;
                 $revision = $this->revisionForLog($log);

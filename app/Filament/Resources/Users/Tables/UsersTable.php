@@ -3,9 +3,11 @@
 namespace App\Filament\Resources\Users\Tables;
 
 use App\Filament\Support\BadgeStyle;
+use App\Models\User;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
@@ -15,6 +17,15 @@ class UsersTable
     {
         return $table
             ->columns([
+                IconColumn::make('active_project_presence')
+                    ->label('')
+                    ->state(fn (User $record): bool => $record->projectPresences()
+                        ->where('last_seen_at', '>=', now()->subSeconds(90))
+                        ->exists())
+                    ->icon(fn (bool $state): string => $state ? 'heroicon-o-signal' : 'heroicon-o-minus')
+                    ->color(fn (bool $state): string => $state ? 'success' : 'gray')
+                    ->tooltip(fn (bool $state): string => $state ? 'Active in a project now' : 'No recent project activity')
+                    ->width('2rem'),
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),

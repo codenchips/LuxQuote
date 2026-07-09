@@ -2203,6 +2203,47 @@ class AdminProjectResourceTest extends TestCase
             ->assertDontSee('approval_requested');
     }
 
+    public function test_activity_logs_table_hides_note_contents_for_line_updates(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'REF-005',
+            'revision' => 1,
+        ]);
+
+        ActivityLog::create([
+            'user_id' => $admin->id,
+            'project_id' => $project->id,
+            'action_type' => 'line.updated',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $project->name,
+            'payload' => [
+                'code' => 'SKU-001',
+                'changes' => [
+                    'validation_note' => [
+                        'old' => 'Approved: SKU "SKU-001" has no product RRP. Review the quote price before approving.',
+                        'new' => '',
+                    ],
+                    'notes' => [
+                        'old' => '',
+                        'new' => 'Long private project note that should not be displayed in the log table.',
+                    ],
+                ],
+            ],
+        ]);
+
+        Livewire::test(ListActivityLogs::class)
+            ->assertSee('SKU-001')
+            ->assertSee('Cleared')
+            ->assertSee('Validation Note')
+            ->assertSee('Added')
+            ->assertSee('Notes')
+            ->assertDontSee('Review the quote price before approving')
+            ->assertDontSee('Long private project note');
+    }
+
     public function test_activity_logs_table_shows_project_name_fallback_when_reference_is_missing(): void
     {
         $admin = User::factory()->admin()->create();
