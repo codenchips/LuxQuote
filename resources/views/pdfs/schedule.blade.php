@@ -429,7 +429,7 @@
                     <div><span class="ref-label">Rev: </span><span class="ref-val">{{ $revision->label() }}</span></div>
                 @endif
                 <div><span class="ref-label">Date: </span><span class="ref-val">{!! $formatPdfDate($project->date) !!}</span></div>
-                <div><span class="ref-label">Generated: </span><span class="ref-val">{!! $formatPdfDate(now(), includeTime: true) !!}</span></div>
+                <div><span class="ref-label">Sales Engineer: </span><span class="ref-val">{{ $project->owner_email ?? '-' }}</span></div>
             </div>
         </div>
 
@@ -506,10 +506,10 @@
                         </td>
                     </tr>
                     <tr>
-                        <th class="col-code">Code</th>
                         <th class="col-ref">Ref</th>
-                        <th class="col-desc">Description</th>
                         <th class="col-qty">Qty</th>
+                        <th class="col-code">Code</th>
+                        <th class="col-desc">Description</th>
                         @if($showPrices)
                             <th class="col-money">Unit Price</th>
                             <th class="col-money">Line Total</th>
@@ -529,10 +529,10 @@
                 <tbody class="final-line-and-legal">
                     @endif
                     <tr @class(['keep-with-legal' => $isFinalLineItemRow])>
-                        <td class="col-code">{!! $hasSku ? e($line->code) : '&nbsp;' !!}</td>
                         <td class="col-ref">{!! $hasSku ? e($line->ref ?? '') : '&nbsp;' !!}</td>
-                        <td class="col-desc">{!! $hasSku ? e($line->description ?? '') : '&nbsp;' !!}</td>
                         <td class="col-qty">{!! $hasSku ? e($line->qty ?? '') : '&nbsp;' !!}</td>
+                        <td class="col-code">{!! $hasSku ? e($line->code) : '&nbsp;' !!}</td>
+                        <td class="col-desc">{!! $hasSku ? e($line->description ?? '') : '&nbsp;' !!}</td>
                         @if($showPrices)
                             @php
                                 $unitPrice = (float) ($line->unit_price ?? 0);
@@ -562,8 +562,8 @@
                     </tr>
                     @if($hasLineNote)
                         <tr class="line-note-row">
-                            <td colspan="2">&nbsp;</td>
-                            <td colspan="{{ $showPrices ? 5 : 3 }}" class="line-note-cell"><strong>Note:</strong> {{ $line->notes }}</td>
+                            <td colspan="3">&nbsp;</td>
+                            <td colspan="{{ $showPrices ? 4 : 2 }}" class="line-note-cell"><strong>Note:</strong> {{ $line->notes }}</td>
                         </tr>
                     @endif
                     @if($isFinalLineItemRow)
@@ -575,9 +575,9 @@
                                             <td class="legal-blurb-note">
                                                 <p>
                                                     <strong>NOTE: ALL QUANTITIES MUST BE CROSS REFERENCED AGAINST ANY DRAWINGS AND/OR LIGHTING REPORTS PRIOR TO ORDER</strong><br>
-                                                    &bull; Suspension kits available where applicable, please contact TAMCO sales office for further details (01952 736500).<br>
+                                                    &bull; Suspension kits available where applicable, please contact Tamlite sales office for further details 01527 517 777.<br>
                                                     &bull; All quantities shown are strictly budgetary at this stage, subject to fully scaled drawings being submitted.<br>
-                                                    &bull; Emergency lighting has been designed in accordance with BS5266-1:2016 but is an indicative layout only - additional lighting may be required.
+                                                    &bull; Emergency lighting has been designed in accordance with BS [TBC] but is an indicative layout only - additional lighting may be required.
                                                 </p>
                                             </td>
                                         </tr>

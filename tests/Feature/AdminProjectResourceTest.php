@@ -1192,6 +1192,42 @@ class AdminProjectResourceTest extends TestCase
             ]), false);
     }
 
+    public function test_pdf_template_shows_sales_engineer_and_line_columns_in_requested_order(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'PDF-COLUMNS',
+            'owner_email' => 'sales.engineer@example.com',
+        ]);
+        $area = $project->activeRevision->areas()->first();
+        $area->lines()->create([
+            'code' => 'ORDER-SKU',
+            'ref' => 'A1',
+            'description' => 'Column order product',
+            'qty' => 7,
+            'type' => ProjectLineType::Standard->value,
+            'unit_price' => 12.34,
+            'sort_order' => 0,
+        ]);
+
+        $html = view('pdfs.schedule', [
+            'project' => $project->fresh(['user']),
+            'revision' => $project->activeRevision,
+            'areas' => $project->activeRevision->areas()->with('lines')->get(),
+            'showPrices' => true,
+            'documentTitle' => 'Lighting Quote',
+        ])->render();
+
+        $this->assertStringContainsString('Sales Engineer: </span><span class="ref-val">sales.engineer@example.com</span>', $html);
+        $this->assertStringNotContainsString('Generated: </span><span class="ref-val">', $html);
+
+        $this->assertLessThan(strpos($html, '<th class="col-qty">Qty</th>'), strpos($html, '<th class="col-ref">Ref</th>'));
+        $this->assertLessThan(strpos($html, '<th class="col-code">Code</th>'), strpos($html, '<th class="col-qty">Qty</th>'));
+        $this->assertLessThan(strpos($html, '<th class="col-desc">Description</th>'), strpos($html, '<th class="col-code">Code</th>'));
+    }
+
     public function test_output_pdf_urls_include_datasheet_flag_when_enabled(): void
     {
         $admin = User::factory()->admin()->create();
