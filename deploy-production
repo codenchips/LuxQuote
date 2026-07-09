@@ -4,7 +4,9 @@ set -Eeuo pipefail
 
 current_branch="$(git branch --show-current)"
 version_file="VERSION"
+changelog_file="CHANGELOG.md"
 version_bump="${VERSION_BUMP:-beta}"
+release_baseline_ref="${RELEASE_BASELINE_REF:-origin/production}"
 
 bump_version() {
     local version="$1"
@@ -56,6 +58,66 @@ bump_version() {
     esac
 }
 
+latest_release_subject() {
+    local subject
+
+    subject="$(git log --format=%s --no-merges -n 1 "$release_baseline_ref"..HEAD 2>/dev/null || true)"
+
+    if [ -z "$subject" ]; then
+        subject="$(git log --format=%s --no-merges -n 1 HEAD 2>/dev/null || true)"
+    fi
+
+    printf '%s\n' "$subject"
+}
+
+format_release_commit_lines() {
+    local range="$release_baseline_ref..HEAD"
+
+    if ! git rev-parse --verify "$release_baseline_ref" >/dev/null 2>&1; then
+        range="HEAD"
+    fi
+
+    git log --reverse --no-merges --format='- `%h` %s' "$range"
+}
+
+update_changelog() {
+    local version="$1"
+    local current_version="$2"
+    local today tmp commits
+
+    today="$(date +%F)"
+    tmp="$(mktemp)"
+    commits="$(mktemp)"
+
+    format_release_commit_lines > "$commits"
+
+    if [ ! -s "$commits" ]; then
+        printf -- '- Version-only deploy; no application commits found between production and main.\n' > "$commits"
+    fi
+
+    {
+        printf '# Changelog\n\n'
+        printf '## %s - %s\n\n' "$version" "$today"
+
+        if [ "$version" != "$current_version" ]; then
+            printf 'Version: `%s` -> `%s`\n\n' "$current_version" "$version"
+        else
+            printf 'Version: `%s`\n\n' "$version"
+        fi
+
+        printf 'Changes included:\n\n'
+        cat "$commits"
+        printf '\n'
+
+        if [ -f "$changelog_file" ]; then
+            sed '1{/^# Changelog$/d;}' "$changelog_file" | sed '1{/^$/d;}'
+        fi
+    } > "$tmp"
+
+    mv "$tmp" "$changelog_file"
+    rm -f "$commits"
+}
+
 if [ "$current_branch" != "main" ]; then
     echo "Deploy aborted: start from main, not '$current_branch'."
     exit 1
@@ -72,16 +134,31 @@ if [ ! -f "$version_file" ]; then
     exit 1
 fi
 
+echo "Fetching production baseline..."
+git fetch origin production
+
 current_version="$(tr -d '[:space:]' < "$version_file")"
 next_version="$(bump_version "$current_version" "$version_bump")"
+release_subject="$(latest_release_subject)"
+
+echo "Updating changelog for $next_version"
+update_changelog "$next_version" "$current_version"
+git add "$changelog_file"
 
 if [ "$next_version" != "$current_version" ]; then
     echo "Bumping app version: $current_version -> $next_version"
     printf '%s\n' "$next_version" > "$version_file"
     git add "$version_file"
-    git commit -m "Bump app version to $next_version"
+fi
+
+if ! git diff --cached --quiet; then
+    if [ -n "$release_subject" ]; then
+        git commit -m "Release v$next_version: $release_subject"
+    else
+        git commit -m "Release v$next_version"
+    fi
 else
-    echo "App version unchanged: $current_version"
+    echo "No version or changelog changes to commit."
 fi
 
 echo "Pushing main..."

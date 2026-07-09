@@ -69,6 +69,12 @@ VERSION_BUMP=none ./deploy-production
 
 The default bump is the beta suffix, for example `0.1.0-beta.1` to `0.1.0-beta.2`.
 
+The helper also prepends a `CHANGELOG.md` entry for the version being deployed. The entry lists the commits included between the current `production` branch and `main`, so the GitHub Actions run may still be triggered by a release/version commit, but the release contents are recorded against the visible app version. When there are deployable changes, the version commit message is:
+
+```text
+Release v<version>: <latest included commit subject>
+```
+
 ## Reboot Recovery
 
 The production Docker services should survive VPS reboots. `compose.yaml` sets `restart: unless-stopped` for the app, MySQL, Redis, Meilisearch, and Mailpit services. The GitHub Actions runner container is also started with `--restart unless-stopped`.
