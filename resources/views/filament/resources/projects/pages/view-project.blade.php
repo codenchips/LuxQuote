@@ -549,7 +549,44 @@
         ></div>
 
         <div
-            x-data="{ pastedProductData: @js($pastedProductData) }"
+            x-data="{
+                pastedProductData: @js($pastedProductData),
+                visibleTab: '→',
+                displayTabs(text) {
+                    return text
+                        .replace(/\r\n?/g, '\n')
+                        .replaceAll('\t', this.visibleTab)
+                        .split('\n')
+                        .map((line) => line.replace(new RegExp(this.visibleTab + '+\\s*$'), ''))
+                        .join('\n')
+                },
+                insertText(event, text) {
+                    const textarea = event.target
+                    const start = textarea.selectionStart
+                    const end = textarea.selectionEnd
+
+                    this.pastedProductData = this.pastedProductData.slice(0, start) + text + this.pastedProductData.slice(end)
+
+                    this.$nextTick(() => {
+                        textarea.selectionStart = start + text.length
+                        textarea.selectionEnd = start + text.length
+                        textarea.dispatchEvent(new Event('input', { bubbles: true }))
+                    })
+                },
+                insertTab(event) {
+                    this.insertText(event, this.visibleTab)
+                },
+                normalisePastedTabs(event) {
+                    const pastedText = event.clipboardData?.getData('text') ?? ''
+
+                    if (! pastedText.includes('\t')) {
+                        return
+                    }
+
+                    event.preventDefault()
+                    this.insertText(event, this.displayTabs(pastedText))
+                }
+            }"
             class="relative z-10 w-full max-w-xl bg-white dark:bg-gray-900 rounded-xl shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700"
         >
             <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -563,36 +600,83 @@
             </div>
 
             <div class="px-6 py-5">
+                <div class="mb-4 grid gap-3 sm:grid-cols-2">
+                    <label class="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors
+                        {{ $pasteProductsMode === 'misos' ? 'border-primary-500 bg-primary-500/10 text-gray-900 dark:text-white' : 'border-gray-200 text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600' }}"
+                    >
+                        <input
+                            type="radio"
+                            wire:model.live="pasteProductsMode"
+                            value="misos"
+                            class="h-4 w-4 border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800"
+                        />
+                        <span>Paste from Misos</span>
+                    </label>
+
+                    <label class="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors
+                        {{ $pasteProductsMode === 'technical' ? 'border-primary-500 bg-primary-500/10 text-gray-900 dark:text-white' : 'border-gray-200 text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600' }}"
+                    >
+                        <input
+                            type="radio"
+                            wire:model.live="pasteProductsMode"
+                            value="technical"
+                            class="h-4 w-4 border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800"
+                        />
+                        <span>Paste Technical</span>
+                    </label>
+                </div>
+
                 <label for="pasted-product-data" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Paste product data<br>
-                    Format:
-                    <span class="text-green-600 dark:text-green-400">qty</span> [tab]
-                    <span class="text-green-600 dark:text-green-400">sku</span> [tab]
-                    <span class="text-green-600 dark:text-green-400">description</span>
-                    @if($canEditPrices)
-                        [tab]
-                        <span class="text-green-600 dark:text-green-400">price</span> [tab]
-                        <span class="text-green-600 dark:text-green-400">discount</span> [tab]
-                        <span class="text-green-600 dark:text-green-400">nett each</span> [tab]
-                        <span class="text-green-600 dark:text-green-400">line total</span>
+                    @if($pasteProductsMode === 'technical')
+                        Format:
+                        <span class="text-green-600 dark:text-green-400">area name</span><br>
+                        <span class="text-green-600 dark:text-green-400">sku</span> [tab]
+                        <span class="text-green-600 dark:text-green-400">ref</span> [tab]
+                        <span class="text-green-600 dark:text-green-400">qty</span> [tab]
+                        <span class="text-green-600 dark:text-green-400">description</span><br>
+                        Separate areas with one blank row.
+                    @else
+                        Format:
+                        <span class="text-green-600 dark:text-green-400">qty</span> [tab]
+                        <span class="text-green-600 dark:text-green-400">sku</span> [tab]
+                        <span class="text-green-600 dark:text-green-400">description</span>
+                        @if($canEditPrices)
+                            [tab]
+                            <span class="text-green-600 dark:text-green-400">price</span> [tab]
+                            <span class="text-green-600 dark:text-green-400">discount</span> [tab]
+                            <span class="text-green-600 dark:text-green-400">nett each</span> [tab]
+                            <span class="text-green-600 dark:text-green-400">line total</span>
+                        @endif
                     @endif
                 </label>
+
+                @if($pasteProductsMode === 'technical')
+                    <div class="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                        Technical paste replaces all existing areas and products in this revision. This cannot be undone.
+                    </div>
+                @endif
+
                 <textarea
                     id="pasted-product-data"
                     x-model="pastedProductData"
                     wire:model="pastedProductData"
+                    x-on:keydown.tab="if (! $event.shiftKey) { $event.preventDefault(); insertTab($event) }"
+                    x-on:paste="normalisePastedTabs($event)"
                     rows="10"
                     class="mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm font-mono text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 ></textarea>
 
-                <label class="mt-4 flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-3 py-2.5 dark:border-gray-700">
-                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Paste across all areas</span>
-                    <input
-                        type="checkbox"
-                        wire:model.live="pasteAcrossAllAreas"
-                        class="h-5 w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800"
-                    />
-                </label>
+                @if($pasteProductsMode === 'misos')
+                    <label class="mt-4 flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-3 py-2.5 dark:border-gray-700">
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Match existing lines across all areas</span>
+                        <input
+                            type="checkbox"
+                            wire:model.live="pasteAcrossAllAreas"
+                            class="h-5 w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800"
+                        />
+                    </label>
+                @endif
 
                 @if($pasteProductsError)
                 <div class="mt-3 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">

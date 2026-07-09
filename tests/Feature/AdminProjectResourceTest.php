@@ -636,7 +636,7 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(ViewProject::class, ['record' => $project->id])
             ->call('openPasteProductsModal', $area->id)
             ->assertSet('pasteProductsModalOpen', true)
-            ->set('pastedProductData', "2\tTAB-SKU\t\"Discarded quoted\nmultiline description\"\t12.50\n3\tSECOND-SKU\tDiscarded description\t24.75\n1\tcustom-lower\tUnknown product\t5.00")
+            ->set('pastedProductData', "2→TAB-SKU→\"Discarded quoted\nmultiline description\"→12.50\n3\tSECOND-SKU\tDiscarded description\t24.75\n1\tcustom-lower\tUnknown product\t5.00")
             ->call('addPastedProducts')
             ->assertSet('pasteProductsModalOpen', false);
 
@@ -809,6 +809,132 @@ class AdminProjectResourceTest extends TestCase
             'qty' => 3,
             'unit_price' => '24.75',
             'status' => 'Priced',
+        ]);
+    }
+
+    public function test_admin_can_paste_technical_products_by_area(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $existingArea = $project->activeRevision->areas()->first();
+        $existingArea->lines()->create([
+            'code' => 'OLD-SKU',
+            'description' => 'Existing line',
+            'qty' => 1,
+            'type' => ProjectLineType::Custom->value,
+            'sort_order' => 0,
+        ]);
+        $tabProduct = Product::factory()->create([
+            'sku' => 'TAB-SKU',
+            'product_name' => 'Tab Product',
+            'description' => 'Tab Product Description',
+            'price' => 12.34,
+        ]);
+        $fallbackProduct = Product::factory()->create([
+            'sku' => 'FALLBACK-SKU',
+            'product_name' => 'Fallback Product',
+            'description' => 'Fallback Product Description',
+            'price' => 34.56,
+        ]);
+        $commaProduct = Product::factory()->create([
+            'sku' => 'COMMA-SKU',
+            'product_name' => 'Comma Product',
+            'description' => 'Comma Product Description',
+            'price' => 56.78,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('openPasteProductsModal', $existingArea->id)
+            ->set('pasteProductsMode', 'technical')
+            ->set('pastedProductData', implode("\n", [
+                "Ground Floor\t\t\t",
+                'TAB-SKU→R1→2→Discarded pasted description',
+                "FALLBACK-SKU\tFB\t5\t",
+                "special-sku\t3\tPasted special description",
+                '',
+                'First Floor',
+                'COMMA-SKU,REF2,4,Discarded comma description',
+            ]))
+            ->call('addPastedProducts')
+            ->assertSet('pasteProductsModalOpen', false);
+
+        $this->assertDatabaseMissing('project_areas', ['id' => $existingArea->id]);
+
+        $areas = ProjectArea::where('project_revision_id', $project->active_revision_id)
+            ->with('lines')
+            ->orderBy('sort_order')
+            ->get();
+
+        $this->assertCount(2, $areas);
+        $this->assertSame('Ground Floor', $areas[0]->name);
+        $this->assertSame('First Floor', $areas[1]->name);
+
+        $groundFloorLines = $areas[0]->lines;
+        $this->assertCount(3, $groundFloorLines);
+        $this->assertSame($tabProduct->id, $groundFloorLines[0]->product_id);
+        $this->assertSame('TAB-SKU', $groundFloorLines[0]->code);
+        $this->assertSame('R1', $groundFloorLines[0]->ref);
+        $this->assertSame('Discarded pasted description', $groundFloorLines[0]->description);
+        $this->assertSame(2, $groundFloorLines[0]->qty);
+        $this->assertSame('12.34', $groundFloorLines[0]->unit_price);
+        $this->assertSame(ProjectLineType::Standard, $groundFloorLines[0]->type);
+
+        $this->assertSame($fallbackProduct->id, $groundFloorLines[1]->product_id);
+        $this->assertSame('FALLBACK-SKU', $groundFloorLines[1]->code);
+        $this->assertSame('FB', $groundFloorLines[1]->ref);
+        $this->assertSame('Fallback Product Description', $groundFloorLines[1]->description);
+        $this->assertSame(5, $groundFloorLines[1]->qty);
+        $this->assertSame('34.56', $groundFloorLines[1]->unit_price);
+        $this->assertSame(ProjectLineType::Standard, $groundFloorLines[1]->type);
+
+        $this->assertNull($groundFloorLines[2]->product_id);
+        $this->assertSame('SPECIAL-SKU', $groundFloorLines[2]->code);
+        $this->assertNull($groundFloorLines[2]->ref);
+        $this->assertSame('Pasted special description', $groundFloorLines[2]->description);
+        $this->assertSame(3, $groundFloorLines[2]->qty);
+        $this->assertNull($groundFloorLines[2]->unit_price);
+        $this->assertSame(ProjectLineType::Custom, $groundFloorLines[2]->type);
+
+        $firstFloorLine = $areas[1]->lines->first();
+        $this->assertSame($commaProduct->id, $firstFloorLine->product_id);
+        $this->assertSame('COMMA-SKU', $firstFloorLine->code);
+        $this->assertSame('REF2', $firstFloorLine->ref);
+        $this->assertSame(4, $firstFloorLine->qty);
+        $this->assertSame('Discarded comma description', $firstFloorLine->description);
+    }
+
+    public function test_technical_paste_validates_before_replacing_existing_areas(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $existingArea = $project->activeRevision->areas()->first();
+        $existingLine = $existingArea->lines()->create([
+            'code' => 'OLD-SKU',
+            'description' => 'Existing line',
+            'qty' => 1,
+            'type' => ProjectLineType::Custom->value,
+            'sort_order' => 0,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('openPasteProductsModal', $existingArea->id)
+            ->set('pasteProductsMode', 'technical')
+            ->set('pastedProductData', "Ground Floor\nBROKEN-SKU\tREF\tbad\tDescription")
+            ->call('addPastedProducts')
+            ->assertSet('pasteProductsModalOpen', true)
+            ->assertSet('pasteProductsError', 'Technical paste row 2 in "Ground Floor" is invalid: QTY must be a whole number greater than zero.');
+
+        $this->assertDatabaseHas('project_areas', [
+            'id' => $existingArea->id,
+            'name' => $existingArea->name,
+        ]);
+        $this->assertDatabaseHas('project_lines', [
+            'id' => $existingLine->id,
+            'code' => 'OLD-SKU',
         ]);
     }
 

@@ -45,6 +45,12 @@ class ViewProject extends ViewRecord
 
     private const LineStatusUnpriced = 'Unpriced';
 
+    private const PasteModeMisos = 'misos';
+
+    private const PasteModeTechnical = 'technical';
+
+    private const VisibleTabDelimiter = '→';
+
     protected static string $resource = ProjectResource::class;
 
     protected string $view = 'filament.resources.projects.pages.view-project';
@@ -83,6 +89,8 @@ class ViewProject extends ViewRecord
     public string $pastedProductData = '';
 
     public ?string $pasteProductsError = null;
+
+    public string $pasteProductsMode = self::PasteModeMisos;
 
     public bool $pasteAcrossAllAreas = true;
 
@@ -616,8 +624,14 @@ class ViewProject extends ViewRecord
         $this->pasteProductsAreaId = $areaId;
         $this->pastedProductData = '';
         $this->pasteProductsError = null;
+        $this->pasteProductsMode = self::PasteModeMisos;
         $this->pasteAcrossAllAreas = true;
         $this->pasteProductsModalOpen = true;
+    }
+
+    public function updatedPasteProductsMode(): void
+    {
+        $this->pasteProductsError = null;
     }
 
     public function closePasteProductsModal(): void
@@ -626,6 +640,7 @@ class ViewProject extends ViewRecord
         $this->pasteProductsAreaId = null;
         $this->pastedProductData = '';
         $this->pasteProductsError = null;
+        $this->pasteProductsMode = self::PasteModeMisos;
         $this->pasteAcrossAllAreas = true;
     }
 
@@ -642,6 +657,13 @@ class ViewProject extends ViewRecord
         $this->pasteProductsError = null;
 
         $area = $this->findAreaInViewingRevision($this->pasteProductsAreaId);
+
+        if ($this->pasteProductsMode === self::PasteModeTechnical) {
+            $this->addTechnicalPastedProducts();
+
+            return;
+        }
+
         $parsed = $this->parsePastedProductData();
         $rows = $parsed['rows'];
         $rejectedRows = $parsed['rejected'];
@@ -737,6 +759,69 @@ class ViewProject extends ViewRecord
         }
     }
 
+    private function addTechnicalPastedProducts(): void
+    {
+        $parsed = $this->parseTechnicalPastedProductData();
+
+        if ($parsed['error'] !== null) {
+            $this->pasteProductsError = $parsed['error'];
+
+            return;
+        }
+
+        $rowsBySku = collect($parsed['areas'])
+            ->flatMap(fn (array $area): array => $area['lines'])
+            ->keyBy(fn (array $line): string => $this->normaliseSku($line['sku']));
+
+        $productsBySku = Product::query()
+            ->whereIn(DB::raw('upper(sku)'), $rowsBySku->keys())
+            ->get()
+            ->keyBy(fn (Product $product): string => $this->normaliseSku($product->sku));
+
+        try {
+            DB::transaction(function () use ($parsed, $productsBySku): void {
+                ProjectArea::query()
+                    ->where('project_id', $this->record->id)
+                    ->where('project_revision_id', $this->viewingRevisionId)
+                    ->delete();
+
+                foreach ($parsed['areas'] as $areaIndex => $areaData) {
+                    $area = ProjectArea::create([
+                        'project_id' => $this->record->id,
+                        'project_revision_id' => $this->viewingRevisionId,
+                        'name' => $areaData['name'],
+                        'sort_order' => $areaIndex,
+                    ]);
+
+                    foreach ($areaData['lines'] as $lineIndex => $lineData) {
+                        /** @var Product|null $product */
+                        $product = $productsBySku->get($this->normaliseSku($lineData['sku']));
+
+                        $area->lines()->create([
+                            'product_id' => $product?->id,
+                            'code' => $product?->sku ?? $this->normaliseSku($lineData['sku']),
+                            'ref' => $lineData['ref'],
+                            'description' => $this->technicalLineDescription($lineData, $product),
+                            'qty' => $lineData['qty'],
+                            'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
+                            'unit_price' => $product?->price,
+                            'status' => self::LineStatusPriced,
+                            'sort_order' => $lineIndex,
+                        ]);
+                    }
+                }
+            });
+        } catch (Throwable $exception) {
+            report($exception);
+
+            $this->pasteProductsError = 'The technical paste could not be saved. Please check the pasted data and try again.';
+
+            return;
+        }
+
+        $this->closePasteProductsModal();
+    }
+
     public function notifyApprovedRevisionLocked(): void
     {
         Notification::make()
@@ -793,6 +878,31 @@ class ViewProject extends ViewRecord
         return strtoupper(trim($sku));
     }
 
+    private function normaliseRef(?string $ref): ?string
+    {
+        $ref = trim((string) $ref);
+
+        if ($ref === '') {
+            return null;
+        }
+
+        return strtoupper(substr($ref, 0, 6));
+    }
+
+    /**
+     * @param  array{description: string}  $lineData
+     */
+    private function technicalLineDescription(array $lineData, ?Product $product): string
+    {
+        $description = trim($lineData['description']);
+
+        if ($description !== '') {
+            return $description;
+        }
+
+        return $product?->displayDescription() ?? '';
+    }
+
     /**
      * @return array{rows: array<int, array{qty: int, sku: string, unit_price: ?string}>, rejected: int}
      */
@@ -806,7 +916,7 @@ class ViewProject extends ViewRecord
             return ['rows' => $rows, 'rejected' => 0];
         }
 
-        fwrite($handle, $this->pastedProductData);
+        fwrite($handle, $this->normaliseVisibleTabDelimiters($this->pastedProductData));
         rewind($handle);
 
         while (($columns = fgetcsv($handle, 0, "\t", '"', '')) !== false) {
@@ -863,6 +973,135 @@ class ViewProject extends ViewRecord
     private function isPastedProductHeader(string $qty, string $sku): bool
     {
         return strtolower($qty) === 'qty' && strtolower($sku) === 'sku';
+    }
+
+    /**
+     * @return array{areas: array<int, array{name: string, lines: array<int, array{sku: string, ref: ?string, qty: int, description: string}>}>, error: ?string}
+     */
+    private function parseTechnicalPastedProductData(): array
+    {
+        $input = trim(str_replace(["\r\n", "\r"], "\n", $this->normaliseVisibleTabDelimiters($this->pastedProductData)));
+
+        if ($input === '') {
+            return ['areas' => [], 'error' => 'Paste technical data with an area name, product rows, and blank rows between areas.'];
+        }
+
+        $areas = [];
+        $blocks = preg_split("/\n[ \t]*\n/", $input) ?: [];
+
+        foreach ($blocks as $blockIndex => $block) {
+            $lines = collect(explode("\n", trim($block)))
+                ->map(fn (string $line): string => trim($line))
+                ->filter(fn (string $line): bool => $line !== '')
+                ->values();
+
+            if ($lines->count() < 2) {
+                return ['areas' => [], 'error' => 'Each technical paste area must include an area name followed by at least one product row.'];
+            }
+
+            $areaName = $lines->first();
+            $areaColumns = $this->parseDelimitedPasteLine($areaName);
+            $filledAreaColumns = array_filter($areaColumns, fn (string $column): bool => $column !== '');
+
+            if ($areaName === '' || count($filledAreaColumns) > 1) {
+                return ['areas' => [], 'error' => 'Area names must be on their own line.'];
+            }
+
+            $areaRows = [];
+
+            foreach ($lines->slice(1)->values() as $lineIndex => $line) {
+                $row = $this->parseTechnicalProductRow($line);
+
+                if ($row['error'] !== null) {
+                    return [
+                        'areas' => [],
+                        'error' => 'Technical paste row '.($lineIndex + 2).' in "'.$areaName.'" is invalid: '.$row['error'],
+                    ];
+                }
+
+                $areaRows[] = $row['line'];
+            }
+
+            $areas[] = [
+                'name' => $areaName,
+                'lines' => $areaRows,
+            ];
+        }
+
+        if ($areas === []) {
+            return ['areas' => [], 'error' => 'No technical paste areas were found.'];
+        }
+
+        return ['areas' => $areas, 'error' => null];
+    }
+
+    /**
+     * @return array{line: array{sku: string, ref: ?string, qty: int, description: string}, error: ?string}
+     */
+    private function parseTechnicalProductRow(string $line): array
+    {
+        $columns = $this->parseDelimitedPasteLine($line);
+
+        if (count($columns) < 2) {
+            return ['line' => ['sku' => '', 'ref' => null, 'qty' => 0, 'description' => ''], 'error' => 'expected SKU and QTY columns.'];
+        }
+
+        $sku = trim((string) ($columns[0] ?? ''));
+        $ref = null;
+        $qty = '';
+        $description = '';
+
+        if ($sku === '') {
+            return ['line' => ['sku' => '', 'ref' => null, 'qty' => 0, 'description' => ''], 'error' => 'SKU is required.'];
+        }
+
+        if (count($columns) === 2 || $this->isPositiveInteger($columns[1] ?? '')) {
+            $qty = trim((string) ($columns[1] ?? ''));
+            $description = trim(implode(' ', array_slice($columns, 2)));
+        } else {
+            $ref = $this->normaliseRef($columns[1] ?? null);
+            $qty = trim((string) ($columns[2] ?? ''));
+            $description = trim(implode(' ', array_slice($columns, 3)));
+        }
+
+        if (! $this->isPositiveInteger($qty)) {
+            return ['line' => ['sku' => '', 'ref' => null, 'qty' => 0, 'description' => ''], 'error' => 'QTY must be a whole number greater than zero.'];
+        }
+
+        return [
+            'line' => [
+                'sku' => $sku,
+                'ref' => $ref,
+                'qty' => (int) $qty,
+                'description' => $description,
+            ],
+            'error' => null,
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function parseDelimitedPasteLine(string $line): array
+    {
+        $delimiter = str_contains($line, "\t") ? "\t" : ',';
+
+        return array_map(
+            fn (?string $column): string => trim((string) $column),
+            str_getcsv($line, $delimiter, '"', ''),
+        );
+    }
+
+    private function normaliseVisibleTabDelimiters(string $value): string
+    {
+        return str_replace(self::VisibleTabDelimiter, "\t", $value);
+    }
+
+    private function isPositiveInteger(mixed $value): bool
+    {
+        $value = trim((string) $value);
+
+        return ctype_digit($value) && (int) $value > 0;
     }
 
     #[Computed]
