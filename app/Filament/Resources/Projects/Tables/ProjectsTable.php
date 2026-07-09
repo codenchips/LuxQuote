@@ -6,6 +6,7 @@ use App\Enums\ProjectStatus;
 use App\Enums\ProjectVisibility;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Filament\Resources\Projects\Schemas\ProjectForm;
+use App\Models\PermissionGroup;
 use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectRevision;
@@ -72,6 +73,11 @@ class ProjectsTable
                     ->width('7.25rem')
                     ->extraCellAttributes(['style' => 'white-space: nowrap;'])
                     ->extraHeaderAttributes(['style' => 'white-space: nowrap;']),
+
+                TextColumn::make('user.permissionGroup.name')
+                    ->label('User Group')
+                    ->placeholder('–')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('date')
                     ->label('Date')
@@ -170,7 +176,29 @@ class ProjectsTable
 
                         return $query->whereIn('status', $statuses);
                     }),
+
+                SelectFilter::make('user_group')
+                    ->label('User Group')
+                    ->default(fn (): ?int => auth()->user()?->permission_group_id)
+                    ->options(fn (): array => PermissionGroup::query()
+                        ->orderBy('name')
+                        ->pluck('name', 'id')
+                        ->all()
+                    )
+                    ->query(function (Builder $query, array $data): Builder {
+                        $groupId = $data['value'] ?? null;
+
+                        if (blank($groupId)) {
+                            return $query;
+                        }
+
+                        return $query->whereHas(
+                            'user',
+                            fn (Builder $query): Builder => $query->where('permission_group_id', $groupId),
+                        );
+                    }),
             ])
+            ->persistFiltersInSession()
             ->actions([
                 EditAction::make('editProject')
                     ->label('Details')
@@ -273,7 +301,7 @@ class ProjectsTable
             ->defaultSort('created_at', 'desc')
             ->poll('60s')
             ->modifyQueryUsing(fn (Builder $query) => $query
-                ->with(['activeViewers', 'lastEditor'])
+                ->with(['activeViewers', 'lastEditor', 'user.permissionGroup'])
             );
     }
 }

@@ -428,6 +428,52 @@ class AdminProjectResourceTest extends TestCase
             ->assertCanNotSeeTableRecords([$draftProject]);
     }
 
+    public function test_project_list_can_filter_by_owner_user_group(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $salesUser = User::factory()->sales()->create();
+        $technicalUser = User::factory()->technical()->create();
+
+        $salesProject = Project::factory()->for($salesUser)->create([
+            'name' => 'Sales Owned Project',
+        ]);
+        $technicalProject = Project::factory()->for($technicalUser)->create([
+            'name' => 'Technical Owned Project',
+        ]);
+
+        Livewire::test(ListProjects::class)
+            ->filterTable('user_group', $salesUser->permission_group_id)
+            ->assertCanSeeTableRecords([$salesProject])
+            ->assertCanNotSeeTableRecords([$technicalProject]);
+    }
+
+    public function test_project_list_defaults_to_logged_in_users_group_filter(): void
+    {
+        $salesUser = User::factory()->sales()->create();
+        $technicalUser = User::factory()->technical()->create();
+        $this->actingAs($salesUser);
+
+        $salesProject = Project::factory()->for($salesUser)->create([
+            'name' => 'Sales Group Project',
+        ]);
+        $technicalProject = Project::factory()->for($technicalUser)->create([
+            'name' => 'Technical Group Project',
+        ]);
+
+        Livewire::test(ListProjects::class)
+            ->assertCanSeeTableRecords([$salesProject])
+            ->assertCanNotSeeTableRecords([$technicalProject])
+            ->filterTable('user_group', $technicalUser->permission_group_id)
+            ->assertCanSeeTableRecords([$technicalProject])
+            ->assertCanNotSeeTableRecords([$salesProject]);
+
+        Livewire::test(ListProjects::class)
+            ->assertCanSeeTableRecords([$technicalProject])
+            ->assertCanNotSeeTableRecords([$salesProject]);
+    }
+
     public function test_project_status_tracks_draft_in_progress_and_approval_requested_states(): void
     {
         $admin = User::factory()->admin()->create();
