@@ -206,6 +206,52 @@ class SalesforceServiceTest extends TestCase
         $this->assertSame(1, $this->recordedRequestCount('/services/data/v65.0/query/'));
     }
 
+    public function test_opportunity_detail_fetch_falls_back_to_summary_fields_when_rich_query_fails(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                $soql = (string) ($request->data()['q'] ?? '');
+
+                if (str_contains($soql, 'CEF_Cover__c')) {
+                    return Http::response([[
+                        'message' => 'No such column CEF_Cover__c on entity Opportunity.',
+                        'errorCode' => 'INVALID_FIELD',
+                    ]], 400);
+                }
+
+                return Http::response([
+                    'records' => [
+                        [
+                            'Id' => '006000000000001AAA',
+                            'Name' => 'Hartest Primary School',
+                            'Project_Reference_Number__c' => '22600',
+                        ],
+                    ],
+                ]);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $opportunity = app(SalesforceService::class)->getOpportunityById('006000000000001AAA');
+
+        $this->assertSame([
+            'Id' => '006000000000001AAA',
+            'Name' => 'Hartest Primary School',
+            'Project_Reference_Number__c' => '22600',
+        ], $opportunity);
+        $this->assertSame(1, $this->recordedRequestCount('/services/oauth2/token'));
+        $this->assertSame(2, $this->recordedRequestCount('/services/data/v65.0/query/'));
+    }
+
     public function test_authentication_token_is_cached_between_requests(): void
     {
         Http::fake(function (Request $request) {

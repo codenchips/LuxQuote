@@ -14,6 +14,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\ToggleButtons;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Utilities\Get;
@@ -126,17 +127,29 @@ class ProjectForm
                             $raw = $get('salesforce_pending_data');
 
                             if (blank($raw)) {
+                                Notification::make()
+                                    ->warning()
+                                    ->title('Salesforce project details were not loaded')
+                                    ->body('Select the Salesforce project again. If this repeats, check the Salesforce field permissions for the integration user.')
+                                    ->send();
+
                                 return;
                             }
 
                             $data = json_decode($raw, true);
 
                             if (! is_array($data)) {
+                                Notification::make()
+                                    ->warning()
+                                    ->title('Salesforce project details were not loaded')
+                                    ->body('The selected Salesforce project returned an unexpected response. Select it again and try once more.')
+                                    ->send();
+
                                 return;
                             }
 
                             $set('reference_number', $data['Project_Reference_Number__c'] ?? '');
-                            $set('customer_name', $data['Account']['Name'] ?? '');
+                            $set('customer_name', $data['Account']['Name'] ?? $data['Name'] ?? '');
                             $set('owner_email', str_replace('.invalid', '', $data['Owner']['Email'] ?? ''));
                             $set('cover_percentage', $data['CEF_Cover__c'] ?? '');
                             $set('value', $data['Amount'] ?? null);
@@ -315,6 +328,12 @@ class ProjectForm
         $record = app(SalesforceService::class)->getOpportunityById($salesforceId);
 
         if ($record === null) {
+            Notification::make()
+                ->warning()
+                ->title('Salesforce project details were not loaded')
+                ->body('The project appeared in search, but its details could not be fetched. Check Salesforce field permissions for the integration user.')
+                ->send();
+
             return;
         }
 

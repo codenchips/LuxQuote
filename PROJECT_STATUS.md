@@ -1,14 +1,14 @@
 # Company App — Project Status
 
-_Last updated: 6 July 2026_
+_Last updated: 8 July 2026_
 
 ---
 
-## Current Production Watch — 6 July 2026
+## Recent Production Watch — updated 8 July 2026
 
-- **PDF 500s reported on the VPS**: The immediate production failure seen today was environment drift in the PDF runtime. `app:diagnose-pdf-environment` first failed with `mkdir(): Invalid path`, then with Puppeteer unable to find the expected Chrome binary. Recovery was to set `LARAVEL_PDF_TEMP_PATH=/var/www/html/storage/app/browsershot`, clear config, create/chown the temp directory, and install Puppeteer's `chrome-headless-shell` as the `sail` user with the cache under `/home/sail/.cache/puppeteer`.
+- **PDF 500s reported on the VPS**: The immediate production failure seen on 6 July was environment drift in the PDF runtime. `app:diagnose-pdf-environment` first failed with `mkdir(): Invalid path`, then with Puppeteer unable to find the expected Chrome binary. Recovery was to set `LARAVEL_PDF_TEMP_PATH=/var/www/html/storage/app/browsershot`, clear config, create/chown the temp directory, and install Puppeteer's `chrome-headless-shell` as the `sail` user with the cache under `/home/sail/.cache/puppeteer`.
 - **Production deploy runner incident**: GitHub Actions jobs were stuck waiting for the `self-hosted, luxquote-production` runner. After runner recreation, follow-up failures were caused by runner-side SSH trust/key state: `known_hosts` needed GitHub and the deploy key expected at `/root/.ssh/luxquote_github_repo_deploy` needed to be available inside the runner container. `DEPLOYMENT.md` records the recovery checklist.
-- **Primary stability concern**: Quote, schedule, datasheet-inclusive PDFs, and document packs are still generated synchronously in web requests. The current deploy smoke test verifies a trivial Browsershot render, but it does not exercise the full quote/schedule template, qpdf merge path, standard legal page, datasheet endpoint, Salesforce upload skip/upload behavior, or a real browser-facing download.
+- **Primary stability concern**: Quote, schedule, datasheet-inclusive PDFs, and document packs are still generated synchronously in web requests. The deploy and cron smoke tests verify Browsershot, qpdf, legal-page merge, and basic production health, but they still do not replace queued/background generation for long-running datasheet or document-pack jobs.
 
 ## Production Monitoring Added — 7 July 2026
 
@@ -19,6 +19,21 @@ _Last updated: 6 July 2026_
 - **ntfy login alert wrapper added**: `scripts/production-login-health-check-ntfy.sh` requests `https://quote.tamlite.co.uk/login`, verifies the response contains `LuxQuote`, and posts failures to `https://ntfy.sh/LuxQuoteLogin`. Recommended cadence is every 10 minutes.
 - **Additional ntfy focused alert wrappers added**: `scripts/production-disk-health-check-ntfy.sh`, `scripts/production-docker-health-check-ntfy.sh`, `scripts/production-database-health-check-ntfy.sh`, and `scripts/production-salesforce-health-check-ntfy.sh` post failures to `LuxQuoteDisk`, `LuxQuoteDocker`, `LuxQuoteDatabase`, and `LuxQuoteSalesforce` respectively. `DEPLOYMENT.md` records the crontab lines.
 - **Emergency reset CGI reference added**: `scripts/emergency-reset-webhook.cgi` mirrors the cPanel CGI reset flow without committing the live secret. It shows the newest backup timestamp/size and requires an explicit database restore yes/no choice. `emergency_recover.sh` now respects `LUXQUOTE_AUTO_DB_RESTORE=0` to prevent an automatic DB restore when the CGI operator chooses restart-only recovery.
+
+---
+
+## Beta Prep and UI/PDF Stabilisation — 8 July 2026
+
+- **Product API migration**: Product import now consumes `https://tcms.tamlite.co.uk/api/luxquote_data` with the current fields `id`, `product`, `type`, `sku`, `description`, `cost`, and `site`. The importer maps `product` to `product_name`, `type` to `type_name`, `cost` to `price`, and stores `description` as-is in both `description` and `v_description`.
+- **Product import safety**: Rows without SKU or product are skipped, duplicate SKUs in the same API payload are ignored after the first occurrence, and approved revisions remain locked against import-driven price backfills.
+- **Product admin polish**: The products table column selector now only exposes fields populated from the current API. The Products page records successful imports in `app_settings.products_last_pulled_at` and displays `Last Product Data Pull` beside the Fetch Products action.
+- **App versioning**: A tracked `VERSION` file now provides the visible beta version label, shown in the expanded left sidebar. `APP_VERSION` may override it for a pinned environment value, but normal production deploys should use the tracked file.
+- **Automatic version bump on deploy**: The local `./deploy-production` helper bumps `VERSION`, commits it on `main`, fast-forwards `production`, and pushes the production branch. Default bump is the beta suffix; `VERSION_BUMP=patch|minor|major|none` overrides it.
+- **Browser PDF delivery fix**: PDF generation now returns short-lived authenticated prepared download URLs under `/pdf-downloads/{token}/{filename}` for browser-driven opens/downloads. This avoids blob UUID filenames and prevents the current app tab being replaced when opening PDFs in a new tab.
+- **PDF template polish**: Quote/schedule PDFs no longer show the `Schedule by Area` subheading, area headers are more compact, custom/modified line accent bars were removed, and PDF dates now use non-padded ordinal day formatting such as `8th Jul 2026`, with generated timestamps retaining the time.
+- **Activity logs readability**: Activity rows stay on one line, colour the action verb/data portions, format enum-ish values as title case, and use an abbreviated project name when a local project has no Salesforce reference number.
+- **Approval workflow polish**: Approved revisions are highlighted with a clearer header badge, approvers can unapprove a revision when needed, unapproval is logged, and stale edit attempts against a newly-approved revision surface a friendly locked-revision toast instead of a raw 403 page where the UI can intercept it.
+- **Project header/nav polish**: Project page navigation actions were moved into the top header area and aligned with the app chrome, leaving the project title area cleaner.
 
 ---
 
@@ -126,6 +141,10 @@ app_settings
   id, key, value (JSON), timestamps
 ```
 
+Known app setting keys:
+- `salesforce_push_disabled` — global pause for outbound Salesforce writes; read-only Salesforce pulls still work
+- `products_last_pulled_at` — timestamp of the last successful product API import shown on the Products page
+
 **Key relationships:**
 - `Project` → `hasMany` → `ProjectRevision` → `hasMany` → `ProjectArea` → `hasMany` → `ProjectLine`
 - `Project::activeRevision()` — BelongsTo the currently active revision
@@ -138,7 +157,7 @@ app_settings
 - `DocumentPack::items()` returns the ordered pack contents; deleting a pack removes its uploaded files
 - A new Project auto-creates revision #0 on creation (model boot hook) and a default area. Revision #0 displays as **P0**; subsequent revisions display as **R1**, **R2**, and so on
 - `ProjectArea` has computed accessors: `line_total_qty` and `line_total` (qty × unit_price sum)
-- `Product.description` is the display description derived during import: Xcite uses `v_description`; other sites use `product_name + ' ' + v_description`
+- `Product.description` is copied directly from the current product API `description` field, with no site-specific manipulation. `Product.v_description` mirrors that same API description for compatibility with existing display helpers.
 - `ProjectLine.product_id` is nullable origin tracking for product-backed lines; `code` stores the copied SKU and `description` stores the copied product display description used for schedule/PDF output
 - `ActivityLog.revision_number` snapshots the project revision number at the time of the event; older rows may be null
 
@@ -168,6 +187,7 @@ app_settings
 | `/projects/{project}/validation` | `ValidationProject` | Admin-only validation, warning approval, and duplicate merge |
 | `/projects/{project}/output` | `OutputProject` | Quote approval summary, quick PDF/CSV outputs, and document-pack builder |
 | `/pdf-progress/{token}` | `ProjectPdfController::progress` | Authenticated polling endpoint for PDF-generation progress messages |
+| `/pdf-downloads/{token}/{filename?}` | `ProjectPdfController::download` | Authenticated, user-scoped prepared PDF download/open URL for browser-generated outputs |
 | `/projects/{project}/document-packs/{documentPack}` | `DocumentPackController` | Authenticated combined-PDF download for a selected revision |
 | `/users` | `UserResource` | Admin-only create/edit/list |
 | `/activity-logs` | `ActivityLogResource` | Admin-only history table |
@@ -378,17 +398,20 @@ Rules:
 
 ## Product Catalogue
 
-- Data source: external API `POST https://tcms.tamlite.co.uk/api/product_data`
+- Data source: external API `POST https://tcms.tamlite.co.uk/api/luxquote_data`
 - Import handled by `App\Services\ProductImportService`
 - Import **deletes** all existing products then bulk-inserts in chunks of 500 (DELETE used over TRUNCATE to respect FK constraints)
 - Import backfills blank project line prices from matching SKUs unless the parent revision status is `approved`.
-- API field `SKU` is mapped to local `sku`
-- API field `v_description` is stored separately and also used to build local `description`
-- Local `description` is derived during import:
-  - `site = xcite`: `description = v_description`
-  - all other sites: `description = product_name + ' ' + v_description`
-- `site` values seen in factory: `xcite`, `tamlite`, `luxena`
+- Current API fields are `id`, `product`, `type`, `sku`, `description`, `cost`, and `site`.
+- API field `product` maps to local `product_name`.
+- API field `type` maps to local `type_name`.
+- API field `cost` maps to local `price`.
+- API field `description` is stored as-is in both local `description` and `v_description`; no title-casing, concatenation, or site-specific description manipulation is applied.
+- API field `id` is ignored locally.
+- Rows without SKU or product are skipped, and duplicate SKUs in the same payload are ignored after the first occurrence.
+- `site` values commonly include `Tamlite` and `xcite`; badge styling applies their brand colours where those names appear.
 - No create/edit UI — read-only in Filament, imported via Artisan or tests
+- A successful import stores `app_settings.products_last_pulled_at`, which is shown on the Products page as `Last Product Data Pull`.
 
 ---
 
@@ -415,6 +438,8 @@ Primary generation and request actions use Filament's orange primary button conv
 - Datasheet progress is written server-side as the legacy Tamlite endpoint streams JSON chunks such as `step`, `total`, and `message`.
 - Progress is scoped by authenticated user ID plus token; one user cannot read another user's generation status.
 - Progress percentages are monotonic in the browser so fallback animation cannot fight streamed datasheet progress.
+- Browser-driven PDF opens/downloads request `pdf_delivery_link=1`. The server generates the PDF once, stores a short-lived copy under `storage/app/pdf-downloads`, and returns an authenticated `/pdf-downloads/{token}/{filename}` URL so the browser sees a real filename instead of a blob UUID.
+- Prepared PDF URLs are user-scoped, reusable for 10 minutes, and old prepared files are cleaned opportunistically after 30 minutes.
 
 ### Datasheet PDF embedding
 
@@ -474,6 +499,7 @@ Primary generation and request actions use Filament's orange primary button conv
 | `Feature/ProductImportTest.php` | `ProductImportService` — happy path, API failure, structure error |
 | `Feature/SalesforceServiceTest.php` | `SalesforceService` — OAuth success, auth failure, SOQL query failure, and bearer-token caching via `Http::fake()` |
 | `Feature/SalesforcePushControlTest.php` | Persistent global Salesforce push pause/resume behavior and outbound-write blocking |
+| `Feature/PdfPreparedDownloadTest.php` | Prepared PDF download URLs, inline filename headers, expiry, and user scoping without database refresh |
 | `Feature/ExampleTest.php` | Smoke test |
 | `Unit/ExampleTest.php` | Smoke test |
 
@@ -515,14 +541,14 @@ The admin-only history table is available at `/activity-logs` via `ActivityLogRe
 
 Columns:
 - **Who** — current user name when available, falling back to `user_email_snapshot`
-- **Project** — stored `project_name_snapshot`
+- **Reference** — Salesforce/project reference number when available; local projects without a reference show an abbreviated project name
 - **Rev** — stored `revision_number`, formatted through the shared revision label helper as `P0`, `R1`, `R2`, etc.; older rows may show `—`
 - **Action Performed** — formatted from `action_type` and `payload`
 - **Date & Time** — `created_at`
 
 `ActivityLog` snapshots `revision_number` automatically from the attached project's current `revision` when a row is created. `revision.created` passes the newly-created revision number explicitly so the log row represents the revision that was created, not the previous active revision.
 
-Tracked action types include project create/update/delete, revision creation, area create/delete, product add, line update, and the legacy `line.qty_updated` type.
+Tracked action types include project create/update/delete, revision creation, approval/unapproval, area create/delete, product add, line update, PDF generation, and the legacy `line.qty_updated` type. Display formatting keeps log rows single-line, colour-codes positive/negative verbs, and formats enum-like payload values as user-facing title case.
 
 ---
 
@@ -603,7 +629,7 @@ The public cert was sent to the Salesforce admin for upload to the Connected App
 SHA256 57:54:B0:54:FB:D2:35:25:60:EA:C7:5C:5E:98:AE:84:43:5B:CE:AA:1B:04:E0:43:E8:12:DB:93:81:E5:EA:DB
 ```
 
-The local `.env` has been switched to JWT mode and production Salesforce values were supplied by the Salesforce admin. Do not commit `.env`; keep only `.env.example` in source control. `SALESFORCE_CONSUMER_SECRET` is still present for fallback Client Credentials mode but is not required for JWT bearer mode.
+Production Salesforce should use JWT bearer mode once the connected app and integration-user permissions are ready. Local environments may still use `SALESFORCE_AUTH_METHOD=client_credentials` when testing against the older sandbox setup. Do not commit `.env`; keep only `.env.example` in source control. `SALESFORCE_CONSUMER_SECRET` is still present for fallback Client Credentials mode but is not required for JWT bearer mode.
 
 Useful JWT smoke test:
 
@@ -619,7 +645,7 @@ GET /services/data/v65.0/sobjects/Opportunity/describe
 SELECT <all Opportunity field names from describe> FROM Opportunity LIMIT 1
 ```
 
-Current status from the latest local test:
+Historical JWT smoke-test status from the 2 July handoff:
 
 - JWT authentication now succeeds with the production Connected App API key.
 - Salesforce returns a valid `access_token` and `instance_url`.
@@ -701,7 +727,7 @@ When creating a project, a **Salesforce Project** toggle is available:
 - **Toggle OFF**: normal free-text project creation
   - Typeahead searches Opportunity names in real time via `searchOpportunities()`
   - Selecting an Opportunity stores its data as JSON in a hidden `salesforce_pending_data` field
-  - Opportunity names are normalised to title case before saving
+  - Opportunity names are normalised to title case before saving, while preserving all-caps acronyms at the start of words
   - A loading indicator appears while the selected Opportunity is fetched
   - A **Confirm & Populate Form** button appears — clicking it populates `reference_number`, `customer_name`, `owner_email`, `cover_percentage`, and `value` from the Opportunity data
   - Salesforce-derived fields become read-only while SF mode is on, while notes and visibility remain editable
@@ -727,10 +753,8 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 6 July 2026)
+## Known Gaps / Next Steps (as of 8 July 2026)
 
-- [ ] Add a production PDF smoke command that renders a real quote/schedule PDF, appends the standard legal page, checks qpdf merge output, and optionally exercises datasheet download/merge without requiring a human to click through the UI
-- [ ] Add a broader production health command or scheduled monitor for app HTTP health, DB connectivity, queue/cache availability, writable storage paths, qpdf availability, Puppeteer browser availability, disk space, and container restart counts
 - [ ] Move long-running PDF/document-pack generation toward queued jobs with polling/download links so browser/proxy timeouts and remote datasheet delays do not surface as user-facing 500 errors
 - [ ] Add structured logging around PDF generation with project reference, revision, document type, include-datasheets flag, progress token, qpdf step, datasheet endpoint result, and exception class/message
 - [ ] Add a runner maintenance/checklist script or documented recreate command that persists the GitHub deploy key, `known_hosts`, labels, and app checkout mount for `luxquote-production`
@@ -770,6 +794,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - **Schedule legal blurb**: The generated quote/schedule template now includes the short legal blurb once at the end of the generated document body, grouped into the final line-item table so it stays with the last schedule rows more reliably.
 - **Output datasheet info cleanup**: The Output page datasheet info panel no longer shows the external **Learn more** action.
 - **Production PDF diagnostics**: Production PDF troubleshooting was expanded after finding temp-path and Puppeteer Chrome-cache failures on the VPS.
+- **Docker service port hardening**: MySQL and Redis host port bindings are loopback-only in `compose.yaml` so they are not exposed publicly by Docker.
 
 ## Features completed — 1 July 2026
 
@@ -799,7 +824,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 - **P0 revision model**: New projects now begin at revision number `0`, displayed as **P0**. The first user-created revision is **R1**, followed by R2, R3, etc. Shared label helpers prevent UI, activity-log, filename, and export code from manually prepending `R`.
 - **P0 PDF metadata**: Quote and schedule PDFs omit all revision labels while at P0, use **Project Location**, and no longer display Contractor.
-- **Document packs**: Projects can store multiple named, ordered packs containing uploaded Cover/Legal PDFs and revision-generated Quote/Unpriced Schedule PDFs. Packs are reusable across revisions and merge into one PDF with `qpdf`.
+- **Document packs**: Projects can store multiple named, ordered packs containing uploaded Custom PDFs, the standard legal template, and revision-generated Quote/Schedule PDFs. Legacy saved Cover/Legal items remain supported, but the current new-document dropdown no longer offers them.
 - **Revision-aware generation**: Generated pack documents use the revision chosen at download time; project-level uploaded PDFs remain unchanged between revisions.
 - **Quote approval safety**: Packs containing a Quote show why generation is blocked and disable the Generate action until the selected revision is validated and approved. Permission and approval checks are repeated by the download controller/service.
 - **Drag/drop state fix**: Document cards use stable associative keys so reordering keeps each dropdown, role description, and uploaded file aligned with the same document.
@@ -817,7 +842,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - **Approval is now the lock boundary**: running validation marks a revision **Ready to approve**, but does not lock editing. The **Approve Revision** action opens a confirmation modal and then locks the revision by setting `project_revisions.status = approved`. Approved revisions reject validation and schedule edits server-side.
 - **Schedule line statuses**: project lines now show status badges in the schedule (`Pending`, `Priced`, `Unpriced`, or `Approved`). Product-picker additions start as `Pending`; paste pricing sets matching/new rows to `Priced`; rows missing from a paste pass become `Unpriced`.
 - **Paste pricing across all areas**: the paste modal gained **Paste across all areas**. When enabled, matching SKUs across the whole revision are repriced without changing existing quantities, missing pasted SKUs are created in the target Area, and existing SKUs absent from the paste are marked `Unpriced`. Turning it off limits updates to the selected Area and updates quantities from the pasted data.
-- **Salesforce project form improvements**: Salesforce is now the default create mode. Selected Opportunity names are title-cased, a loading indicator appears while fetching, required create fields gate the submit action, and Salesforce data now populates cover and value.
+- **Salesforce project form improvements**: Salesforce is now the default create mode. Selected Opportunity names are title-cased with leading acronyms preserved, a loading indicator appears while fetching, required create fields gate the submit action, and Salesforce data now populates cover and value.
 - **Project value and cover changes**: `projects.value` was added as a nullable decimal, and `cover_percentage` is now nullable text to support Salesforce cover values. Project copy actions carry `value` forward.
 - **Salesforce Opportunity fetch expanded**: `getOpportunityById()` now fetches `CEF_Cover__c` and `Amount` for create-form population.
 - **Product import respects approved locks**: catalogue import can still backfill blank line prices on validated-but-unapproved revisions, but skips revisions whose status is `approved`.
@@ -830,7 +855,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 ## Features completed — 8 June 2026
 
 - **Paste products into Areas**: Area headers now include **Paste** beside **Product** and **Blank**. The modal imports tab-delimited `qty, sku, description, price` rows copied from spreadsheets, ignores the pasted description, handles quoted multiline descriptions, uses the pasted price, and fills the line description from the product catalogue when the SKU exists.
-- **Product display description**: Product import now stores API `v_description` and derives local `products.description` from `product_name + v_description`, except Xcite products which use `v_description` only. Product list, product picker, and new project lines use `Product::displayDescription()`.
+- **Product display description**: Product list, product picker, and new project lines use `Product::displayDescription()`. This originally supported the older `v_description` feed; as of 8 July 2026 the importer copies the current API `description` field directly into both `description` and `v_description`.
 - **Price mismatch validation workflow**: Validation now flags quote price vs RRP mismatches, shows RRP/Quote inputs, and provides **Match** to update the quote price to RRP. Row buttons and price inputs have been aligned to a consistent height.
 - **Revision approval status**: Validated revisions can now be marked **Approved** via the validation page. `project_revisions.status` tracks `draft|approved`; approval is blocked until validation passes and resets to draft if later validation finds issues.
 
@@ -856,7 +881,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Features completed — 2 June 2026
 
-- **Schedule PDF generation**: A printable A4 lighting schedule can now be downloaded for any project revision via a **Schedule PDF** button in the ViewProject header. The PDF is generated server-side using `spatie/laravel-pdf` (Browsershot / headless Chrome) with `->noSandbox()` for Docker compatibility. Output includes a branded Tamlite header, project meta grid, per-area line tables (code, ref, description, qty, optional unit price/line total, datasheet icon), area subtotals, a grand total box, and a quote/general notes block. Line notes render as a full-width `Note:` row below the relevant line. Modified and Custom lines are visually distinguished with coloured left-side rules. Filenames include the document title, project reference, shared revision label (`P0`/`R1`/...), and timestamp. Non-admin users are auth-scoped (Open projects or their own only). Full implementation details in the [PDF Generation](#pdf-generation) section below.
+- **Schedule PDF generation**: A printable A4 lighting schedule can now be downloaded for any project revision via a **Schedule PDF** button in the ViewProject header. The PDF is generated server-side using `spatie/laravel-pdf` (Browsershot / headless Chrome) with `->noSandbox()` for Docker compatibility. Output includes a branded Tamlite header, project meta grid, per-area line tables (code, ref, description, qty, optional unit price/line total, datasheet icon), compact area subtotals, a grand total box, and a quote/general notes block. Line notes render as a full-width `Note:` row below the relevant line. Filenames include the document title, project reference, shared revision label (`P0`/`R1`/...), and timestamp. Non-admin users are auth-scoped (Open projects or their own only). Full implementation details in the [PDF Generation](#pdf-generation) section below.
 
 - **Native TOTP two-factor authentication**: Filament 5's built-in MFA support enabled — no external plugins. Users can set up and manage 2FA (QR code + recovery codes) directly from their profile page. On next login, users who have 2FA enabled are challenged before access is granted.
 - **2FA columns on `users` table**: Migration `2026_06_02_074020_add_two_factor_authentication_to_users_table` adds `app_authentication_secret` (encrypted TOTP secret) and `app_authentication_recovery_codes` (encrypted JSON array). Both columns are encrypted at rest via Laravel's built-in encryption and are hidden from model serialization.

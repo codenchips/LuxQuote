@@ -11,6 +11,7 @@ This app is deployed to a Linux VPS managed through cPanel / WHM.
 - Database container: `mysql`
 - Database target: containerized MySQL, not cPanel MySQL
 - External SSL/reverse proxy: cPanel host Apache terminates HTTPS and proxies traffic to the app container on local port `8080`
+- MySQL and Redis host port bindings in `compose.yaml` are loopback-only (`127.0.0.1`) so Docker does not expose them publicly
 
 Because Apache terminates SSL before proxying to Docker, Laravel must trust proxy headers so generated URLs and redirects use the public HTTPS domain rather than `http://127.0.0.1:8080`.
 
@@ -51,6 +52,22 @@ Use `Europe/London`, not a fixed `GMT+1` offset, so PHP automatically handles GM
 docker compose exec laravel.test php artisan optimize:clear
 docker compose exec laravel.test php artisan config:show app.timezone
 ```
+
+## App Version Configuration
+
+The visible app version is read from the tracked `VERSION` file by default and shown in the expanded left sidebar. Leave `APP_VERSION` unset in production unless you deliberately need to pin or override the displayed version for an environment.
+
+The local `./deploy-production` helper bumps `VERSION` before pushing the `production` branch:
+
+```bash
+./deploy-production
+VERSION_BUMP=patch ./deploy-production
+VERSION_BUMP=minor ./deploy-production
+VERSION_BUMP=major ./deploy-production
+VERSION_BUMP=none ./deploy-production
+```
+
+The default bump is the beta suffix, for example `0.1.0-beta.1` to `0.1.0-beta.2`.
 
 ## Reboot Recovery
 
@@ -148,9 +165,9 @@ Suggested weekly cron entry:
 30 3 * * 0 cd /home/tamliteco/luxquote.app && bash scripts/production-docker-cleanup.sh >> /var/log/luxquote-docker-cleanup.log 2>&1
 ```
 
-## SFTP Deployment Checklist
+## SFTP Fallback Deployment Checklist
 
-Code is currently synced to the VPS via SFTP. Before running migrations for a structural release, take a database backup:
+Normal production deployment is GitHub Actions from the `production` branch. Use SFTP only as a fallback when GitHub deploys are unavailable. Before running migrations for a structural fallback release, take a database backup:
 
 ```bash
 mkdir -p backups
@@ -268,6 +285,8 @@ DOCUMENT_PACK_PROCESS_TIMEOUT=60
 Datasheet-inclusive quote/schedule PDFs also require the datasheet endpoint configuration in `config/services.php` / `.env`. The app posts to the legacy Tamlite endpoint, downloads the generated datasheet PDF from the public merge directory, then appends it after the generated quote/schedule PDF with `qpdf`.
 
 The legacy datasheet endpoint streams JSON progress chunks while it works. The app stores those progress messages temporarily in cache for the authenticated user's browser to poll through `/pdf-progress/{token}`.
+
+Browser-driven PDF opens/downloads use prepared authenticated URLs under `/pdf-downloads/{token}/{filename}` rather than blob URLs. Prepared files live in `storage/app/pdf-downloads`, are user-scoped, are reusable for 10 minutes, and are cleaned opportunistically after 30 minutes. They should not be treated as permanent generated-output storage.
 
 ## Production Monitoring
 
@@ -460,9 +479,11 @@ The deploy script:
 - installs Composer dependencies
 - installs/builds npm assets as the `sail` user
 - verifies `qpdf`
+- verifies the PDF runtime with `app:diagnose-pdf-environment`
 - runs migrations with `--force`
 - clears/rebuilds Laravel caches
 - smoke-checks `https://quote.tamlite.co.uk`
+- prunes Docker build cache older than 24 hours
 - prunes DB backups older than 14 days
 
 ### One-Time Server Setup

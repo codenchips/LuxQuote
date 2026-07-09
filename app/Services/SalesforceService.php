@@ -455,6 +455,30 @@ class SalesforceService
             "SELECT Id, Name, Project_Reference_Number__c, CEF_Cover__c, Amount, Owner.Name, Owner.Email, Account.Name FROM Opportunity{$where} LIMIT 1",
         );
 
+        $record = ($result['records'] ?? [])[0] ?? null;
+
+        if ($record !== null) {
+            return $record;
+        }
+
+        return $this->getOpportunitySummaryByIdUsingAuth($auth, $id);
+    }
+
+    /**
+     * Fetch only the fields required to unblock project creation.
+     *
+     * @param  array{token: string, instanceUrl: string}  $auth
+     * @return array<string, mixed>|null
+     */
+    private function getOpportunitySummaryByIdUsingAuth(array $auth, string $id): ?array
+    {
+        $escaped = $this->soqlEscape($id);
+        $where = $this->openOpportunityWhereClause("Id = '{$escaped}'");
+        $result = $this->soqlQuery(
+            $auth,
+            "SELECT Id, Name, Project_Reference_Number__c FROM Opportunity{$where} LIMIT 1",
+        );
+
         return ($result['records'] ?? [])[0] ?? null;
     }
 
