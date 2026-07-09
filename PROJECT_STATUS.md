@@ -1,6 +1,21 @@
 # Company App — Project Status
 
-_Last updated: 8 July 2026_
+_Last updated: 9 July 2026_
+
+---
+
+## Beta Test Prep and Project Workflow — 9 July 2026
+
+- **Project-list filtering**: The projects table now supports filtering by the creator's permission group. The default view is scoped to the logged-in user's own group, and table filters persist in the session when users navigate away and back.
+- **Technical paste import**: The Paste Products modal now has separate Misos and Technical paste modes. Technical paste validates the pasted structure first, warns that it replaces all existing areas/products in the revision, creates areas from headings, supports tab/comma input, and uses pasted descriptions where supplied while still matching known SKUs to local products.
+- **Paste usability polish**: The paste textarea accepts actual Tab key input, displays tabs as a visible arrow marker, and strips trailing tab markers before import so manual edits remain workable.
+- **Quote/schedule PDF polish**: Quote and schedule PDFs now show `Sales Engineer` using the project owner email instead of the generated timestamp, and line columns are ordered as Ref, Qty, Code, Description, then the remaining existing columns.
+- **Edited SKU safety fix**: Editing a line code now re-checks the product catalogue. A matching SKU refreshes the line's product link, description, type, and price from the product table; an unknown SKU blanks the description and sets price to zero.
+- **Dashboard recents cleanup**: Recent quote/schedule panels now show each project once per panel, using the latest generated item for that project.
+- **User/session visibility**: The Users page now shows an indicator for users who are currently logged in/active.
+- **Activity-log readability**: Long note contents are hidden from activity-log change summaries, repeated `to the schedule` wording was removed, and columns were tightened so action text gets the available space.
+- **Production health-check tuning**: Docker health checks gained retry behaviour to reduce false positive alerts while still catching stopped/missing core services.
+- **Release tracking**: `./deploy-production` now updates `CHANGELOG.md` as part of the version bump flow, recording the visible app version and commit subjects included between `origin/production` and `main`.
 
 ---
 
@@ -753,14 +768,15 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 8 July 2026)
+## Known Gaps / Next Steps (as of 9 July 2026)
 
+- [ ] Implement Cover prices
+- [ ] Teams
 - [ ] Move long-running PDF/document-pack generation toward queued jobs with polling/download links so browser/proxy timeouts and remote datasheet delays do not surface as user-facing 500 errors
 - [ ] Add structured logging around PDF generation with project reference, revision, document type, include-datasheets flag, progress token, qpdf step, datasheet endpoint result, and exception class/message
 - [ ] Add a runner maintenance/checklist script or documented recreate command that persists the GitHub deploy key, `known_hosts`, labels, and app checkout mount for `luxquote-production`
 - [ ] Review VPS resources and Docker health: memory/swap, disk pressure, MySQL restart history, Apache proxy timeout, and whether long PDF requests are being killed or timed out
 - [ ] Add off-server database backup/restore verification and keep emergency recovery strictly volume-preserving unless a deliberate restore is chosen
-- [ ] Salesforce JWT auth is working locally, but the production integration user still needs Opportunity object/field access before `salesforce:interrogate` and the app's Opportunity workflows can run
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
 - [ ] Additional document-pack roles/templates (for example case studies) are planned but not yet implemented
