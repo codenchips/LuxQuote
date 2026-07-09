@@ -452,16 +452,20 @@ class SalesforceService
         $where = $this->openOpportunityWhereClause("Id = '{$escaped}'");
         $result = $this->soqlQuery(
             $auth,
-            "SELECT Id, Name, Project_Reference_Number__c, CEF_Cover__c, Amount, Owner.Name, Owner.Email, Account.Name FROM Opportunity{$where} LIMIT 1",
+            "SELECT Id, Name, Project_Reference_Number__c, Miscellaneous_Customer_Name__c, CEF_Cover__c, Amount, OwnerId FROM Opportunity{$where} LIMIT 1",
         );
 
         $record = ($result['records'] ?? [])[0] ?? null;
 
-        if ($record !== null) {
-            return $record;
+        if ($record === null) {
+            Log::warning('Salesforce Opportunity detail query returned no records', [
+                'opportunity_id' => $id,
+            ]);
+
+            return $this->getOpportunitySummaryByIdUsingAuth($auth, $id);
         }
 
-        return $this->getOpportunitySummaryByIdUsingAuth($auth, $id);
+        return array_replace_recursive($record, $this->getOpportunityRelationshipFieldsByIdUsingAuth($auth, $id) ?? []);
     }
 
     /**
@@ -480,6 +484,33 @@ class SalesforceService
         );
 
         return ($result['records'] ?? [])[0] ?? null;
+    }
+
+    /**
+     * Relationship fields are useful, but Salesforce permissions can make them
+     * unavailable even when the Opportunity itself is readable.
+     *
+     * @param  array{token: string, instanceUrl: string}  $auth
+     * @return array<string, mixed>|null
+     */
+    private function getOpportunityRelationshipFieldsByIdUsingAuth(array $auth, string $id): ?array
+    {
+        $escaped = $this->soqlEscape($id);
+        $where = $this->openOpportunityWhereClause("Id = '{$escaped}'");
+        $result = $this->soqlQuery(
+            $auth,
+            "SELECT Id, Owner.Name, Owner.Email, Account.Name FROM Opportunity{$where} LIMIT 1",
+        );
+
+        $record = ($result['records'] ?? [])[0] ?? null;
+
+        if ($record === null) {
+            Log::warning('Salesforce Opportunity relationship fields were unavailable during project create population', [
+                'opportunity_id' => $id,
+            ]);
+        }
+
+        return $record;
     }
 
     public function updateOpportunityAmount(Project $project, float $amount): array

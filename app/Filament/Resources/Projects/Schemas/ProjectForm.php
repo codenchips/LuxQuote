@@ -149,7 +149,7 @@ class ProjectForm
                             }
 
                             $set('reference_number', $data['Project_Reference_Number__c'] ?? '');
-                            $set('customer_name', $data['Account']['Name'] ?? $data['Name'] ?? '');
+                            $set('customer_name', $data['Miscellaneous_Customer_Name__c'] ?? $data['Account']['Name'] ?? $data['Name'] ?? '');
                             $set('owner_email', str_replace('.invalid', '', $data['Owner']['Email'] ?? ''));
                             $set('cover_percentage', $data['CEF_Cover__c'] ?? '');
                             $set('value', $data['Amount'] ?? null);

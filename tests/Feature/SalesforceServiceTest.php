@@ -206,7 +206,7 @@ class SalesforceServiceTest extends TestCase
         $this->assertSame(1, $this->recordedRequestCount('/services/data/v65.0/query/'));
     }
 
-    public function test_opportunity_detail_fetch_falls_back_to_summary_fields_when_rich_query_fails(): void
+    public function test_opportunity_detail_fetch_continues_when_relationship_fields_fail(): void
     {
         Http::fake(function (Request $request) {
             if (str_contains($request->url(), '/services/oauth2/token')) {
@@ -220,9 +220,9 @@ class SalesforceServiceTest extends TestCase
             if (str_contains($request->url(), '/services/data/v65.0/query/')) {
                 $soql = (string) ($request->data()['q'] ?? '');
 
-                if (str_contains($soql, 'CEF_Cover__c')) {
+                if (str_contains($soql, 'Owner.Email')) {
                     return Http::response([[
-                        'message' => 'No such column CEF_Cover__c on entity Opportunity.',
+                        'message' => 'No such column Owner.Email on entity Opportunity.',
                         'errorCode' => 'INVALID_FIELD',
                     ]], 400);
                 }
@@ -233,6 +233,10 @@ class SalesforceServiceTest extends TestCase
                             'Id' => '006000000000001AAA',
                             'Name' => 'Hartest Primary School',
                             'Project_Reference_Number__c' => '22600',
+                            'Miscellaneous_Customer_Name__c' => 'Hartest Customer',
+                            'CEF_Cover__c' => 'CEF North',
+                            'Amount' => 1000,
+                            'OwnerId' => '005000000000001AAA',
                         ],
                     ],
                 ]);
@@ -247,6 +251,10 @@ class SalesforceServiceTest extends TestCase
             'Id' => '006000000000001AAA',
             'Name' => 'Hartest Primary School',
             'Project_Reference_Number__c' => '22600',
+            'Miscellaneous_Customer_Name__c' => 'Hartest Customer',
+            'CEF_Cover__c' => 'CEF North',
+            'Amount' => 1000,
+            'OwnerId' => '005000000000001AAA',
         ], $opportunity);
         $this->assertSame(1, $this->recordedRequestCount('/services/oauth2/token'));
         $this->assertSame(2, $this->recordedRequestCount('/services/data/v65.0/query/'));
