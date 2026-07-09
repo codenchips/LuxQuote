@@ -1190,6 +1190,12 @@ class ViewProject extends ViewRecord
 
         $line = $this->findLineInViewingRevision($lineId);
 
+        if ($field === 'code') {
+            $line->update($this->lineCodeUpdateData((string) $value));
+
+            return;
+        }
+
         if ($field === 'ref') {
             $value = ($value !== '' && $value !== null)
                 ? strtoupper(substr((string) $value, 0, 6))
@@ -1216,10 +1222,54 @@ class ViewProject extends ViewRecord
             'validation_note' => null,
         ]);
 
-        if (in_array($field, ['code', 'description'], true) && $line->product_id !== null) {
+        if ($field === 'description' && $line->product_id !== null) {
             $line->refresh();
             $this->recalculateLineType($line);
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function lineCodeUpdateData(string $value): array
+    {
+        $code = $this->normaliseSku($value);
+
+        $data = [
+            'product_id' => null,
+            'code' => $code !== '' ? $code : null,
+            'description' => '',
+            'type' => ProjectLineType::Custom->value,
+            'unit_price' => $code !== '' ? 0 : null,
+            'status' => $code !== '' ? self::LineStatusPriced : null,
+            'approved' => false,
+            'approved_at' => null,
+            'approved_by' => null,
+            'validation_flagged' => false,
+            'validation_note' => null,
+        ];
+
+        if ($code === '') {
+            return $data;
+        }
+
+        $product = Product::query()
+            ->where('sku', $code)
+            ->first();
+
+        if (! $product) {
+            return $data;
+        }
+
+        return [
+            ...$data,
+            'product_id' => $product->id,
+            'code' => $product->sku,
+            'description' => $product->displayDescription(),
+            'type' => ProjectLineType::Standard->value,
+            'unit_price' => $product->price,
+            'status' => self::LineStatusPriced,
+        ];
     }
 
     private function normaliseLineFieldValue(string $field, mixed $value): mixed

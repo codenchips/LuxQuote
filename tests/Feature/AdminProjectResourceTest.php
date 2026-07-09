@@ -2030,6 +2030,78 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame('ABC123X', $line->fresh()->code);
     }
 
+    public function test_editing_line_code_to_known_sku_updates_product_description_and_price(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $replacementProduct = Product::factory()->create([
+            'sku' => 'KNOWN-SKU',
+            'product_name' => 'Known Product',
+            'description' => 'Known Product Description',
+            'price' => 45.67,
+        ]);
+        $line = $project->activeRevision->areas()->first()->lines()->create([
+            'code' => 'OLD-SKU',
+            'description' => 'Old description',
+            'qty' => 1,
+            'type' => ProjectLineType::Custom->value,
+            'unit_price' => 12.34,
+            'approved' => true,
+            'approved_at' => now(),
+            'approved_by' => $admin->id,
+            'validation_flagged' => true,
+            'validation_note' => 'Previous warning',
+            'sort_order' => 0,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('updateLineField', $line->id, 'code', 'known-sku');
+
+        $line->refresh();
+
+        $this->assertSame($replacementProduct->id, $line->product_id);
+        $this->assertSame('KNOWN-SKU', $line->code);
+        $this->assertSame('Known Product Description', $line->description);
+        $this->assertSame('45.67', $line->unit_price);
+        $this->assertSame(ProjectLineType::Standard, $line->type);
+        $this->assertSame('Priced', $line->status);
+        $this->assertFalse($line->approved);
+        $this->assertNull($line->approved_at);
+        $this->assertNull($line->approved_by);
+        $this->assertFalse($line->validation_flagged);
+        $this->assertNull($line->validation_note);
+    }
+
+    public function test_editing_line_code_to_unknown_sku_blanks_description_and_zeroes_price(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $line = $project->activeRevision->areas()->first()->lines()->create([
+            'code' => 'OLD-SKU',
+            'description' => 'Old description',
+            'qty' => 1,
+            'type' => ProjectLineType::Standard->value,
+            'unit_price' => 12.34,
+            'sort_order' => 0,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('updateLineField', $line->id, 'code', 'missing-sku');
+
+        $line->refresh();
+
+        $this->assertNull($line->product_id);
+        $this->assertSame('MISSING-SKU', $line->code);
+        $this->assertSame('', $line->description);
+        $this->assertSame('0.00', $line->unit_price);
+        $this->assertSame(ProjectLineType::Custom, $line->type);
+        $this->assertSame('Priced', $line->status);
+    }
+
     public function test_line_fields_can_be_cleared_for_spacing_rows(): void
     {
         $admin = User::factory()->admin()->create();
