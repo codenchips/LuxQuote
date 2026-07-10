@@ -789,4 +789,132 @@ class SalesforceService
 
         return ['success' => true, 'records' => $result['records'] ?? []];
     }
+
+    /**
+     * Fetch the Account linked to an Opportunity.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function getAccountForOpportunityId(string $opportunityId): ?array
+    {
+        $result = $this->fetchAccountForOpportunity($opportunityId);
+
+        return $result['record'] ?? null;
+    }
+
+    /**
+     * Fetch the Account linked to an Opportunity for CLI diagnostics.
+     *
+     * @return array{success: bool, opportunityId: string, accountId?: string, record?: array<string, mixed>, status?: int, errors?: mixed}
+     */
+    public function fetchAccountForOpportunity(string $opportunityId): array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return [
+                'success' => false,
+                'opportunityId' => $opportunityId,
+                'status' => 0,
+                'errors' => ['Authentication failed'],
+            ];
+        }
+
+        $accountId = $this->findAccountIdForOpportunityUsingAuth($auth, $opportunityId);
+
+        if (blank($accountId)) {
+            return [
+                'success' => false,
+                'opportunityId' => $opportunityId,
+                'status' => 0,
+                'errors' => ['No Account lookup was found on the Opportunity'],
+            ];
+        }
+
+        $account = $this->fetchAllAccountFieldsUsingAuth($auth, $accountId);
+
+        if ($account === null) {
+            return [
+                'success' => false,
+                'opportunityId' => $opportunityId,
+                'accountId' => $accountId,
+                'status' => 0,
+                'errors' => ['Account query failed'],
+            ];
+        }
+
+        return [
+            'success' => true,
+            'opportunityId' => $opportunityId,
+            'accountId' => $accountId,
+            'record' => $account,
+        ];
+    }
+
+    /**
+     * @param  array{token: string, instanceUrl: string}  $auth
+     */
+    private function findAccountIdForOpportunityUsingAuth(array $auth, string $opportunityId): ?string
+    {
+        $escapedOpportunityId = $this->soqlEscape($opportunityId);
+
+        foreach ([
+            ['AccountId', 'End_Client_ID__c'],
+            ['AccountId'],
+            ['End_Client_ID__c'],
+        ] as $fields) {
+            $result = $this->soqlQuery(
+                $auth,
+                'SELECT Id, '.implode(', ', $fields)." FROM Opportunity WHERE Id = '{$escapedOpportunityId}' LIMIT 1",
+            );
+
+            $record = ($result['records'] ?? [])[0] ?? null;
+
+            if ($record === null) {
+                continue;
+            }
+
+            foreach (['AccountId', 'End_Client_ID__c'] as $field) {
+                if (filled($record[$field] ?? null)) {
+                    return (string) $record[$field];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{token: string, instanceUrl: string}  $auth
+     * @return array<string, mixed>|null
+     */
+    private function fetchAllAccountFieldsUsingAuth(array $auth, string $accountId): ?array
+    {
+        $describe = Http::withToken($auth['token'])
+            ->acceptJson()
+            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Account/describe');
+
+        if ($describe->failed()) {
+            Log::error('Salesforce Account describe failed', [
+                'status' => $describe->status(),
+                'body' => $describe->body(),
+            ]);
+
+            return null;
+        }
+
+        $fieldNames = array_column($describe->json()['fields'] ?? [], 'name');
+
+        if (empty($fieldNames)) {
+            return null;
+        }
+
+        $escapedAccountId = $this->soqlEscape($accountId);
+        $result = $this->soqlQuery(
+            $auth,
+            'SELECT '.implode(', ', $fieldNames)." FROM Account WHERE Id = '{$escapedAccountId}' LIMIT 1",
+        );
+
+        return ($result['records'] ?? [])[0] ?? null;
+    }
 }

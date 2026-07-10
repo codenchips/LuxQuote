@@ -260,6 +260,78 @@ class SalesforceServiceTest extends TestCase
         $this->assertSame(2, $this->recordedRequestCount('/services/data/v65.0/query/'));
     }
 
+    public function test_account_linked_to_opportunity_can_be_fetched_with_all_available_fields(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/sobjects/Account/describe')) {
+                return Http::response([
+                    'fields' => [
+                        ['name' => 'Id'],
+                        ['name' => 'Name'],
+                        ['name' => 'BillingCity'],
+                    ],
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                $soql = (string) ($request->data()['q'] ?? '');
+
+                if (str_contains($soql, 'FROM Opportunity')) {
+                    return Http::response([
+                        'records' => [
+                            [
+                                'Id' => '006000000000001AAA',
+                                'AccountId' => '001000000000001AAA',
+                                'End_Client_ID__c' => null,
+                            ],
+                        ],
+                    ]);
+                }
+
+                if (str_contains($soql, 'FROM Account')) {
+                    return Http::response([
+                        'records' => [
+                            [
+                                'Id' => '001000000000001AAA',
+                                'Name' => 'Hartest Customer',
+                                'BillingCity' => 'Bury St Edmunds',
+                            ],
+                        ],
+                    ]);
+                }
+            }
+
+            return Http::response([], 500);
+        });
+
+        $result = app(SalesforceService::class)->fetchAccountForOpportunity('006000000000001AAA');
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('006000000000001AAA', $result['opportunityId']);
+        $this->assertSame('001000000000001AAA', $result['accountId']);
+        $this->assertSame([
+            'Id' => '001000000000001AAA',
+            'Name' => 'Hartest Customer',
+            'BillingCity' => 'Bury St Edmunds',
+        ], $result['record']);
+
+        Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/services/data/v65.0/query/')
+            && str_contains((string) ($request->data()['q'] ?? ''), 'SELECT Id, AccountId, End_Client_ID__c FROM Opportunity'));
+
+        Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/sobjects/Account/describe'));
+
+        Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/services/data/v65.0/query/')
+            && str_contains((string) ($request->data()['q'] ?? ''), "SELECT Id, Name, BillingCity FROM Account WHERE Id = '001000000000001AAA' LIMIT 1"));
+    }
+
     public function test_authentication_token_is_cached_between_requests(): void
     {
         Http::fake(function (Request $request) {

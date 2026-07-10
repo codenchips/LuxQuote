@@ -37,6 +37,21 @@ class SalesforceInterrogateCommandTest extends TestCase
             ->assertFailed();
     }
 
+    public function test_interrogate_command_can_output_account_linked_to_opportunity(): void
+    {
+        $this->fakeSalesforceService();
+
+        $account = [
+            'Id' => '001000000000001AAA',
+            'Name' => 'Hartest Customer',
+            'BillingCity' => 'Bury St Edmunds',
+        ];
+
+        $this->artisan('salesforce:interrogate --format=json --account-for-opportunity=006000000000001AAA')
+            ->expectsOutput(json_encode([$account], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR))
+            ->assertSuccessful();
+    }
+
     private function fakeSalesforceService(): void
     {
         $this->instance(SalesforceService::class, new class extends SalesforceService
@@ -59,6 +74,20 @@ class SalesforceInterrogateCommandTest extends TestCase
                             'Amount' => 1694.61,
                         ],
                     ], 0, $limit),
+                ];
+            }
+
+            public function fetchAccountForOpportunity(string $opportunityId): array
+            {
+                return [
+                    'success' => true,
+                    'opportunityId' => $opportunityId,
+                    'accountId' => '001000000000001AAA',
+                    'record' => [
+                        'Id' => '001000000000001AAA',
+                        'Name' => 'Hartest Customer',
+                        'BillingCity' => 'Bury St Edmunds',
+                    ],
                 ];
             }
         });
