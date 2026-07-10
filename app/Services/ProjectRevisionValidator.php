@@ -24,7 +24,9 @@ class ProjectRevisionValidator
      *     approved: bool,
      *     flagged: bool,
      *     rrp?: string|null,
-     *     quote_price?: string|null
+     *     quote_price?: string|null,
+     *     cover_values?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null},
+     *     cover_defaults?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null}
      * }>
      */
     public function issues(ProjectRevision $revision): array
@@ -40,19 +42,23 @@ class ProjectRevisionValidator
             ->get(['sku', 'price'])
             ->mapWithKeys(fn (Product $product): array => [$this->normaliseSku($product->sku) => $product]);
 
+        $projectCoverDefaults = $this->projectCoverDefaults($revision);
+
         return $areas
-            ->flatMap(function (ProjectArea $area) use ($productsBySku): array {
+            ->flatMap(function (ProjectArea $area) use ($productsBySku, $projectCoverDefaults): array {
                 $duplicateIssues = $this->duplicateSkuIssues($area);
                 $priceReviewIssues = $this->priceReviewIssues($area, $productsBySku);
-                $coveredLineIds = collect([...$duplicateIssues, ...$priceReviewIssues])
+                $coverIssues = $this->coverMismatchIssues($area, $projectCoverDefaults);
+                $coveredLineIds = collect([...$duplicateIssues, ...$priceReviewIssues, ...$coverIssues])
                     ->flatMap(fn (array $issue): array => $issue['line_ids'])
                     ->unique();
 
-                return [
+                return $this->sortAreaIssues($area, [
                     ...$duplicateIssues,
                     ...$priceReviewIssues,
+                    ...$coverIssues,
                     ...$this->manualFlaggedIssues($area, $coveredLineIds),
-                ];
+                ]);
             })
             ->values()
             ->all();
@@ -70,7 +76,8 @@ class ProjectRevisionValidator
      *     approved: bool,
      *     flagged: bool,
      *     rrp?: string|null,
-     *     quote_price?: string|null
+     *     quote_price?: string|null,
+     *     flag_note?: string|null
      * }>
      */
     public function unresolvedIssues(ProjectRevision $revision): array
@@ -125,6 +132,48 @@ class ProjectRevisionValidator
     }
 
     /**
+     * @param  array<int, array{type: string, line_ids: array<int, int>}>  $issues
+     * @return array<int, array{type: string, line_ids: array<int, int>}>
+     */
+    private function sortAreaIssues(ProjectArea $area, array $issues): array
+    {
+        $lineOrderById = $area->lines
+            ->mapWithKeys(fn (ProjectLine $line): array => [$line->id => (int) $line->sort_order])
+            ->all();
+
+        $typeOrder = [
+            'duplicate_sku' => 0,
+            'price_mismatch' => 1,
+            'cover_mismatch' => 2,
+            'manual_flag' => 3,
+        ];
+
+        usort($issues, function (array $firstIssue, array $secondIssue) use ($lineOrderById, $typeOrder): int {
+            $firstLineOrder = $this->issueLineOrder($firstIssue, $lineOrderById);
+            $secondLineOrder = $this->issueLineOrder($secondIssue, $lineOrderById);
+
+            if ($firstLineOrder !== $secondLineOrder) {
+                return $firstLineOrder <=> $secondLineOrder;
+            }
+
+            return ($typeOrder[$firstIssue['type']] ?? 99) <=> ($typeOrder[$secondIssue['type']] ?? 99);
+        });
+
+        return $issues;
+    }
+
+    /**
+     * @param  array{line_ids: array<int, int>}  $issue
+     * @param  array<int, int>  $lineOrderById
+     */
+    private function issueLineOrder(array $issue, array $lineOrderById): int
+    {
+        return collect($issue['line_ids'])
+            ->map(fn (int $lineId): int => $lineOrderById[$lineId] ?? PHP_INT_MAX)
+            ->min() ?? PHP_INT_MAX;
+    }
+
+    /**
      * @return array<int, array{
      *     key: string,
      *     type: string,
@@ -149,7 +198,7 @@ class ProjectRevisionValidator
                 area: $area,
                 line: $line,
                 lines: collect([$line]),
-                message: "SKU \"{$line->code}\" has been manually flagged for review.",
+                message: $this->manualFlaggedMessage($line),
             ))
             ->values()
             ->all();
@@ -240,6 +289,44 @@ class ProjectRevisionValidator
     }
 
     /**
+     * @param  array{cover_1: string|null, cover_2: string|null, cover_3: string|null}  $projectCoverDefaults
+     * @return array<int, array{
+     *     key: string,
+     *     type: string,
+     *     area: string,
+     *     code: string,
+     *     description: string,
+     *     message: string,
+     *     line_ids: array<int, int>,
+     *     approved: bool,
+     *     flagged: bool,
+     *     quote_price?: string|null,
+     *     cover_values: array{cover_1: string|null, cover_2: string|null, cover_3: string|null},
+     *     cover_defaults: array{cover_1: string|null, cover_2: string|null, cover_3: string|null}
+     * }>
+     */
+    private function coverMismatchIssues(ProjectArea $area, array $projectCoverDefaults): array
+    {
+        return $area->lines
+            ->filter(fn (ProjectLine $line): bool => $this->lineCoverValues($line, $projectCoverDefaults) !== $projectCoverDefaults)
+            ->map(fn (ProjectLine $line): array => $this->issue(
+                key: "cover-mismatch-{$line->id}",
+                type: 'cover_mismatch',
+                area: $area,
+                line: $line,
+                lines: collect([$line]),
+                message: "Cover values for SKU \"{$line->code}\" differ from the project defaults.",
+                extra: [
+                    'cover_values' => $this->lineCoverValues($line, $projectCoverDefaults),
+                    'cover_defaults' => $projectCoverDefaults,
+                    'quote_price' => $line->unit_price,
+                ],
+            ))
+            ->values()
+            ->all();
+    }
+
+    /**
      * @param  Collection<int, ProjectLine>  $lines
      * @return array{
      *     key: string,
@@ -252,7 +339,10 @@ class ProjectRevisionValidator
      *     approved: bool,
      *     flagged: bool,
      *     rrp?: string|null,
-     *     quote_price?: string|null
+     *     quote_price?: string|null,
+     *     flag_note?: string|null,
+     *     cover_values?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null},
+     *     cover_defaults?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null}
      * }
      */
     private function issue(
@@ -273,15 +363,80 @@ class ProjectRevisionValidator
             'message' => $message,
             'line_ids' => $lines->pluck('id')->all(),
             'approved' => $lines->every(
-                fn (ProjectLine $line): bool => $line->approved && $line->approved_by !== null
+                fn (ProjectLine $line): bool => $line->approved
+                    && $line->approved_by !== null
+                    && str_contains((string) $line->validation_note, $this->issueApprovalNote($message))
             ),
             'flagged' => $lines->contains(fn (ProjectLine $line): bool => $line->validation_flagged),
+            'flag_note' => $this->flagNote($lines),
         ] + $extra;
+    }
+
+    private function issueApprovalNote(string $message): string
+    {
+        return 'Approved: '.$message;
+    }
+
+    private function manualFlaggedMessage(ProjectLine $line): string
+    {
+        $message = "SKU \"{$line->code}\" has been manually flagged for review.";
+
+        if (filled($line->validation_note)) {
+            return $message.' '.$line->validation_note;
+        }
+
+        return $message;
+    }
+
+    /**
+     * @param  Collection<int, ProjectLine>  $lines
+     */
+    private function flagNote(Collection $lines): ?string
+    {
+        $line = $lines->first(fn (ProjectLine $line): bool => $line->validation_flagged && filled($line->validation_note));
+
+        return $line instanceof ProjectLine ? (string) $line->validation_note : null;
     }
 
     private function normaliseSku(string $sku): string
     {
         return mb_strtoupper(trim($sku));
+    }
+
+    /**
+     * @return array{cover_1: string|null, cover_2: string|null, cover_3: string|null}
+     */
+    private function projectCoverDefaults(ProjectRevision $revision): array
+    {
+        $revision->loadMissing('project');
+
+        return [
+            'cover_1' => $this->normaliseCover($revision->project?->cover_1),
+            'cover_2' => $this->normaliseCover($revision->project?->cover_2),
+            'cover_3' => $this->normaliseCover($revision->project?->cover_3),
+        ];
+    }
+
+    /**
+     * @param  array{cover_1: string|null, cover_2: string|null, cover_3: string|null}  $projectCoverDefaults
+     * @return array{cover_1: string|null, cover_2: string|null, cover_3: string|null}
+     */
+    private function lineCoverValues(ProjectLine $line, array $projectCoverDefaults): array
+    {
+        return [
+            'cover_1' => $this->normaliseCover($line->cover_1) ?? $projectCoverDefaults['cover_1'],
+            'cover_2' => $this->normaliseCover($line->cover_2) ?? $projectCoverDefaults['cover_2'],
+            'cover_3' => $this->normaliseCover($line->cover_3) ?? $projectCoverDefaults['cover_3'],
+        ];
+    }
+
+    private function normaliseCover(mixed $cover): ?string
+    {
+        if ($cover === null || $cover === '') {
+            return null;
+        }
+
+        return number_format((float) $cover, 2, '.', '');
     }
 
     private function priceReviewMessage(ProjectLine $line, ?Product $product): string

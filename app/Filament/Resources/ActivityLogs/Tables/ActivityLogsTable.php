@@ -97,6 +97,9 @@ class ActivityLogsTable
                                     'reference_number' => 'Quote Reference',
                                     'customer_name' => 'Customer Name',
                                     'cover_percentage' => 'Cover Percentage',
+                                    'cover_1' => 'Cover 1',
+                                    'cover_2' => 'Cover 2',
+                                    'cover_3' => 'Cover 3',
                                     'branch_name' => 'Branch Name',
                                 ];
                                 $parts = [];
@@ -208,6 +211,9 @@ class ActivityLogsTable
                                     'description' => 'Description',
                                     'qty' => 'Quantity',
                                     'unit_price' => 'Unit Price',
+                                    'cover_1' => 'Cover 1',
+                                    'cover_2' => 'Cover 2',
+                                    'cover_3' => 'Cover 3',
                                     'notes' => 'Notes',
                                     'type' => 'Line Type',
                                     'status' => 'Status',

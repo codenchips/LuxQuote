@@ -2262,7 +2262,7 @@ class AdminProjectResourceTest extends TestCase
         ]);
     }
 
-    public function test_salesforce_project_details_save_logs_uploaded_pdf_url(): void
+    public function test_salesforce_project_details_save_updates_amount_when_value_changes(): void
     {
         $admin = User::factory()->admin()->create();
         $this->actingAs($admin);
@@ -2273,27 +2273,8 @@ class AdminProjectResourceTest extends TestCase
             'reference_number' => '22600',
             'salesforce_project' => true,
             'salesforce_id' => '006000000000001AAA',
+            'value' => 100,
         ]);
-        $project->activeRevision->areas()->first()->lines()->create([
-            'code' => 'PDF-SKU',
-            'description' => 'PDF line',
-            'qty' => 1,
-            'type' => ProjectLineType::Standard->value,
-            'sort_order' => 0,
-        ]);
-
-        $this->instance(ProjectSchedulePdfService::class, new class
-        {
-            public function filename(Project $project, ProjectRevision $revision): string
-            {
-                return 'schedule-22600-P0.pdf';
-            }
-
-            public function content(Project $project, ProjectRevision $revision): string
-            {
-                return '%PDF-1.4 test content';
-            }
-        });
 
         Http::fake(function (Request $request) {
             if (str_contains($request->url(), '/services/oauth2/token')) {
@@ -2303,24 +2284,8 @@ class AdminProjectResourceTest extends TestCase
                 ]);
             }
 
-            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
-                $query = (string) ($request->data()['q'] ?? '');
-
-                if (str_contains($query, 'FROM ContentDocumentLink')) {
-                    return Http::response(['records' => []]);
-                }
-
-                if (str_contains($query, 'FROM ContentVersion')) {
-                    return Http::response([
-                        'records' => [
-                            ['ContentDocumentId' => '069000000000001AAA'],
-                        ],
-                    ]);
-                }
-            }
-
-            if (str_contains($request->url(), '/services/data/v65.0/sobjects/ContentVersion')) {
-                return Http::response(['id' => '068000000000001AAA'], 201);
+            if ($request->method() === 'PATCH' && str_contains($request->url(), '/services/data/v65.0/sobjects/Opportunity/006000000000001AAA')) {
+                return Http::response([], 204);
             }
 
             return Http::response([], 500);
@@ -2341,26 +2306,20 @@ class AdminProjectResourceTest extends TestCase
                 'visibility' => $project->visibility->value,
                 'branch_name' => null,
                 'cover_percentage' => null,
+                'value' => 150,
                 'quote_notes' => null,
                 'internal_notes' => null,
                 'general_notes' => null,
             ]);
 
-        $log = ActivityLog::where('project_id', $project->id)
-            ->where('action_type', 'project.details_saved')
-            ->latest()
-            ->firstOrFail();
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH'
+            && str_contains($request->url(), '/services/data/v65.0/sobjects/Opportunity/006000000000001AAA')
+            && $request->data()['Amount'] === 150.0);
 
-        $this->assertSame(
-            'https://example.my.salesforce.com/lightning/r/ContentDocument/069000000000001AAA/view',
-            $log->payload['salesforce_pdf_url'] ?? null,
-        );
-        $this->assertSame('schedule-22600-P0.pdf', $log->payload['salesforce_pdf_filename'] ?? null);
-
-        Livewire::test(ProjectHistory::class, ['record' => $project->id])
-            ->assertSee('Saved project details and uploaded', false)
-            ->assertSee('View file')
-            ->assertSee('https://example.my.salesforce.com/lightning/r/ContentDocument/069000000000001AAA/view', false);
+        $this->assertDatabaseHas('activity_logs', [
+            'project_id' => $project->id,
+            'action_type' => 'project.details_saved',
+        ]);
     }
 
     public function test_lines_cannot_be_sorted_into_an_area_from_another_project(): void

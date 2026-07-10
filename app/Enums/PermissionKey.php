@@ -27,6 +27,7 @@ enum PermissionKey: string
     case QuoteApprovalRequest = 'quote-approval.request';
     case PricingView = 'pricing.view';
     case PricingUpdate = 'pricing.update';
+    case CoverUpdate = 'cover.update';
     case ProductsView = 'products.view';
     case ProductsImport = 'products.import';
     case SalesforceView = 'salesforce.view';
@@ -64,6 +65,7 @@ enum PermissionKey: string
             self::QuoteApprovalRequest => 'Request quote approval',
             self::PricingView => 'View prices',
             self::PricingUpdate => 'Edit prices',
+            self::CoverUpdate => 'Edit cover percentages',
             self::ProductsView => 'View products list page',
             self::ProductsImport => 'Import / fetch products',
             self::SalesforceView => 'View Salesforce projects list page',
@@ -105,7 +107,8 @@ enum PermissionKey: string
             self::QuoteApprovalRequest => 'Output',
 
             self::PricingView,
-            self::PricingUpdate => 'Pricing',
+            self::PricingUpdate,
+            self::CoverUpdate => 'Pricing',
 
             self::ProductsView,
             self::ProductsImport => 'Products',
@@ -128,6 +131,7 @@ enum PermissionKey: string
         return match ($this) {
             self::PricingView => 'Global switch for price columns and price-based outputs.',
             self::PricingUpdate => 'Allows changing project line prices. Requires price visibility.',
+            self::CoverUpdate => 'Allows changing project and line-level cover percentages.',
             self::SalesforceManagePush => 'Allows pausing and resuming outbound Salesforce writes while keeping Salesforce project import/search available.',
             self::TeamsManage => 'Allows creating, editing, deleting, and assigning users to teams.',
             self::PermissionsManage => 'Allows managing permission groups and viewing the permission catalogue.',
@@ -178,6 +182,7 @@ enum PermissionKey: string
                     self::QuoteApprovalRequest,
                     self::PricingView,
                     self::PricingUpdate,
+                    self::CoverUpdate,
                 ],
             ],
             'technical' => [
@@ -225,6 +230,7 @@ enum PermissionKey: string
                     self::QuoteApprovalRequest,
                     self::PricingView,
                     self::PricingUpdate,
+                    self::CoverUpdate,
                     self::ProductsView,
                     self::SalesforceView,
                 ],

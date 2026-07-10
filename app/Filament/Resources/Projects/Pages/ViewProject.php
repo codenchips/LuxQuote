@@ -14,8 +14,6 @@ use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectPresence;
 use App\Models\ProjectRevision;
-use App\Services\ProjectSchedulePdfService;
-use App\Services\SalesforcePdfUploadTracker;
 use App\Services\SalesforcePushControl;
 use App\Services\SalesforceService;
 use Filament\Actions\Action;
@@ -93,6 +91,10 @@ class ViewProject extends ViewRecord
     public string $pasteProductsMode = self::PasteModeMisos;
 
     public bool $pasteAcrossAllAreas = true;
+
+    public bool $showLineCovers = false;
+
+    private bool $projectValueChangedDuringDetailsSave = false;
 
     public function mount(int|string $record): void
     {
@@ -181,6 +183,10 @@ class ViewProject extends ViewRecord
                 ->using(function (Project $record, array $data): void {
                     abort_if(ProjectForm::projectDetailsAreReadOnly($record), 403, 'Approved revisions are locked against editing.');
 
+                    $data = ProjectForm::normaliseVisibilityData($data, $record);
+                    $this->projectValueChangedDuringDetailsSave = array_key_exists('value', $data)
+                        && $this->amountsDiffer($record->value, $data['value']);
+
                     $record->update($data);
                 })
                 ->after(fn () => $this->afterProjectDetailsSaved()),
@@ -247,7 +253,7 @@ class ViewProject extends ViewRecord
     {
         $this->record->refresh();
 
-        if (! $this->record->salesforce_project) {
+        if (! $this->record->salesforce_project || ! $this->projectValueChangedDuringDetailsSave) {
             $this->logProjectDetailsSaved();
 
             return;
@@ -255,8 +261,8 @@ class ViewProject extends ViewRecord
 
         if (app(SalesforcePushControl::class)->disabled()) {
             Notification::make()
-                ->title('Salesforce upload skipped')
-                ->body('Salesforce pushes are currently paused.')
+                ->title('Salesforce value update skipped')
+                ->body('Salesforce pushes are currently paused, so the Opportunity Amount was not updated.')
                 ->warning()
                 ->send();
 
@@ -265,66 +271,12 @@ class ViewProject extends ViewRecord
             return;
         }
 
-        $revision = ProjectRevision::where('project_id', $this->record->id)
-            ->find($this->viewingRevisionId ?? $this->record->active_revision_id);
-
-        if (! $revision) {
-            Notification::make()
-                ->title('Salesforce upload skipped')
-                ->body('No project revision was available for the schedule PDF.')
-                ->warning()
-                ->send();
-
-            $this->logProjectDetailsSaved();
-
-            return;
-        }
-
-        if (! $this->revisionHasScheduleProducts($revision)) {
-            $this->logProjectDetailsSaved();
-
-            return;
-        }
-
-        try {
-            $pdf = app(ProjectSchedulePdfService::class);
-            $filename = $pdf->filename($this->record, $revision);
-            $tracker = app(SalesforcePdfUploadTracker::class);
-            $fingerprintHash = $tracker->fingerprint($this->record, $revision, 'schedule', false);
-
-            if ($tracker->isCurrent($this->record, $revision, 'schedule', $fingerprintHash)) {
-                Notification::make()
-                    ->title('Schedule PDF already current in Salesforce')
-                    ->body('No new upload was needed.')
-                    ->success()
-                    ->send();
-
-                $this->logProjectDetailsSaved();
-
-                return;
-            }
-
-            $result = app(SalesforceService::class)->uploadSchedulePdf(
-                project: $this->record,
-                pdfContent: $pdf->content($this->record, $revision),
-                filename: $filename,
-            );
-        } catch (Throwable $exception) {
-            Notification::make()
-                ->title('Salesforce upload failed')
-                ->body($exception->getMessage())
-                ->danger()
-                ->send();
-
-            $this->logProjectDetailsSaved();
-
-            return;
-        }
+        $result = app(SalesforceService::class)->updateOpportunityAmount($this->record, (float) ($this->record->value ?? 0));
 
         if (! $result['success']) {
             Notification::make()
-                ->title('Salesforce upload failed')
-                ->body($result['message'] ?? 'The schedule PDF could not be uploaded to Salesforce.')
+                ->title('Salesforce value update failed')
+                ->body($result['message'] ?? 'The Opportunity Amount could not be updated.')
                 ->danger()
                 ->send();
 
@@ -333,29 +285,27 @@ class ViewProject extends ViewRecord
             return;
         }
 
-        $salesforceUrl = $result['url'] ?? null;
-
-        app(SalesforcePdfUploadTracker::class)->recordSuccessfulUpload(
-            project: $this->record,
-            revision: $revision,
-            documentType: 'schedule',
-            fingerprintHash: $fingerprintHash,
-            filename: $filename,
-            salesforceResult: $result,
-        );
-
         Notification::make()
-            ->title('Schedule PDF uploaded to Salesforce')
-            ->body($salesforceUrl ? 'The file is available on Salesforce.' : 'The file is available on the Salesforce Opportunity.')
-            ->actions($salesforceUrl ? [
-                Action::make('viewSalesforceFile')
-                    ->label('View in Salesforce')
-                    ->url($salesforceUrl, shouldOpenInNewTab: true),
-            ] : [])
+            ->title('Salesforce value updated')
+            ->body('Opportunity Amount updated to £'.number_format((float) ($this->record->value ?? 0), 2).'.')
             ->success()
             ->send();
 
-        $this->logProjectDetailsSaved($salesforceUrl, $filename);
+        $this->logProjectDetailsSaved();
+    }
+
+    private function amountsDiffer(mixed $before, mixed $after): bool
+    {
+        return $this->normaliseAmountForComparison($before) !== $this->normaliseAmountForComparison($after);
+    }
+
+    private function normaliseAmountForComparison(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return number_format((float) $value, 2, '.', '');
     }
 
     private function logProjectDetailsSaved(?string $salesforceUrl = null, ?string $filename = null): void
@@ -379,13 +329,6 @@ class ViewProject extends ViewRecord
             'revision_number' => $this->record->revision,
             'payload' => $payload === [] ? null : $payload,
         ]);
-    }
-
-    private function revisionHasScheduleProducts(ProjectRevision $revision): bool
-    {
-        return $revision->areas()
-            ->whereHas('lines', fn ($query) => $query->whereNotNull('code')->where('code', '!=', ''))
-            ->exists();
     }
 
     private function findAreaInViewingRevision(int $areaId): ProjectArea
@@ -473,7 +416,8 @@ class ViewProject extends ViewRecord
             foreach ($area->lines as $line) {
                 $newArea->lines()->create($line->only([
                     'product_id', 'code', 'ref', 'description', 'qty',
-                    'type', 'unit_price', 'notes', 'status', 'sort_order',
+                    'type', 'unit_price', 'cover_1', 'cover_2', 'cover_3',
+                    'notes', 'status', 'sort_order',
                     'approved', 'approved_at', 'approved_by',
                     'validation_flagged', 'validation_note',
                 ]));
@@ -605,6 +549,7 @@ class ViewProject extends ViewRecord
                 'qty' => $selection['qty'],
                 'type' => ProjectLineType::Standard->value,
                 'unit_price' => $product->price,
+                ...$this->defaultLineCoverAttributes(),
                 'status' => self::LineStatusPending,
                 'sort_order' => $maxSort,
             ]);
@@ -735,6 +680,7 @@ class ViewProject extends ViewRecord
                         'qty' => $row['qty'],
                         'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
                         'unit_price' => $row['unit_price'] ?? $product?->price,
+                        ...$this->defaultLineCoverAttributes(),
                         'status' => self::LineStatusPriced,
                         'sort_order' => $maxSort,
                     ]);
@@ -805,6 +751,7 @@ class ViewProject extends ViewRecord
                             'qty' => $lineData['qty'],
                             'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
                             'unit_price' => $product?->price,
+                            ...$this->defaultLineCoverAttributes(),
                             'status' => self::LineStatusPriced,
                             'sort_order' => $lineIndex,
                         ]);
@@ -1168,23 +1115,33 @@ class ViewProject extends ViewRecord
             'description' => '',
             'qty' => 1,
             'type' => ProjectLineType::Custom->value,
+            ...$this->defaultLineCoverAttributes(),
             'sort_order' => $maxSort + 1,
         ]);
     }
 
     public function updateLineField(int $lineId, string $field, mixed $value): void
     {
-        if (! $this->ensureViewingRevisionIsEditable()) {
-            return;
-        }
-
-        $allowed = ['code', 'ref', 'description', 'qty', 'unit_price', 'notes'];
+        $allowed = ['code', 'ref', 'description', 'qty', 'unit_price', 'notes', 'cover_1', 'cover_2', 'cover_3'];
+        $coverFields = ['cover_1', 'cover_2', 'cover_3'];
 
         if (! in_array($field, $allowed, true)) {
             return;
         }
 
+        if (in_array($field, $coverFields, true)) {
+            if (! $this->ensureViewingRevisionCoverIsEditable()) {
+                return;
+            }
+        } elseif (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
+
         if ($field === 'unit_price' && ! $this->canEditPrices()) {
+            abort(403);
+        }
+
+        if (in_array($field, $coverFields, true) && ! $this->canEditCover()) {
             abort(403);
         }
 
@@ -1288,6 +1245,10 @@ class ViewProject extends ViewRecord
 
         if ($field === 'unit_price') {
             return max(0, (float) $value);
+        }
+
+        if (in_array($field, ['cover_1', 'cover_2', 'cover_3'], true)) {
+            return number_format(min(999.99, max(0, (float) $value)), 2, '.', '');
         }
 
         return $value;
@@ -1400,6 +1361,20 @@ class ViewProject extends ViewRecord
         return true;
     }
 
+    private function ensureViewingRevisionCoverIsEditable(): bool
+    {
+        abort_unless($this->canEditCover(), 403);
+
+        if ($this->viewingRevisionIsApproved()) {
+            unset($this->isViewingRevisionValidated);
+            $this->notifyApprovedRevisionLocked();
+
+            return false;
+        }
+
+        return true;
+    }
+
     private function viewingRevisionIsApproved(): bool
     {
         if (! $this->viewingRevisionId) {
@@ -1422,6 +1397,11 @@ class ViewProject extends ViewRecord
         return auth()->user()?->can('pricing.update') ?? false;
     }
 
+    public function canEditCover(): bool
+    {
+        return $this->canViewPrices() && (auth()->user()?->can('cover.update') ?? false);
+    }
+
     public function canEditLines(): bool
     {
         return auth()->user()?->can('projects.update-lines') ?? false;
@@ -1440,5 +1420,17 @@ class ViewProject extends ViewRecord
     public function canProduceUnpricedSchedule(): bool
     {
         return auth()->user()?->can('output.produce-unpriced-schedule') ?? false;
+    }
+
+    /**
+     * @return array{cover_1: mixed, cover_2: mixed, cover_3: mixed}
+     */
+    private function defaultLineCoverAttributes(): array
+    {
+        return [
+            'cover_1' => $this->record->cover_1,
+            'cover_2' => $this->record->cover_2,
+            'cover_3' => $this->record->cover_3,
+        ];
     }
 }

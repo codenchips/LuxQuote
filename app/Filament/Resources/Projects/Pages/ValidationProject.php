@@ -35,6 +35,14 @@ class ValidationProject extends ViewRecord
 
     public bool $approveRevisionModalOpen = false;
 
+    public bool $flagIssueModalOpen = false;
+
+    public ?string $pendingFlagIssueKey = null;
+
+    public ?int $pendingFlagLineId = null;
+
+    public string $flagIssueNote = '';
+
     public function getTitle(): string
     {
         return $this->record->name;
@@ -99,7 +107,10 @@ class ValidationProject extends ViewRecord
      *     approved: bool,
      *     flagged: bool,
      *     rrp?: string|null,
-     *     quote_price?: string|null
+     *     quote_price?: string|null,
+     *     flag_note?: string|null,
+     *     cover_values?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null},
+     *     cover_defaults?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null}
      * }>
      */
     #[Computed]
@@ -115,6 +126,9 @@ class ValidationProject extends ViewRecord
      *     description: string,
      *     qty: int,
      *     unit_price: string|null,
+     *     cover_1: string|null,
+     *     cover_2: string|null,
+     *     cover_3: string|null,
      *     status: string,
      *     note: string
      * }>
@@ -147,6 +161,9 @@ class ValidationProject extends ViewRecord
                     'description' => $line->description,
                     'qty' => $line->qty,
                     'unit_price' => $line->unit_price,
+                    'cover_1' => $line->cover_1,
+                    'cover_2' => $line->cover_2,
+                    'cover_3' => $line->cover_3,
                     'status' => 'Approved',
                     'note' => $this->validatedLineNote($line, $lineIssues),
                 ];
@@ -258,14 +275,17 @@ class ValidationProject extends ViewRecord
 
         $issue = $this->findIssue($issueKey);
         $lines = $this->linesForIssue($issue)->get();
+        $approvalNote = $this->approvalNote($issue);
 
-        $this->linesForIssue($issue)->update([
-            'approved' => true,
-            'approved_at' => now(),
-            'approved_by' => auth()->id(),
-            'validation_flagged' => false,
-            'validation_note' => $this->approvalNote($issue),
-        ]);
+        foreach ($lines as $line) {
+            $line->update([
+                'approved' => true,
+                'approved_at' => now(),
+                'approved_by' => auth()->id(),
+                'validation_flagged' => false,
+                'validation_note' => $this->appendValidationNote($line->validation_note, $approvalNote),
+            ]);
+        }
 
         $this->logValidationActivity('validation.issue_approved', $this->issueActivityPayload($issue, $lines));
         $this->refreshValidation();
@@ -279,13 +299,18 @@ class ValidationProject extends ViewRecord
 
         $issue = $this->findIssue($issueKey);
         $lines = $this->linesForIssue($issue)->get();
+        $approvalNote = $this->approvalNote($issue);
 
-        $this->linesForIssue($issue)->update([
-            'approved' => false,
-            'approved_at' => null,
-            'approved_by' => null,
-            'validation_note' => null,
-        ]);
+        foreach ($lines as $line) {
+            $validationNote = $this->removeValidationNote($line->validation_note, $approvalNote);
+
+            $line->update([
+                'approved' => filled($validationNote),
+                'approved_at' => filled($validationNote) ? $line->approved_at : null,
+                'approved_by' => filled($validationNote) ? $line->approved_by : null,
+                'validation_note' => $validationNote,
+            ]);
+        }
 
         $this->logValidationActivity('validation.issue_approval_undone', $this->issueActivityPayload($issue, $lines));
         $this->refreshValidation();
@@ -299,7 +324,7 @@ class ValidationProject extends ViewRecord
 
         $issue = $this->findIssue($issueKey);
 
-        abort_unless($issue['type'] === 'price_mismatch' && ! $issue['approved'], 404);
+        abort_unless(in_array($issue['type'], ['price_mismatch', 'cover_mismatch'], true) && ! $issue['approved'], 404);
 
         $quotePrice = $value === '' || $value === null
             ? null
@@ -343,24 +368,88 @@ class ValidationProject extends ViewRecord
         $this->refreshValidation();
     }
 
-    public function flagIssue(string $issueKey): void
+    public function updateIssueCoverValue(string $issueKey, string $field, mixed $value): void
+    {
+        abort_unless($this->canUpdateValidationLines() && $this->canEditCover(), 403);
+
+        $this->ensureActiveRevisionIsEditable();
+
+        abort_unless(in_array($field, ['cover_1', 'cover_2', 'cover_3'], true), 404);
+
+        $issue = $this->findIssue($issueKey);
+
+        abort_unless($issue['type'] === 'cover_mismatch' && ! $issue['approved'], 404);
+
+        $this->linesForIssue($issue)->update([
+            $field => $this->normaliseCoverValue($value),
+            'approved' => false,
+            'approved_at' => null,
+            'approved_by' => null,
+            'validation_flagged' => false,
+            'validation_note' => null,
+        ]);
+
+        $this->refreshValidation();
+    }
+
+    public function openFlagIssueModal(string $issueKey): void
     {
         abort_unless($this->canFlagValidationLines(), 403);
 
         $this->ensureActiveRevisionIsEditable();
 
-        $issue = $this->findIssue($issueKey);
-        $lines = $this->linesForIssue($issue)->get();
+        $this->findIssue($issueKey);
+        $this->pendingFlagIssueKey = $issueKey;
+        $this->pendingFlagLineId = null;
+        $this->flagIssueNote = '';
+        $this->flagIssueModalOpen = true;
+    }
 
-        $this->linesForIssue($issue)->update([
-            'approved' => false,
-            'approved_at' => null,
-            'approved_by' => null,
-            'validation_flagged' => true,
-            'validation_note' => null,
-        ]);
+    public function openFlagValidatedLineModal(int $lineId): void
+    {
+        abort_unless($this->canFlagValidationLines(), 403);
 
-        $this->logValidationActivity('validation.issue_flagged', $this->issueActivityPayload($issue, $lines));
+        $this->ensureActiveRevisionIsEditable();
+
+        $this->lineForActiveRevision($lineId);
+        $this->pendingFlagIssueKey = null;
+        $this->pendingFlagLineId = $lineId;
+        $this->flagIssueNote = '';
+        $this->flagIssueModalOpen = true;
+    }
+
+    public function closeFlagIssueModal(): void
+    {
+        $this->resetFlagIssueModal();
+    }
+
+    public function submitFlagIssue(): void
+    {
+        abort_unless($this->canFlagValidationLines(), 403);
+
+        $this->ensureActiveRevisionIsEditable();
+
+        $note = trim($this->flagIssueNote);
+
+        if ($note === '') {
+            Notification::make()
+                ->title('Flag note required')
+                ->body('Add a short note before flagging this issue.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $note = mb_substr($note, 0, 255);
+
+        if ($this->pendingFlagIssueKey !== null) {
+            $this->flagExistingIssue($this->pendingFlagIssueKey, $note);
+        } elseif ($this->pendingFlagLineId !== null) {
+            $this->flagValidatedLineWithNote($this->pendingFlagLineId, $note);
+        }
+
+        $this->resetFlagIssueModal();
         $this->refreshValidation();
     }
 
@@ -397,33 +486,6 @@ class ValidationProject extends ViewRecord
         $this->refreshValidation();
     }
 
-    public function flagValidatedLine(int $lineId): void
-    {
-        abort_unless($this->canFlagValidationLines(), 403);
-
-        $this->ensureActiveRevisionIsEditable();
-
-        $line = $this->lineForActiveRevision($lineId);
-        $approvedIssues = collect($this->validator()->issues($this->activeRevision()))
-            ->filter(fn (array $issue): bool => $issue['approved'] && in_array($line->id, $issue['line_ids'], true));
-
-        $line->update([
-            'approved' => false,
-            'approved_at' => null,
-            'approved_by' => null,
-            'validation_flagged' => true,
-            'validation_note' => null,
-        ]);
-
-        $this->logValidationActivity('validation.issue_flagged', [
-            'issue_type' => 'manual_flag',
-            'message' => 'Line flagged for review.',
-            'line_count' => 1,
-            'lines' => [$this->lineActivityPayload($line)],
-        ]);
-        $this->refreshValidation();
-    }
-
     public static function canAccess(array $parameters = []): bool
     {
         return auth()->user()?->can('validation.view') ?? false;
@@ -450,7 +512,10 @@ class ValidationProject extends ViewRecord
      *     line_ids: array<int, int>,
      *     approved: bool,
      *     rrp?: string|null,
-     *     quote_price?: string|null
+     *     quote_price?: string|null,
+     *     flag_note?: string|null,
+     *     cover_values?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null},
+     *     cover_defaults?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null}
      * }
      */
     private function findIssue(string $issueKey): array
@@ -461,6 +526,55 @@ class ValidationProject extends ViewRecord
         abort_unless($issue, 404);
 
         return $issue;
+    }
+
+    private function flagExistingIssue(string $issueKey, string $note): void
+    {
+        $issue = $this->findIssue($issueKey);
+        $lines = $this->linesForIssue($issue)->get();
+
+        foreach ($lines as $line) {
+            $line->update([
+                'approved' => false,
+                'approved_at' => null,
+                'approved_by' => null,
+                'validation_flagged' => true,
+                'validation_note' => $note,
+            ]);
+        }
+
+        $this->logValidationActivity('validation.issue_flagged', $this->issueActivityPayload($issue, $lines) + [
+            'flag_note' => $note,
+        ]);
+    }
+
+    private function flagValidatedLineWithNote(int $lineId, string $note): void
+    {
+        $line = $this->lineForActiveRevision($lineId);
+
+        $line->update([
+            'approved' => false,
+            'approved_at' => null,
+            'approved_by' => null,
+            'validation_flagged' => true,
+            'validation_note' => $note,
+        ]);
+
+        $this->logValidationActivity('validation.issue_flagged', [
+            'issue_type' => 'manual_flag',
+            'message' => 'Line flagged for review.',
+            'flag_note' => $note,
+            'line_count' => 1,
+            'lines' => [$this->lineActivityPayload($line)],
+        ]);
+    }
+
+    private function resetFlagIssueModal(): void
+    {
+        $this->flagIssueModalOpen = false;
+        $this->pendingFlagIssueKey = null;
+        $this->pendingFlagLineId = null;
+        $this->flagIssueNote = '';
     }
 
     /**
@@ -514,6 +628,25 @@ class ValidationProject extends ViewRecord
         return 'Approved: '.$issue['message'];
     }
 
+    private function appendValidationNote(?string $currentNote, string $newNote): string
+    {
+        $notes = collect(preg_split('/\s*\|\s*/', (string) $currentNote, -1, PREG_SPLIT_NO_EMPTY))
+            ->push($newNote)
+            ->unique()
+            ->values();
+
+        return $notes->implode(' | ');
+    }
+
+    private function removeValidationNote(?string $currentNote, string $noteToRemove): ?string
+    {
+        $notes = collect(preg_split('/\s*\|\s*/', (string) $currentNote, -1, PREG_SPLIT_NO_EMPTY))
+            ->reject(fn (string $note): bool => $note === $noteToRemove)
+            ->values();
+
+        return $notes->isEmpty() ? null : $notes->implode(' | ');
+    }
+
     /**
      * @param  array{rrp?: string|null}  $issue
      */
@@ -524,6 +657,15 @@ class ValidationProject extends ViewRecord
         }
 
         return number_format((float) $quotePrice, 2, '.', '') === number_format((float) $issue['rrp'], 2, '.', '');
+    }
+
+    private function normaliseCoverValue(mixed $value): ?string
+    {
+        if ($value === '' || $value === null) {
+            return null;
+        }
+
+        return number_format(min(999.99, max(0, (float) $value)), 2, '.', '');
     }
 
     private function validatedLineNote(ProjectLine $line, Collection $lineIssues): string
@@ -664,6 +806,11 @@ class ValidationProject extends ViewRecord
     public function canEditPrices(): bool
     {
         return auth()->user()?->can('pricing.update') ?? false;
+    }
+
+    public function canEditCover(): bool
+    {
+        return $this->canViewPrices() && (auth()->user()?->can('cover.update') ?? false);
     }
 
     public function canRunValidation(): bool

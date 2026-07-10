@@ -1,8 +1,16 @@
 # Company App — Project Status
 
-_Last updated: 9 July 2026_
+_Last updated: 10 July 2026_
 
 ---
+
+## Cover UI Groundwork — 10 July 2026
+
+- **Cover data model added**: Projects and project lines now carry `cover_1`, `cover_2`, and `cover_3` decimal percentage fields. Existing project `cover_percentage` values are backfilled into `cover_1` during migration for continuity.
+- **Cover permission added**: `cover.update` controls whether a user can change Cover percentages. Cover remains price-related, so users must also have `pricing.view` to see Cover fields.
+- **Project details Cover fields**: The project details slide-over exposes Cover 1, Cover 2, and Cover 3. Salesforce `CEF_Cover__c` now populates Cover 1.
+- **Line-level Cover fields**: New project lines inherit the three project Cover values. The project line table can toggle its Notes column into compact Cover inputs without adding another wide table column.
+- **Validation Cover editing**: The validation page shows Cover fields for validated lines and allows permitted users to amend them before approval.
 
 ## Beta Test Prep and Project Workflow — 9 July 2026
 
@@ -103,7 +111,7 @@ projects
   id, user_id (FK), name, reference_number, customer_name, contractor
   site_location, owner_email, created_by_email, department
   date, revision, visibility (open|private), status (draft|in_progress|complete|cancelled|archived)
-  branch_name, cover_percentage (string, nullable), value (decimal, nullable)
+  branch_name, cover_percentage (string, nullable), cover_1, cover_2, cover_3, value (decimal, nullable)
   quote_notes, internal_notes, general_notes
   active_revision_id (FK → project_revisions, nullOnDelete)
   last_edited_at (nullable timestamp)
@@ -125,7 +133,7 @@ project_areas
 project_lines
   id, project_area_id (FK), product_id (nullable FK → products, nullOnDelete)
   code, ref, description, qty, type (standard|modified|custom)
-  unit_price, notes, status
+  unit_price, cover_1, cover_2, cover_3, notes, status
   validation_flagged (bool), validation_note (nullable string)
   approved (bool), approved_at (nullable timestamp), approved_by (nullable FK → users)
   sort_order
@@ -744,7 +752,7 @@ When creating a project, a **Salesforce Project** toggle is available:
   - Selecting an Opportunity stores its data as JSON in a hidden `salesforce_pending_data` field
   - Opportunity names are normalised to title case before saving, while preserving all-caps acronyms at the start of words
   - A loading indicator appears while the selected Opportunity is fetched
-  - A **Confirm & Populate Form** button appears — clicking it populates `reference_number`, `customer_name`, `owner_email`, `cover_percentage`, and `value` from the Opportunity data
+  - A **Confirm & Populate Form** button appears — clicking it populates `reference_number`, `customer_name`, `owner_email`, `cover_1`, and `value` from the Opportunity data
   - Salesforce-derived fields become read-only while SF mode is on, while notes and visibility remain editable
   - `name` is extracted from the Opportunity JSON in `mutateFormDataUsing` (because the `name` TextInput is hidden and therefore not dehydrated by Filament)
   - `salesforce_project = true` is saved to the DB via the `projects.salesforce_project` column
@@ -770,7 +778,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Known Gaps / Next Steps (as of 9 July 2026)
 
-- [ ] Implement Cover prices
+- [ ] Implement Cover price calculations
 - [ ] Teams
 - [ ] Move long-running PDF/document-pack generation toward queued jobs with polling/download links so browser/proxy timeouts and remote datasheet delays do not surface as user-facing 500 errors
 - [ ] Add structured logging around PDF generation with project reference, revision, document type, include-datasheets flag, progress token, qpdf step, datasheet endpoint result, and exception class/message

@@ -477,7 +477,8 @@ The local `./deploy-production` helper bumps the tracked app version in `VERSION
 The deploy script:
 
 - starts Docker services so the database is available
-- creates a compressed pre-deploy MySQL backup in `/home/tamliteco/luxquote.app/backups`
+- creates a compressed full pre-deploy MySQL backup in `/home/tamliteco/luxquote.app/backups`
+- creates a single rolling data-only backup of protected business tables at `backups/latest-protected-data-restore.sql.gz` and records their pre-deploy row counts
 - fetches and checks out `origin/production`
 - rebuilds/recreates Docker services with `docker compose up -d --build`
 - removes `public/hot`
@@ -486,11 +487,14 @@ The deploy script:
 - installs/builds npm assets as the `sail` user
 - verifies `qpdf`
 - verifies the PDF runtime with `app:diagnose-pdf-environment`
-- runs migrations with `--force`
+- runs all pending migrations with `php artisan migrate --force --no-interaction`, then prints `migrate:status` in the deploy log
+- checks protected business table row counts after migrations; if all previously-populated protected tables are empty, it restores the data-only backup into the migrated schema and fails the deploy so the incident is visible
 - clears/rebuilds Laravel caches
 - smoke-checks `https://quote.tamlite.co.uk`
 - prunes Docker build cache older than 24 hours
 - prunes DB backups older than 14 days
+
+The deploy data-loss guard is intentionally conservative. It only auto-restores when protected business data has catastrophically disappeared from every previously-populated protected table. If only some protected tables look emptied, the deploy stops and leaves the full backup plus `backups/latest-protected-data-restore.sql.gz` in place for manual inspection rather than risking duplicate or mixed-state rows. If the migrated-schema data restore fails, the deploy log explains that the new migrations likely changed table or column structures in a way that needs a custom manual recovery from the full backup. The protected table list can be overridden with `PROTECTED_DATA_TABLES`; automatic catastrophic restore can be disabled with `RESTORE_ON_CATASTROPHIC_DATA_LOSS=false`.
 
 ### One-Time Server Setup
 

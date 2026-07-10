@@ -8,12 +8,13 @@
         $isReadyToApprove = $this->activeRevisionReadyForApproval;
         $canViewPrices = $this->canViewPrices();
         $canEditPrices = $this->canEditPrices();
+        $canEditCover = $this->canEditCover();
         $canUpdateValidationLines = $this->canUpdateValidationLines();
         $canFlagValidationLines = $this->canFlagValidationLines();
         $canMergeValidationLines = $this->canMergeValidationLines();
         $canApproveValidationLines = $this->canApproveValidationLines();
         $validatedLineGridColumns = $canViewPrices
-            ? '130px 1fr 70px 95px 95px 1.4fr 110px'
+            ? '130px 1fr 70px 95px 210px 95px 1.4fr 110px'
             : '130px 1fr 70px 95px 1.4fr 110px';
     @endphp
 
@@ -71,6 +72,11 @@
                             </div>
 
                             <p class="mt-2 text-sm text-gray-950 dark:text-white">{{ $issue['message'] }}</p>
+                            @if(filled($issue['flag_note'] ?? null) && $issue['type'] !== 'manual_flag')
+                                <p class="mt-1 text-xs text-red-600 dark:text-red-300">
+                                    Flag note: {{ $issue['flag_note'] }}
+                                </p>
+                            @endif
 
                         </div>
 
@@ -115,15 +121,58 @@
                             </div>
                         @endif
 
+                        @if($issue['type'] === 'cover_mismatch' && $canViewPrices)
+                            <div class="grid w-[25rem] shrink-0 grid-cols-[5.5rem_repeat(3,4.75rem)] gap-2 self-center text-sm">
+                                <label class="space-y-1">
+                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Quote</span>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value="{{ $issue['quote_price'] }}"
+                                        @disabled($issue['approved'] || ! $canEditPrices || ! $canUpdateValidationLines)
+                                        x-on:blur="$wire.updateIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }}, $el.value)"
+                                        class="h-[34px] w-full rounded-lg border border-gray-300 bg-white px-2 py-0 text-right text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:border-gray-700 dark:disabled:bg-gray-800/70 dark:disabled:text-gray-400"
+                                    />
+                                </label>
+
+                                @foreach(['cover_1' => 'C1', 'cover_2' => 'C2', 'cover_3' => 'C3'] as $coverField => $coverLabel)
+                                    <label class="space-y-1">
+                                        <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                            {{ $coverLabel }} {{ ($issue['cover_defaults'][$coverField] ?? null) !== null ? number_format((float) $issue['cover_defaults'][$coverField], 2) : '—' }}%
+                                        </span>
+                                        <span class="relative block">
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                max="999.99"
+                                                value="{{ ($issue['cover_values'][$coverField] ?? null) !== null ? number_format((float) $issue['cover_values'][$coverField], 2, '.', '') : '' }}"
+                                                @disabled($issue['approved'] || ! $canEditCover || ! $canUpdateValidationLines)
+                                                x-on:blur="
+                                                    const value = $el.value === '' ? '' : Number.parseFloat($el.value).toFixed(2);
+                                                    $el.value = value;
+                                                    $wire.updateIssueCoverValue({{ \Illuminate\Support\Js::from($issue['key']) }}, '{{ $coverField }}', value);
+                                                "
+                                                placeholder="{{ $coverLabel }}"
+                                                class="h-[34px] w-full rounded-lg border border-gray-300 bg-white px-1.5 py-0 pr-4 text-right text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:border-gray-700 dark:disabled:bg-gray-800/70 dark:disabled:text-gray-400"
+                                            />
+                                            <span class="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                                        </span>
+                                    </label>
+                                @endforeach
+                            </div>
+                        @endif
+
                         <div
                             @class([
                                 'flex w-52 shrink-0 items-center justify-end gap-2',
-                                'self-start pt-5' => $issue['type'] === 'price_mismatch',
+                                'self-start pt-5' => in_array($issue['type'], ['price_mismatch', 'cover_mismatch'], true),
                             ])
                         >
                             @if($canFlagValidationLines && ! $issue['flagged'])
                                 <x-filament::button
-                                    wire:click="flagIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
+                                    wire:click="openFlagIssueModal({{ \Illuminate\Support\Js::from($issue['key']) }})"
                                     color="gray"
                                     size="sm"
                                     icon="heroicon-o-flag"
@@ -176,6 +225,7 @@
                 <div class="text-center">Qty</div>
                 @if($canViewPrices)
                     <div class="text-right">Quote</div>
+                    <div>Cover</div>
                 @endif
                 <div>Status</div>
                 <div>Validation note</div>
@@ -195,6 +245,13 @@
                     <div class="text-right text-gray-600 dark:text-gray-300">
                         {{ $line['unit_price'] !== null ? '£'.number_format((float) $line['unit_price'], 2) : '—' }}
                     </div>
+                    <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                        @foreach(['cover_1' => 'C1', 'cover_2' => 'C2', 'cover_3' => 'C3'] as $coverField => $coverLabel)
+                            <span class="whitespace-nowrap">
+                                {{ $line[$coverField] !== null ? number_format((float) $line[$coverField], 2).'%' : '—' }}
+                            </span>
+                        @endforeach
+                    </div>
                     @endif
                     <div>
                         <span
@@ -211,7 +268,7 @@
                     <div class="flex justify-end">
                         @if(! $isApproved && $canFlagValidationLines)
                         <x-filament::button
-                            wire:click="flagValidatedLine({{ $line['id'] }})"
+                            wire:click="openFlagValidatedLineModal({{ $line['id'] }})"
                             color="gray"
                             size="sm"
                             icon="heroicon-o-flag"
@@ -266,6 +323,60 @@
                         wire:loading.attr="disabled"
                         wire:target="approveRevision"
                         color="success"
+                    >
+                        OK
+                    </x-filament::button>
+                </div>
+            </div>
+        </div>
+        @endif
+
+        @if($flagIssueModalOpen)
+        <div
+            x-data
+            x-on:keydown.escape.window="$wire.closeFlagIssueModal()"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Flag issue"
+            class="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        >
+            <div
+                class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                wire:click="closeFlagIssueModal"
+            ></div>
+
+            <div class="relative z-10 w-full max-w-md rounded-xl bg-white shadow-2xl ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
+                <div class="flex items-center gap-3 border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+                    <x-heroicon-o-flag class="h-5 w-5 text-amber-500" />
+                    <h2 class="text-base font-semibold text-gray-900 dark:text-white">Flag issue</h2>
+                </div>
+
+                <div class="space-y-3 px-6 py-5">
+                    <label class="block space-y-2">
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Reason</span>
+                        <input
+                            type="text"
+                            wire:model="flagIssueNote"
+                            maxlength="255"
+                            autofocus
+                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                        />
+                    </label>
+                </div>
+
+                <div class="flex items-center justify-end gap-3 rounded-b-xl border-t border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-900">
+                    <x-filament::button
+                        wire:click="closeFlagIssueModal"
+                        color="gray"
+                    >
+                        Cancel
+                    </x-filament::button>
+
+                    <x-filament::button
+                        wire:click="submitFlagIssue"
+                        wire:loading.attr="disabled"
+                        wire:target="submitFlagIssue"
+                        color="warning"
                     >
                         OK
                     </x-filament::button>

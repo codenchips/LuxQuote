@@ -45,7 +45,7 @@ class ListProjects extends ListRecords
                         if (is_array($sfData) && ! empty($sfData['Name'])) {
                             $data['name'] = ProjectForm::titleCaseProjectName($sfData['Name']);
                             $data['salesforce_id'] = $sfData['Id'] ?? $data['salesforce_id'] ?? null;
-                            $data['cover_percentage'] = $sfData['CEF_Cover__c'] ?? $data['cover_percentage'] ?? null;
+                            $data['cover_1'] = $sfData['CEF_Cover__c'] ?? $data['cover_1'] ?? null;
                             $data['value'] = $sfData['Amount'] ?? $data['value'] ?? null;
                         }
                     }

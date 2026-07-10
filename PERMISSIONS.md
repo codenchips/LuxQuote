@@ -104,6 +104,7 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Produce unpriced schedule | x | x | x | x | x |
 | View prices | x |  | x |  | x |
 | Edit prices | x |  | x |  | x |
+| Edit cover percentages | x |  | x |  | x |
 | Produce priced schedule | x |  | x |  | x |
 | Produce quote | x |  | x |  | x |
 | Manage document packs | x | x | x | x | x |
@@ -155,6 +156,8 @@ If a user has `pricing.view` but not `pricing.update`:
 - Server-side mutation methods must reject price updates.
 
 Any code that allows `pricing.update` should assume `pricing.view` is also required.
+
+Cover percentages are price-related. Users need `pricing.view` to see Cover values and `cover.update` to change them on project details, project line items, or validation screens.
 
 ## Salesforce Push Control
 

@@ -31,6 +31,9 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
     'status',
     'branch_name',
     'cover_percentage',
+    'cover_1',
+    'cover_2',
+    'cover_3',
     'value',
     'quote_notes',
     'internal_notes',
@@ -91,6 +94,9 @@ class Project extends Model
             'status' => ProjectStatus::class,
             'date' => 'date',
             'value' => 'decimal:2',
+            'cover_1' => 'decimal:2',
+            'cover_2' => 'decimal:2',
+            'cover_3' => 'decimal:2',
             'salesforce_project' => 'boolean',
         ];
     }

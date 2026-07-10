@@ -128,6 +128,9 @@ class SalesforcePdfUploadTracker
                         'qty' => $line->qty,
                         'type' => $line->type?->value,
                         'unit_price' => $showPrices ? $line->unit_price : null,
+                        'cover_1' => $showPrices ? $line->cover_1 : null,
+                        'cover_2' => $showPrices ? $line->cover_2 : null,
+                        'cover_3' => $showPrices ? $line->cover_3 : null,
                         'notes' => $line->notes,
                         'sort_order' => $line->sort_order,
                     ])

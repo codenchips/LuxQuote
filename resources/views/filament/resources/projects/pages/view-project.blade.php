@@ -3,8 +3,10 @@
     $canViewPrices = $this->canViewPrices();
     $canEditLines = $this->canEditLines();
     $canEditPrices = $this->canEditPrices();
+    $canEditCover = $this->canEditCover();
     $canCreateRevisions = $this->canCreateRevisions();
     $revisionLocked = $this->isViewingRevisionValidated;
+    $showLineCovers = $canViewPrices && $this->showLineCovers;
     $lineGridColumns = $canViewPrices
         ? '20px 110px 65px 1fr 60px 90px 95px 1fr 84px 60px'
         : '20px 110px 65px 1fr 60px 90px 1fr 60px';
@@ -155,7 +157,19 @@
                     @if($canViewPrices)
                         <div class="text-center">Unit Price</div>
                     @endif
-                    <div>Notes</div>
+                    <div class="flex items-center gap-2">
+                        <span>{{ $showLineCovers ? 'Cover' : 'Notes' }}</span>
+                        @if($canViewPrices)
+                            <button
+                                type="button"
+                                wire:click="$toggle('showLineCovers')"
+                                class="rounded border border-gray-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500 hover:border-primary-500 hover:text-primary-600 dark:border-gray-600 dark:text-gray-400 dark:hover:text-primary-400"
+                                title="{{ $showLineCovers ? 'Show notes' : 'Show cover fields' }}"
+                            >
+                                {{ $showLineCovers ? 'Notes' : 'Cover' }}
+                            </button>
+                        @endif
+                    </div>
                     @if($canViewPrices)
                         <div>Status</div>
                     @endif
@@ -252,14 +266,40 @@
                             />
                         @endif
 
-                        {{-- Notes --}}
-                        <input
-                            value="{{ $line->notes }}"
-                            @disabled(! $canEditLines || $this->isViewingRevisionValidated)
-                            x-on:blur="$wire.updateLineField({{ $line->id }}, 'notes', $el.value)"
-                            placeholder=""
-                            class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-500 dark:text-gray-400"
-                        />
+                        @if($showLineCovers)
+                            <div class="grid grid-cols-3 gap-1">
+                                @foreach(['cover_1' => 'C1', 'cover_2' => 'C2', 'cover_3' => 'C3'] as $coverField => $coverLabel)
+                                    <label class="relative block">
+                                        <span class="sr-only">{{ $coverLabel }}</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            max="999.99"
+                                            value="{{ $line->{$coverField} !== null ? number_format((float) $line->{$coverField}, 2, '.', '') : '' }}"
+                                            @disabled(! $canEditCover || $revisionLocked)
+                                            x-on:blur="
+                                                const value = $el.value === '' ? '' : Number.parseFloat($el.value).toFixed(2);
+                                                $el.value = value;
+                                                $wire.updateLineField({{ $line->id }}, '{{ $coverField }}', value);
+                                            "
+                                            placeholder="{{ $coverLabel }}"
+                                            class="w-full rounded border border-transparent bg-transparent px-1.5 py-1 pr-4 text-right text-xs hover:border-gray-300 focus:border-primary-500 focus:outline-none dark:hover:border-gray-600 text-gray-900 dark:text-white"
+                                        />
+                                        <span class="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">%</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                        @else
+                            {{-- Notes --}}
+                            <input
+                                value="{{ $line->notes }}"
+                                @disabled(! $canEditLines || $revisionLocked)
+                                x-on:blur="$wire.updateLineField({{ $line->id }}, 'notes', $el.value)"
+                                placeholder=""
+                                class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-500 dark:text-gray-400"
+                            />
+                        @endif
 
                         @if($canViewPrices)
                             {{-- Status --}}

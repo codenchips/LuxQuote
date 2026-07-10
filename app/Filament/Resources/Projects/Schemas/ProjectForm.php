@@ -150,7 +150,7 @@ class ProjectForm
                             $set('reference_number', $data['Project_Reference_Number__c'] ?? '');
                             $set('customer_name', $data['Miscellaneous_Customer_Name__c'] ?? $data['Account']['Name'] ?? $data['Name'] ?? '');
                             $set('owner_email', str_replace('.invalid', '', $data['Owner']['Email'] ?? ''));
-                            $set('cover_percentage', $data['CEF_Cover__c'] ?? '');
+                            $set('cover_1', $data['CEF_Cover__c'] ?? '');
                             $set('value', $data['Amount'] ?? null);
                         }),
                 ])
@@ -231,11 +231,38 @@ class ProjectForm
                     ->placeholder('e.g. Birmingham Central')
                     ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
 
-                TextInput::make('cover_percentage')
-                    ->label('Cover')
-                    ->placeholder('Cover')
+                TextInput::make('cover_1')
+                    ->label('Cover 1')
+                    ->placeholder('0.00')
+                    ->numeric()
+                    ->suffix('%')
+                    ->minValue(0)
+                    ->maxValue(999.99)
+                    ->extraInputAttributes(['step' => '0.01'])
                     ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
+                    ->readOnly(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record)),
+
+                TextInput::make('cover_2')
+                    ->label('Cover 2')
+                    ->placeholder('0.00')
+                    ->numeric()
+                    ->suffix('%')
+                    ->minValue(0)
+                    ->maxValue(999.99)
+                    ->extraInputAttributes(['step' => '0.01'])
+                    ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
+                    ->readOnly(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record)),
+
+                TextInput::make('cover_3')
+                    ->label('Cover 3')
+                    ->placeholder('0.00')
+                    ->numeric()
+                    ->suffix('%')
+                    ->minValue(0)
+                    ->maxValue(999.99)
+                    ->extraInputAttributes(['step' => '0.01'])
+                    ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
+                    ->readOnly(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record)),
 
                 TextInput::make('value')
                     ->label('Value')
@@ -331,6 +358,8 @@ class ProjectForm
      */
     public static function normaliseVisibilityData(array $data, ?Project $record = null): array
     {
+        $data = self::normaliseCoverData($data, $record);
+
         $visibility = $data['visibility'] ?? ProjectVisibility::Open->value;
         $teamId = $data['team_id'] ?? null;
 
@@ -360,6 +389,39 @@ class ProjectForm
 
         $data['visibility'] = ProjectVisibility::Team->value;
         $data['team_id'] = (int) $teamId;
+
+        return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private static function normaliseCoverData(array $data, ?Project $record): array
+    {
+        if ((auth()->user()?->can('pricing.view') ?? false) && (auth()->user()?->can('cover.update') ?? false)) {
+            foreach (['cover_1', 'cover_2', 'cover_3'] as $field) {
+                if (($data[$field] ?? null) === '' || ($data[$field] ?? null) === null) {
+                    $data[$field] = null;
+
+                    continue;
+                }
+
+                $data[$field] = number_format(min(999.99, max(0, (float) $data[$field])), 2, '.', '');
+            }
+
+            return $data;
+        }
+
+        foreach (['cover_1', 'cover_2', 'cover_3'] as $field) {
+            if ($record === null) {
+                unset($data[$field]);
+
+                continue;
+            }
+
+            $data[$field] = $record->{$field};
+        }
 
         return $data;
     }
@@ -479,6 +541,9 @@ class ProjectForm
             'owner_email',
             'branch_name',
             'cover_percentage',
+            'cover_1',
+            'cover_2',
+            'cover_3',
             'value',
             'quote_notes',
             'internal_notes',

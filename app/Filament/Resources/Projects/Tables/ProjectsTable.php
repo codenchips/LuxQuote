@@ -267,7 +267,8 @@ class ProjectsTable
                         $attributes = $record->only([
                             'user_id', 'name', 'customer_name', 'contractor', 'site_location',
                             'owner_email', 'created_by_email', 'department', 'date', 'revision',
-                            'visibility', 'team_id', 'status', 'branch_name', 'cover_percentage', 'value',
+                            'visibility', 'team_id', 'status', 'branch_name', 'cover_percentage',
+                            'cover_1', 'cover_2', 'cover_3', 'value',
                             'quote_notes', 'internal_notes', 'general_notes',
                         ]);
 
@@ -305,7 +306,8 @@ class ProjectsTable
                             foreach ($area->lines as $line) {
                                 $newArea->lines()->create($line->only([
                                     'product_id', 'code', 'ref', 'description', 'qty',
-                                    'type', 'unit_price', 'notes', 'status', 'sort_order',
+                                    'type', 'unit_price', 'cover_1', 'cover_2', 'cover_3',
+                                    'notes', 'status', 'sort_order',
                                 ]));
                             }
                         }
