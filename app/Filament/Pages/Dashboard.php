@@ -4,7 +4,6 @@ namespace App\Filament\Pages;
 
 use App\Enums\DocumentPackItemRole;
 use App\Enums\ProjectStatus;
-use App\Enums\ProjectVisibility;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Filament\Support\BadgeStyle;
 use App\Models\ActivityLog;
@@ -282,7 +281,7 @@ class Dashboard extends BaseDashboard
             return true;
         }
 
-        return $project->visibility === ProjectVisibility::Open || $project->user_id === $user->id;
+        return $project->isVisibleTo($user);
     }
 
     private function canShowProjectOnDashboard(Project $project, User $user): bool

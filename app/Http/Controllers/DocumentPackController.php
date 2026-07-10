@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Enums\DocumentPackItemRole;
 use App\Enums\DocumentPackItemSource;
-use App\Enums\ProjectVisibility;
 use App\Models\ActivityLog;
 use App\Models\DocumentPack;
 use App\Models\DocumentPackItem;
@@ -112,9 +111,6 @@ class DocumentPackController extends Controller
             return;
         }
 
-        abort_if(
-            $project->visibility !== ProjectVisibility::Open && $project->user_id !== $user->id,
-            403,
-        );
+        abort_if(! $project->isVisibleTo($user), 403);
     }
 }

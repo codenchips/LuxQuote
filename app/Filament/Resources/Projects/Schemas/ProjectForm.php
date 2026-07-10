@@ -13,7 +13,6 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Forms\Components\ToggleButtons;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Html;
@@ -204,15 +203,26 @@ class ProjectForm
                     ->default(now())
                     ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
 
-                ToggleButtons::make('visibility')
+                Hidden::make('visibility')
+                    ->default(ProjectVisibility::Open->value),
+
+                Hidden::make('team_id'),
+
+                Select::make('visibility_target')
                     ->label('Project Visibility')
-                    ->hint(fn (?ProjectVisibility $state): string => match ($state) {
-                        ProjectVisibility::Private => 'Only you can see this project.',
-                        default => 'All logged-in users can see this project.',
+                    ->options(fn (?Project $record): array => self::visibilityTargetOptions($record))
+                    ->default(fn (?Project $record): string => self::visibilityTargetForRecord($record))
+                    ->afterStateHydrated(function (Select $component, ?Project $record): void {
+                        $component->state(self::visibilityTargetForRecord($record));
                     })
-                    ->options(ProjectVisibility::class)
-                    ->default(ProjectVisibility::Open)
-                    ->inline()
+                    ->live()
+                    ->afterStateUpdated(function (?string $state, Set $set): void {
+                        self::applyVisibilityTarget($state, $set);
+                    })
+                    ->helperText(fn (Get $get): string => self::visibilityTargetHint((string) $get('visibility_target')))
+                    ->searchable()
+                    ->dehydrated(false)
+                    ->required()
                     ->disabled(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record))
                     ->columnSpanFull(),
 
@@ -313,6 +323,112 @@ class ProjectForm
         }
 
         return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public static function normaliseVisibilityData(array $data, ?Project $record = null): array
+    {
+        $visibility = $data['visibility'] ?? ProjectVisibility::Open->value;
+        $teamId = $data['team_id'] ?? null;
+
+        if ($visibility instanceof ProjectVisibility) {
+            $visibility = $visibility->value;
+        }
+
+        if ($visibility !== ProjectVisibility::Team->value) {
+            $data['visibility'] = $visibility;
+            $data['team_id'] = null;
+
+            return $data;
+        }
+
+        $allowedTeamIds = auth()->user()?->teams()->pluck('teams.id')->all() ?? [];
+
+        if ($record?->team_id !== null) {
+            $allowedTeamIds[] = $record->team_id;
+        }
+
+        if (blank($teamId) || ! in_array((int) $teamId, array_map('intval', $allowedTeamIds), true)) {
+            $data['visibility'] = ProjectVisibility::Private->value;
+            $data['team_id'] = null;
+
+            return $data;
+        }
+
+        $data['visibility'] = ProjectVisibility::Team->value;
+        $data['team_id'] = (int) $teamId;
+
+        return $data;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function visibilityTargetOptions(?Project $record): array
+    {
+        $options = [
+            ProjectVisibility::Open->value => 'Open',
+            ProjectVisibility::Private->value => 'Private',
+        ];
+
+        $teams = auth()->user()?->teams()
+            ->orderBy('name')
+            ->pluck('name', 'teams.id')
+            ->all() ?? [];
+
+        if ($record?->team_id !== null && ! array_key_exists($record->team_id, $teams)) {
+            $record->loadMissing('team');
+
+            if ($record->team !== null) {
+                $teams[$record->team_id] = $record->team->name;
+            }
+        }
+
+        foreach ($teams as $id => $name) {
+            $options["team:{$id}"] = "Team: {$name}";
+        }
+
+        return $options;
+    }
+
+    private static function visibilityTargetForRecord(?Project $record): string
+    {
+        if ($record?->visibility === ProjectVisibility::Team && $record->team_id !== null) {
+            return "team:{$record->team_id}";
+        }
+
+        return $record?->visibility?->value ?? ProjectVisibility::Open->value;
+    }
+
+    private static function applyVisibilityTarget(?string $state, Set $set): void
+    {
+        if (str_starts_with((string) $state, 'team:')) {
+            $set('visibility', ProjectVisibility::Team->value);
+            $set('team_id', (int) str_replace('team:', '', (string) $state));
+
+            return;
+        }
+
+        $set('visibility', $state === ProjectVisibility::Private->value
+            ? ProjectVisibility::Private->value
+            : ProjectVisibility::Open->value);
+        $set('team_id', null);
+    }
+
+    private static function visibilityTargetHint(string $target): string
+    {
+        if ($target === ProjectVisibility::Private->value) {
+            return 'Only you can see this project.';
+        }
+
+        if (str_starts_with($target, 'team:')) {
+            return 'Only you and members of the selected team can see this project.';
+        }
+
+        return 'All logged-in users can see this project.';
     }
 
     private static function selectSalesforceOpportunity(?string $salesforceId, Set $set): void

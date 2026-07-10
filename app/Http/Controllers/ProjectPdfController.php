@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ProjectRevisionStatus;
-use App\Enums\ProjectVisibility;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectRevision;
@@ -313,10 +312,7 @@ class ProjectPdfController extends Controller
             return;
         }
 
-        if (
-            $project->visibility !== ProjectVisibility::Open
-            && $project->user_id !== $user->id
-        ) {
+        if (! $project->isVisibleTo($user)) {
             abort(403);
         }
     }

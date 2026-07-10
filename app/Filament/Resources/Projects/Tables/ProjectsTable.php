@@ -10,6 +10,7 @@ use App\Models\PermissionGroup;
 use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectRevision;
+use App\Models\Team;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
@@ -105,14 +106,23 @@ class ProjectsTable
                 TextColumn::make('visibility')
                     ->label('Visibility')
                     ->badge()
-                    ->formatStateUsing(fn (ProjectVisibility $state): string => $state->label())
+                    ->formatStateUsing(fn (ProjectVisibility $state, Project $record): string => $state === ProjectVisibility::Team
+                        ? ($record->team?->name ?? $state->label())
+                        : $state->label())
                     ->icon(fn (ProjectVisibility $state): string => match ($state) {
                         ProjectVisibility::Open => 'heroicon-o-globe-alt',
                         ProjectVisibility::Private => 'heroicon-o-lock-closed',
+                        ProjectVisibility::Team => 'heroicon-o-user-group',
                     })
                     ->color(fn (ProjectVisibility $state): string => $state->color())
                     ->sortable()
-                    ->width('5.75rem'),
+                    ->limit(18)
+                    ->tooltip(fn (Project $record): ?string => $record->visibility === ProjectVisibility::Team
+                        ? $record->team?->name
+                        : null)
+                    ->width('7rem')
+                    ->extraCellAttributes(['style' => 'white-space: nowrap;'])
+                    ->extraHeaderAttributes(['style' => 'white-space: nowrap;']),
 
                 TextColumn::make('last_edited_at')
                     ->label('Last Edited')
@@ -177,9 +187,40 @@ class ProjectsTable
                         return $query->whereIn('status', $statuses);
                     }),
 
+                SelectFilter::make('team')
+                    ->label('Team')
+                    ->multiple()
+                    ->default(fn (): array => self::currentUserTeamIds())
+                    ->options(fn (): array => Team::query()
+                        ->orderBy('name')
+                        ->pluck('name', 'id')
+                        ->all()
+                    )
+                    ->query(function (Builder $query, array $data): Builder {
+                        $teamIds = collect($data['values'] ?? [])
+                            ->filter(fn (mixed $teamId): bool => filled($teamId))
+                            ->map(fn (mixed $teamId): int => (int) $teamId)
+                            ->all();
+
+                        if ($teamIds === []) {
+                            return $query;
+                        }
+
+                        return $query->where(function (Builder $query) use ($teamIds): void {
+                            $query->where('visibility', ProjectVisibility::Open)
+                                ->orWhere(function (Builder $query): void {
+                                    $query->where('visibility', ProjectVisibility::Private)
+                                        ->where('user_id', auth()->id());
+                                })
+                                ->orWhere(function (Builder $query) use ($teamIds): void {
+                                    $query->where('visibility', ProjectVisibility::Team)
+                                        ->whereIn('team_id', $teamIds);
+                                });
+                        });
+                    }),
+
                 SelectFilter::make('user_group')
                     ->label('User Group')
-                    ->default(fn (): ?int => auth()->user()?->permission_group_id)
                     ->options(fn (): array => PermissionGroup::query()
                         ->orderBy('name')
                         ->pluck('name', 'id')
@@ -214,7 +255,7 @@ class ProjectsTable
                     ->using(function (Project $record, array $data): void {
                         abort_if(ProjectForm::projectDetailsAreReadOnly($record), 403, 'Approved revisions are locked against editing.');
 
-                        $record->update($data);
+                        $record->update(ProjectForm::normaliseVisibilityData($data, $record));
                     }),
 
                 Action::make('duplicate')
@@ -226,7 +267,7 @@ class ProjectsTable
                         $attributes = $record->only([
                             'user_id', 'name', 'customer_name', 'contractor', 'site_location',
                             'owner_email', 'created_by_email', 'department', 'date', 'revision',
-                            'visibility', 'status', 'branch_name', 'cover_percentage', 'value',
+                            'visibility', 'team_id', 'status', 'branch_name', 'cover_percentage', 'value',
                             'quote_notes', 'internal_notes', 'general_notes',
                         ]);
 
@@ -301,7 +342,19 @@ class ProjectsTable
             ->defaultSort('created_at', 'desc')
             ->poll('60s')
             ->modifyQueryUsing(fn (Builder $query) => $query
-                ->with(['activeViewers', 'lastEditor', 'user.permissionGroup'])
+                ->with(['activeViewers', 'lastEditor', 'team', 'user.permissionGroup'])
             );
+    }
+
+    /**
+     * @return array<int>
+     */
+    private static function currentUserTeamIds(): array
+    {
+        return auth()->user()?->teams()
+            ->orderBy('name')
+            ->pluck('teams.id')
+            ->map(fn (int|string $teamId): int => (int) $teamId)
+            ->all() ?? [];
     }
 }

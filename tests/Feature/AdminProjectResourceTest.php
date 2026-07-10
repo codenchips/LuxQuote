@@ -20,6 +20,7 @@ use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
+use App\Models\Team;
 use App\Models\User;
 use App\Services\ProjectSchedulePdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -449,29 +450,112 @@ class AdminProjectResourceTest extends TestCase
             ->assertCanNotSeeTableRecords([$technicalProject]);
     }
 
-    public function test_project_list_defaults_to_logged_in_users_group_filter(): void
+    public function test_project_list_defaults_to_logged_in_users_team_filter(): void
     {
-        $salesUser = User::factory()->sales()->create();
+        $user = User::factory()->sales()->create();
         $technicalUser = User::factory()->technical()->create();
-        $this->actingAs($salesUser);
-
-        $salesProject = Project::factory()->for($salesUser)->create([
-            'name' => 'Sales Group Project',
+        $primaryTeam = Team::create([
+            'name' => 'Primary Team',
+            'slug' => 'primary-team',
         ]);
-        $technicalProject = Project::factory()->for($technicalUser)->create([
-            'name' => 'Technical Group Project',
+        $secondaryTeam = Team::create([
+            'name' => 'Secondary Team',
+            'slug' => 'secondary-team',
+        ]);
+        $otherTeam = Team::create([
+            'name' => 'Other Team',
+            'slug' => 'other-team',
+        ]);
+
+        $primaryTeam->users()->attach($user);
+        $secondaryTeam->users()->attach($user);
+
+        $this->actingAs($user);
+
+        $primaryTeamProject = Project::factory()->for($technicalUser)->create([
+            'name' => 'Primary Team Project',
+            'visibility' => ProjectVisibility::Team,
+            'team_id' => $primaryTeam->id,
+        ]);
+        $secondaryTeamProject = Project::factory()->for($technicalUser)->create([
+            'name' => 'Secondary Team Project',
+            'visibility' => ProjectVisibility::Team,
+            'team_id' => $secondaryTeam->id,
+        ]);
+        $otherTeamProject = Project::factory()->for($technicalUser)->create([
+            'name' => 'Other Team Project',
+            'visibility' => ProjectVisibility::Open,
+            'team_id' => $otherTeam->id,
+        ]);
+        $ownPrivateProject = Project::factory()->for($user)->create([
+            'name' => 'Own Private Project',
+            'visibility' => ProjectVisibility::Private,
+        ]);
+        $otherPrivateProject = Project::factory()->for($technicalUser)->create([
+            'name' => 'Other Private Project',
+            'visibility' => ProjectVisibility::Private,
         ]);
 
         Livewire::test(ListProjects::class)
-            ->assertCanSeeTableRecords([$salesProject])
-            ->assertCanNotSeeTableRecords([$technicalProject])
-            ->filterTable('user_group', $technicalUser->permission_group_id)
-            ->assertCanSeeTableRecords([$technicalProject])
-            ->assertCanNotSeeTableRecords([$salesProject]);
+            ->assertCanSeeTableRecords([$primaryTeamProject, $secondaryTeamProject, $otherTeamProject, $ownPrivateProject])
+            ->assertCanNotSeeTableRecords([$otherPrivateProject])
+            ->filterTable('team', [$otherTeam->id])
+            ->assertCanSeeTableRecords([$otherTeamProject, $ownPrivateProject])
+            ->assertCanNotSeeTableRecords([$primaryTeamProject, $secondaryTeamProject, $otherPrivateProject]);
 
         Livewire::test(ListProjects::class)
-            ->assertCanSeeTableRecords([$technicalProject])
-            ->assertCanNotSeeTableRecords([$salesProject]);
+            ->assertCanSeeTableRecords([$otherTeamProject, $ownPrivateProject])
+            ->assertCanNotSeeTableRecords([$primaryTeamProject, $secondaryTeamProject, $otherPrivateProject]);
+    }
+
+    public function test_team_visibility_projects_are_visible_to_team_members(): void
+    {
+        $owner = User::factory()->sales()->create();
+        $teamMember = User::factory()->sales()->create();
+        $outsider = User::factory()->sales()->create();
+        $team = Team::create([
+            'name' => 'Specification Team',
+            'slug' => 'specification-team',
+        ]);
+        $team->users()->attach($teamMember);
+
+        $teamProject = Project::factory()->for($owner)->create([
+            'name' => 'Team Visible Project',
+            'visibility' => ProjectVisibility::Team,
+            'team_id' => $team->id,
+        ]);
+
+        $this->actingAs($teamMember);
+
+        Livewire::test(ListProjects::class)
+            ->filterTable('user_group', null)
+            ->assertCanSeeTableRecords([$teamProject]);
+
+        $this->actingAs($outsider);
+
+        Livewire::test(ListProjects::class)
+            ->filterTable('user_group', null)
+            ->assertCanNotSeeTableRecords([$teamProject]);
+    }
+
+    public function test_project_visibility_form_can_store_a_team_target(): void
+    {
+        $user = User::factory()->create();
+        $team = Team::create([
+            'name' => 'Lighting Team',
+            'slug' => 'lighting-team',
+        ]);
+        $team->users()->attach($user);
+
+        $this->actingAs($user);
+
+        $data = ProjectForm::normaliseVisibilityData([
+            'visibility' => ProjectVisibility::Team->value,
+            'team_id' => $team->id,
+        ]);
+
+        $this->assertSame(ProjectVisibility::Team->value, $data['visibility']);
+        $this->assertSame($team->id, $data['team_id']);
     }
 
     public function test_project_status_tracks_draft_in_progress_and_approval_requested_states(): void

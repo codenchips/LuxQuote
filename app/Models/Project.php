@@ -27,6 +27,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
     'revision',
     'active_revision_id',
     'visibility',
+    'team_id',
     'status',
     'branch_name',
     'cover_percentage',
@@ -99,6 +100,11 @@ class Project extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class);
+    }
+
     public function lastEditor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'last_edited_by');
@@ -160,6 +166,23 @@ class Project extends Model
         };
 
         $this->updateQuietly(['status' => $status]);
+    }
+
+    public function isVisibleTo(User $user): bool
+    {
+        if ($user->isAdministrator()) {
+            return true;
+        }
+
+        if ($this->visibility === ProjectVisibility::Open || $this->user_id === $user->id) {
+            return true;
+        }
+
+        if ($this->visibility !== ProjectVisibility::Team || $this->team_id === null) {
+            return false;
+        }
+
+        return $user->teams()->whereKey($this->team_id)->exists();
     }
 
     public function markApprovalRequested(): void

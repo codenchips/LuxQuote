@@ -117,6 +117,7 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Create users | x |  |  |  |  |
 | Edit users | x |  |  |  |  |
 | Delete users | x |  |  |  |  |
+| Manage teams | x |  |  |  |  |
 | Manage groups / permissions | x |  |  |  |  |
 
 ## Document Pack Permissions
@@ -160,6 +161,18 @@ Any code that allows `pricing.update` should assume `pricing.view` is also requi
 The Salesforce page includes a global persistent push switch controlled by `salesforce.manage-push`.
 
 Users with `salesforce.view` can still search and import Salesforce projects. Users with `salesforce.manage-push` can pause or resume outbound Salesforce writes. The switch stores its global state in `app_settings` and must stay where it was set across logout/login and page refreshes. When pushes are paused, the app must not upload quote/schedule PDFs or update Opportunity Amount values, but read-only Salesforce pulls remain available.
+
+## Teams
+
+Teams are independent of permission groups. A user may belong to many teams, and a team may contain many users. Team membership controls visibility for projects marked as team-scoped; it does not grant or remove application capabilities.
+
+The Teams resource is controlled by `teams.manage`. Users with that permission can create, edit, and delete teams and manage team membership. Users can see their own team memberships on the profile page.
+
+Project visibility supports:
+
+- `Open` — all logged-in users who can view projects may see it.
+- `Private` — only the project owner and admins may see it.
+- `Team` — the project owner, admins, and members of the selected team may see it.
 
 ## Adding New Functionality
 

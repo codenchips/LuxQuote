@@ -35,6 +35,7 @@ enum PermissionKey: string
     case UsersCreate = 'users.create';
     case UsersUpdate = 'users.update';
     case UsersDelete = 'users.delete';
+    case TeamsManage = 'teams.manage';
     case PermissionsManage = 'permissions.manage';
 
     public function label(): string
@@ -71,6 +72,7 @@ enum PermissionKey: string
             self::UsersCreate => 'Create users',
             self::UsersUpdate => 'Edit users',
             self::UsersDelete => 'Delete users',
+            self::TeamsManage => 'Manage teams',
             self::PermissionsManage => 'Manage groups / permissions',
         };
     }
@@ -116,6 +118,7 @@ enum PermissionKey: string
             self::UsersCreate,
             self::UsersUpdate,
             self::UsersDelete,
+            self::TeamsManage,
             self::PermissionsManage => 'Users & Admin',
         };
     }
@@ -126,6 +129,7 @@ enum PermissionKey: string
             self::PricingView => 'Global switch for price columns and price-based outputs.',
             self::PricingUpdate => 'Allows changing project line prices. Requires price visibility.',
             self::SalesforceManagePush => 'Allows pausing and resuming outbound Salesforce writes while keeping Salesforce project import/search available.',
+            self::TeamsManage => 'Allows creating, editing, deleting, and assigning users to teams.',
             self::PermissionsManage => 'Allows managing permission groups and viewing the permission catalogue.',
             default => $this->label(),
         };

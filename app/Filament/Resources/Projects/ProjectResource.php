@@ -40,7 +40,11 @@ class ProjectResource extends Resource
 
         return $query->where(function (Builder $query) use ($user): void {
             $query->where('visibility', ProjectVisibility::Open)
-                ->orWhere('user_id', $user->id);
+                ->orWhere('user_id', $user->id)
+                ->orWhere(function (Builder $query) use ($user): void {
+                    $query->where('visibility', ProjectVisibility::Team)
+                        ->whereHas('team.users', fn (Builder $query): Builder => $query->whereKey($user->id));
+                });
         });
     }
 

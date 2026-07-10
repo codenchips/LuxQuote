@@ -15,6 +15,13 @@ class ListProjects extends ListRecords
 {
     protected static string $resource = ProjectResource::class;
 
+    public function mountInteractsWithTable(): void
+    {
+        parent::mountInteractsWithTable();
+
+        $this->applyDefaultTeamFilter();
+    }
+
     protected function getHeaderActions(): array
     {
         return [
@@ -43,7 +50,7 @@ class ListProjects extends ListRecords
                         }
                     }
 
-                    return $data;
+                    return ProjectForm::normaliseVisibilityData($data);
                 })
                 ->successRedirectUrl(fn (Project $record): string => ProjectResource::getUrl('view', ['record' => $record])),
         ];
@@ -70,5 +77,25 @@ class ListProjects extends ListRecords
             ->title($isDuplicateProject ? 'Project already exists' : 'Project could not be created')
             ->body((string) $messages->first())
             ->send();
+    }
+
+    private function applyDefaultTeamFilter(): void
+    {
+        $teamIds = auth()->user()?->teams()
+            ->orderBy('name')
+            ->pluck('teams.id')
+            ->map(fn (int|string $teamId): int => (int) $teamId)
+            ->all() ?? [];
+
+        if ($teamIds === []) {
+            return;
+        }
+
+        if (array_key_exists('team', $this->tableFilters ?? [])) {
+            return;
+        }
+
+        $this->tableFilters['team']['values'] = $teamIds;
+        session()->put($this->getTableFiltersSessionKey(), $this->tableFilters);
     }
 }
