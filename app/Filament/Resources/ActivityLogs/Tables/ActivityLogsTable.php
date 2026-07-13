@@ -7,6 +7,7 @@ use App\Models\ProjectRevision;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class ActivityLogsTable
 {
@@ -46,6 +47,7 @@ class ActivityLogsTable
                 TextColumn::make('action_performed')
                     ->label('Action Performed')
                     ->html()
+                    ->searchable(query: fn (Builder $query, string $search): Builder => self::searchActionPerformed($query, $search))
                     ->width('100%')
                     ->extraCellAttributes([
                         'class' => 'w-full min-w-[36rem] overflow-hidden whitespace-nowrap text-ellipsis',
@@ -272,34 +274,85 @@ class ActivityLogsTable
             ->filters([
                 SelectFilter::make('action_type')
                     ->label('Action')
-                    ->options([
-                        'area.created' => 'Area Created',
-                        'area.deleted' => 'Area Deleted',
-                        'project.created' => 'Project Created',
-                        'project.details_saved' => 'Project Details Saved',
-                        'project.updated' => 'Project Updated',
-                        'project.deleted' => 'Project Deleted',
-                        'revision.created' => 'Revision Created',
-                        'revision.approved' => 'Revision Approved',
-                        'revision.unapproved' => 'Revision Unapproved',
-                        'quote_approval.requested' => 'Quote Approval Requested',
-                        'validation.issue_approved' => 'Validation Issue Approved',
-                        'validation.issue_approval_undone' => 'Validation Issue Approval Undone',
-                        'validation.issue_matched' => 'Validation Issue Matched',
-                        'validation.issue_flagged' => 'Validation Issue Flagged',
-                        'schedule_pdf.generated' => 'Schedule PDF Generated',
-                        'quote_pdf.generated' => 'Quote PDF Generated',
-                        'salesforce_pdf.uploaded' => 'Salesforce PDF Uploaded',
-                        'user.login' => 'User Login',
-                        'product.added' => 'Product Added',
-                        'line.updated' => 'Line Updated',
-                        'line.qty_updated' => 'Quantity / Price Updated (legacy)',
-                    ]),
+                    ->options(self::actionFilterOptions()),
             ])
             ->defaultSort('created_at', 'desc')
             ->paginationPageOptions([15, 25, 50])
             ->recordActions([])
             ->toolbarActions([]);
+    }
+
+    private static function searchActionPerformed(Builder $query, string $search): Builder
+    {
+        $search = trim($search);
+
+        if ($search === '') {
+            return $query;
+        }
+
+        $normalisedSearch = str($search)->lower()->replace(['_', '.', '-'], ' ')->squish()->toString();
+        $payloadSearch = str_replace(' ', '_', $search);
+        $matchingActionTypes = collect(self::actionSearchLabels())
+            ->filter(fn (string $label): bool => str_contains(
+                str($label)->lower()->replace(['_', '.', '-'], ' ')->squish()->toString(),
+                $normalisedSearch,
+            ))
+            ->keys()
+            ->all();
+
+        return $query->where(function (Builder $query) use ($search, $payloadSearch, $matchingActionTypes): void {
+            $query
+                ->where('action_type', 'like', "%{$search}%")
+                ->orWhere('payload', 'like', "%{$search}%")
+                ->orWhere('payload', 'like', "%{$payloadSearch}%")
+                ->orWhere('project_name_snapshot', 'like', "%{$search}%")
+                ->orWhere('user_email_snapshot', 'like', "%{$search}%");
+
+            if ($matchingActionTypes !== []) {
+                $query->orWhereIn('action_type', $matchingActionTypes);
+            }
+        });
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function actionFilterOptions(): array
+    {
+        return [
+            'area.created' => 'Area Created',
+            'area.deleted' => 'Area Deleted',
+            'project.created' => 'Project Created',
+            'project.details_saved' => 'Project Details Saved',
+            'project.updated' => 'Project Updated',
+            'project.deleted' => 'Project Deleted',
+            'revision.created' => 'Revision Created',
+            'revision.approved' => 'Approved and locked',
+            'revision.unapproved' => 'Unapproved and unlocked',
+            'quote_approval.requested' => 'Quote Approval Requested',
+            'validation.issue_approved' => 'Validation Issue Approved',
+            'validation.issue_approval_undone' => 'Validation Issue Approval Undone',
+            'validation.issue_matched' => 'Validation Issue Matched',
+            'validation.issue_flagged' => 'Validation Issue Flagged',
+            'schedule_pdf.generated' => 'Schedule PDF Generated',
+            'quote_pdf.generated' => 'Quote PDF Generated',
+            'salesforce_pdf.uploaded' => 'Salesforce PDF Uploaded',
+            'user.login' => 'User Login',
+            'product.added' => 'Product Added',
+            'line.updated' => 'Line Updated',
+            'line.qty_updated' => 'Quantity / Price Updated (legacy)',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function actionSearchLabels(): array
+    {
+        return self::actionFilterOptions() + [
+            'revision.approved' => 'Approved and locked revision',
+            'revision.unapproved' => 'Unapproved and unlocked revision',
+        ];
     }
 
     private static function formatActionHtml(string $html, string $actionType): string

@@ -2654,6 +2654,74 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('HIDDEN-REF');
     }
 
+    public function test_activity_log_action_text_is_searchable_and_filterable(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Searchable Project',
+            'reference_number' => 'SEARCH-REF',
+            'revision' => 2,
+        ]);
+        $otherProject = Project::factory()->for($admin)->create([
+            'name' => 'Other Project',
+            'reference_number' => 'OTHER-REF',
+        ]);
+
+        ActivityLog::create([
+            'user_id' => $admin->id,
+            'project_id' => $project->id,
+            'action_type' => 'project.updated',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $project->name,
+            'payload' => [
+                'customer_name' => [
+                    'old' => 'Old Customer',
+                    'new' => 'Visible Search Text',
+                ],
+            ],
+        ]);
+
+        ActivityLog::create([
+            'user_id' => $admin->id,
+            'project_id' => $project->id,
+            'action_type' => 'revision.approved',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $project->name,
+            'payload' => ['revision_label' => 'R2'],
+        ]);
+
+        ActivityLog::create([
+            'user_id' => $admin->id,
+            'project_id' => $otherProject->id,
+            'action_type' => 'project.updated',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $otherProject->name,
+            'payload' => [
+                'customer_name' => [
+                    'old' => 'Other Old Customer',
+                    'new' => 'Hidden Search Text',
+                ],
+            ],
+        ]);
+
+        Livewire::test(ListActivityLogs::class)
+            ->searchTable('Visible Search Text')
+            ->assertSee('Visible Search Text')
+            ->assertDontSee('Hidden Search Text');
+
+        Livewire::test(ListActivityLogs::class)
+            ->searchTable('Approved and locked')
+            ->assertSee('Approved and locked')
+            ->assertDontSee('Visible Search Text');
+
+        Livewire::test(ProjectHistory::class, ['record' => $project->id])
+            ->filterTable('action_type', 'revision.approved')
+            ->assertSee('Approved and locked')
+            ->assertDontSee('Visible Search Text');
+    }
+
     /**
      * @param  callable(): void  $callback
      */
