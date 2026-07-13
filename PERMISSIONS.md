@@ -157,7 +157,11 @@ If a user has `pricing.view` but not `pricing.update`:
 
 Any code that allows `pricing.update` should assume `pricing.view` is also required.
 
-Cover percentages are price-related. Users need `pricing.view` to see Cover values and `cover.update` to change them on project details, project line items, or validation screens.
+Cover percentages are price-related. Users need `pricing.view` to see Cover values and `cover.update` to change them on project details, project line items, or unresolved validation issue rows. Validated/approved rows show Cover values as read-only text.
+
+Blank line-level Cover values inherit the project Cover defaults. Validation should only flag Cover when an explicit line-level value differs from the project default.
+
+Validation flagging is controlled by `validation.flag-lines`. Flagging an issue or validated line must collect a short note, store it against the affected line(s), and keep the same server-side editable-revision guard as other validation mutations.
 
 ## Salesforce Push Control
 

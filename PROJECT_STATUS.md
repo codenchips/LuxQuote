@@ -4,13 +4,19 @@ _Last updated: 10 July 2026_
 
 ---
 
-## Cover UI Groundwork — 10 July 2026
+## Cover Pricing and Validation Workflow — 10 July 2026
 
-- **Cover data model added**: Projects and project lines now carry `cover_1`, `cover_2`, and `cover_3` decimal percentage fields. Existing project `cover_percentage` values are backfilled into `cover_1` during migration for continuity.
+- **Cover data model added**: Projects and project lines now carry `cover_1`, `cover_2`, and `cover_3` percentage fields. Existing project `cover_percentage` values are backfilled into `cover_1` during migration for continuity.
+- **Cover values standardised**: Cover values are treated as two-decimal percentages throughout the UI and database. Typing `4` is normalised to `4.00`; blank line-level Cover values inherit the project defaults and are not flagged as overrides.
 - **Cover permission added**: `cover.update` controls whether a user can change Cover percentages. Cover remains price-related, so users must also have `pricing.view` to see Cover fields.
 - **Project details Cover fields**: The project details slide-over exposes Cover 1, Cover 2, and Cover 3. Salesforce `CEF_Cover__c` now populates Cover 1.
 - **Line-level Cover fields**: New project lines inherit the three project Cover values. The project line table can toggle its Notes column into compact Cover inputs without adding another wide table column.
-- **Validation Cover editing**: The validation page shows Cover fields for validated lines and allows permitted users to amend them before approval.
+- **Validation Cover issues**: Lines with explicit Cover values that differ from the project defaults are listed as validation Issues. Cover issue rows show Quote plus compact Cover inputs so permitted users can fix price and Cover in context. Validated/approved rows show Cover as read-only text.
+- **Issue grouping**: Multiple issues for the same line/SKU are grouped together in validation, ordered as duplicate SKU, price mismatch, Cover mismatch, then manual flag.
+- **Issue-specific approval**: Approving one issue on a line no longer approves every issue for that same line. Each explicit approval is tracked by its own approval note; a line moves to Validated only when all unresolved issues are resolved or individually approved.
+- **Flag notes**: Flagging an issue or validated line now opens a short-note dialog. The note is stored on the affected line(s), displayed for manual flagged issues, and shown as a `Flag note` on flagged validation issues.
+- **Salesforce details save cleanup**: Saving project details no longer attempts a Salesforce PDF upload. Salesforce Amount is only pushed when the project value actually changes and outbound pushes are enabled.
+- **Production deploy safety**: The production deploy script now runs pending migrations automatically, records migration status, keeps a full pre-deploy backup, keeps one rolling protected-table data restore file, and has a conservative catastrophic data-loss guard that can restore protected data into the migrated schema before failing loudly.
 
 ## Beta Test Prep and Project Workflow — 9 July 2026
 
@@ -134,7 +140,7 @@ project_lines
   id, project_area_id (FK), product_id (nullable FK → products, nullOnDelete)
   code, ref, description, qty, type (standard|modified|custom)
   unit_price, cover_1, cover_2, cover_3, notes, status
-  validation_flagged (bool), validation_note (nullable string)
+  validation_flagged (bool), validation_note (nullable string: flag reason and/or explicit approval notes)
   approved (bool), approved_at (nullable timestamp), approved_by (nullable FK → users)
   sort_order
 
@@ -278,7 +284,7 @@ The outer `<div>` has `wire:poll.30s="heartbeat"`. On each poll (and on `mount`)
 | `removeArea(areaId)` | Deletes area (cascades to lines); checks area belongs to current revision |
 | `addProduct(areaId)` | Alias → calls `openProductPicker(areaId)` |
 | `addBlankLine(areaId)` | Creates an empty Custom line |
-| `updateLineField(lineId, field, value)` | Inline edit — allowlist: `code, ref, description, qty, unit_price, notes` |
+| `updateLineField(lineId, field, value)` | Inline edit — allowlist: `code, ref, description, qty, unit_price, notes, cover_1, cover_2, cover_3` |
 | `duplicateLine(lineId)` | Replicates line, inserts after original, re-sequences sort_order |
 | `deleteLine(lineId)` | Hard deletes line |
 | `sortLine(lineId, newPos, targetAreaId)` | Moves line, handles cross-area in a transaction |
@@ -314,7 +320,8 @@ The admin-only validation page is available at `/projects/{id}/validation`. It v
 1. A SKU should be unique within an Area. Repeating the same SKU in different Areas is allowed.
 2. Every non-empty line SKU should exist in the local `products` catalogue.
 3. Product-backed quote prices should match the product catalogue RRP unless explicitly approved.
-4. Manually flagged lines should be reviewed before approval.
+4. Explicit line-level Cover values should match the project Cover defaults unless explicitly approved.
+5. Manually flagged lines should be reviewed before approval.
 
 SKU comparison for validation is case-insensitive and trims surrounding whitespace.
 
@@ -324,7 +331,7 @@ SKU comparison for validation is case-insensitive and trims surrounding whitespa
 - New lines default to `approved = false`; cloned lines keep their existing approval state, approver, timestamps, and validation notes.
 - **Run Validation** re-evaluates all current rules.
 - Lines with no warnings are automatically approved with `approved_by = null`.
-- Warning lines remain unresolved until an admin explicitly approves the warning or resolves it by merging duplicates.
+- Warning lines remain unresolved until an admin explicitly approves that specific warning or resolves it by merging duplicates, matching price, or correcting Cover values.
 - A revision becomes validated only when no unresolved warnings remain and every line is approved.
 - Validating records `validated_at` and `validated_by`, then marks the revision **Ready to approve**.
 - Validated-but-unapproved revisions remain editable and can be revalidated after edits.
@@ -335,13 +342,13 @@ SKU comparison for validation is case-insensitive and trims surrounding whitespa
 
 | Action | Behavior |
 |---|---|
-| **Approve** | Explicitly approves all lines affected by that warning and records `approved_at` / `approved_by` |
+| **Approve** | Explicitly approves all lines affected by that warning and records `approved_at` / `approved_by`; approval is issue-specific when one line has multiple warnings |
 | **Undo** | Removes explicit approval for the warning; the revision becomes unvalidated if the warning is unresolved |
 | **Merge** | Available for duplicate-SKU warnings; keeps the first line, sums quantities, deletes the other duplicates, and approves the remaining line |
 | **Match** | Available for price mismatch warnings; updates the quote price to the catalogue RRP and re-runs validation |
-| **Flag Issue** | Moves a validated line back into the Issues list for admin review |
+| **Flag Issue** | Opens a note dialog, stores the flag note, and moves the issue/validated line into the Issues list for admin review |
 
-Explicit warning approval is distinguished from automatic clean-line approval by `approved_by`: explicit approval has a user ID; automatic approval uses null.
+Explicit warning approval is distinguished from automatic clean-line approval by `approved_by`: explicit approval has a user ID; automatic approval uses null. For lines with multiple warnings, explicit approvals are tracked as issue-specific `Approved: ...` notes in `project_lines.validation_note`.
 
 ### Validated lines table
 
@@ -349,9 +356,9 @@ The validation page now separates unresolved warnings from resolved lines:
 
 - **Issues** shows only unresolved validation warnings.
 - **Validated** shows clean lines and explicitly approved warning lines.
-- Each validated row includes status (`Resolved` or `Approved`), quote price, note text, and **Flag Issue** when the revision is not approved.
+- Each validated row includes status (`Resolved` or `Approved`), quote price, read-only Cover values, note text, and **Flag Issue** when the revision is not approved.
 - Resolution and approval notes are stored on `project_lines.validation_note`.
-- Manual flags are stored with `project_lines.validation_flagged = true` and generate a validation issue until resolved.
+- Manual flags are stored with `project_lines.validation_flagged = true`; the entered flag reason is stored in `project_lines.validation_note` and shown on the validation issue until resolved.
 
 ### Key files
 
@@ -862,7 +869,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 ## Features completed — 10 June 2026
 
 - **Validation page split into Issues and Validated tables**: unresolved warnings now stay in **Issues**, while clean lines and approved/resolved warning lines move to **Validated** with status, quote price, and notes.
-- **Manual validation flagging**: admins can use **Flag Issue** on a validated line to send it back for review. Manual flags are stored on `project_lines.validation_flagged`, and review/resolution text is stored in `project_lines.validation_note`.
+- **Manual validation flagging**: admins can use **Flag Issue** on a validated line to send it back for review. Flagging now requires a short reason. Manual flags are stored on `project_lines.validation_flagged`, and the flag reason plus review/resolution text is stored in `project_lines.validation_note`.
 - **Approval is now the lock boundary**: running validation marks a revision **Ready to approve**, but does not lock editing. The **Approve Revision** action opens a confirmation modal and then locks the revision by setting `project_revisions.status = approved`. Approved revisions reject validation and schedule edits server-side.
 - **Schedule line statuses**: project lines now show status badges in the schedule (`Pending`, `Priced`, `Unpriced`, or `Approved`). Product-picker additions start as `Pending`; paste pricing sets matching/new rows to `Priced`; rows missing from a paste pass become `Unpriced`.
 - **Paste pricing across all areas**: the paste modal gained **Paste across all areas**. When enabled, matching SKUs across the whole revision are repriced without changing existing quantities, missing pasted SKUs are created in the target Area, and existing SKUs absent from the paste are marked `Unpriced`. Turning it off limits updates to the selected Area and updates quantities from the pasted data.
