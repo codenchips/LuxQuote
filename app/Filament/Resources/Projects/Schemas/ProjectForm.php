@@ -13,8 +13,10 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\ToggleButtons;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -150,7 +152,12 @@ class ProjectForm
                             $set('reference_number', $data['Project_Reference_Number__c'] ?? '');
                             $set('customer_name', $data['Miscellaneous_Customer_Name__c'] ?? $data['Account']['Name'] ?? $data['Name'] ?? '');
                             $set('owner_email', str_replace('.invalid', '', $data['Owner']['Email'] ?? ''));
-                            $set('cover_1', $data['CEF_Cover__c'] ?? '');
+                            $hasSalesforceCover = filled($data['CEF_Cover__c'] ?? null);
+                            $set('has_cover', $hasSalesforceCover);
+                            $set('cover_direction', 'deducted');
+                            $set('cover_1', $hasSalesforceCover ? $data['CEF_Cover__c'] : null);
+                            $set('cover_2', $hasSalesforceCover ? '5.00' : null);
+                            $set('cover_3', $hasSalesforceCover ? '5.00' : null);
                             $set('value', $data['Amount'] ?? null);
                         }),
                 ])
@@ -226,44 +233,6 @@ class ProjectForm
                     ->disabled(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record))
                     ->columnSpanFull(),
 
-                TextInput::make('branch_name')
-                    ->label('Branch Name')
-                    ->placeholder('e.g. Birmingham Central')
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
-
-                TextInput::make('cover_1')
-                    ->label('Cover 1')
-                    ->placeholder('0.00')
-                    ->numeric()
-                    ->suffix('%')
-                    ->minValue(0)
-                    ->maxValue(999.99)
-                    ->extraInputAttributes(['step' => '0.01'])
-                    ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
-                    ->readOnly(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record)),
-
-                TextInput::make('cover_2')
-                    ->label('Cover 2')
-                    ->placeholder('0.00')
-                    ->numeric()
-                    ->suffix('%')
-                    ->minValue(0)
-                    ->maxValue(999.99)
-                    ->extraInputAttributes(['step' => '0.01'])
-                    ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
-                    ->readOnly(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record)),
-
-                TextInput::make('cover_3')
-                    ->label('Cover 3')
-                    ->placeholder('0.00')
-                    ->numeric()
-                    ->suffix('%')
-                    ->minValue(0)
-                    ->maxValue(999.99)
-                    ->extraInputAttributes(['step' => '0.01'])
-                    ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
-                    ->readOnly(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record)),
-
                 TextInput::make('value')
                     ->label('Value')
                     ->placeholder('0.00')
@@ -271,6 +240,59 @@ class ProjectForm
                     ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
                     ->prefix('£')
                     ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
+
+                TextInput::make('branch_name')
+                    ->label('Branch Name')
+                    ->placeholder('e.g. Birmingham Central')
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
+
+                Toggle::make('has_cover')
+                    ->label('Has Cover')
+                    ->default(false)
+                    ->live()
+                    ->afterStateUpdated(function (bool $state, Get $get, Set $set): void {
+                        if (! $state) {
+                            $set('cover_direction', 'deducted');
+                            $set('cover_1', null);
+                            $set('cover_2', null);
+                            $set('cover_3', null);
+
+                            return;
+                        }
+
+                        foreach (['cover_1', 'cover_2', 'cover_3'] as $field) {
+                            if (blank($get($field))) {
+                                $set($field, '5.00');
+                            }
+                        }
+
+                        if (blank($get('cover_direction'))) {
+                            $set('cover_direction', 'deducted');
+                        }
+                    })
+                    ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
+                    ->disabled(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record)),
+
+                ToggleButtons::make('cover_direction')
+                    ->label('Cover Direction')
+                    ->hiddenLabel()
+                    ->options([
+                        'deducted' => 'Cover is Deducted',
+                        'added' => 'Cover is Added',
+                    ])
+                    ->default('deducted')
+                    ->grouped()
+                    ->visible(fn (Get $get): bool => (auth()->user()?->can('pricing.view') ?? false) && (bool) $get('has_cover'))
+                    ->disabled(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record)),
+
+                Grid::make(3)
+                    ->schema([
+                        self::coverInput('cover_1', 'Cover 1'),
+                        self::coverInput('cover_2', 'Cover 2'),
+                        self::coverInput('cover_3', 'Cover 3'),
+                    ])
+                    ->visible(fn (Get $get): bool => (auth()->user()?->can('pricing.view') ?? false) && (bool) $get('has_cover'))
+                    ->columnSpanFull(),
 
                 Textarea::make('quote_notes')
                     ->label('Quote Notes (shown on quote document)')
@@ -400,14 +422,51 @@ class ProjectForm
     private static function normaliseCoverData(array $data, ?Project $record): array
     {
         if ((auth()->user()?->can('pricing.view') ?? false) && (auth()->user()?->can('cover.update') ?? false)) {
+            if (! array_key_exists('has_cover', $data)) {
+                if ($record === null) {
+                    unset($data['has_cover']);
+                    unset($data['cover_direction']);
+
+                    foreach (['cover_1', 'cover_2', 'cover_3'] as $field) {
+                        unset($data[$field]);
+                    }
+
+                    return $data;
+                }
+
+                $data['has_cover'] = $record->has_cover;
+                $data['cover_direction'] = $record->cover_direction;
+
+                foreach (['cover_1', 'cover_2', 'cover_3'] as $field) {
+                    $data[$field] = $record->{$field};
+                }
+
+                return $data;
+            }
+
+            $data['has_cover'] = (bool) ($data['has_cover'] ?? false);
+
+            if (! $data['has_cover']) {
+                $data['cover_direction'] = 'deducted';
+                $data['cover_1'] = null;
+                $data['cover_2'] = null;
+                $data['cover_3'] = null;
+
+                return $data;
+            }
+
             foreach (['cover_1', 'cover_2', 'cover_3'] as $field) {
                 if (($data[$field] ?? null) === '' || ($data[$field] ?? null) === null) {
-                    $data[$field] = null;
+                    $data[$field] = '5.00';
 
                     continue;
                 }
 
                 $data[$field] = number_format(min(999.99, max(0, (float) $data[$field])), 2, '.', '');
+            }
+
+            if (! in_array($data['cover_direction'] ?? null, ['added', 'deducted'], true)) {
+                $data['cover_direction'] = 'deducted';
             }
 
             return $data;
@@ -423,7 +482,28 @@ class ProjectForm
             $data[$field] = $record->{$field};
         }
 
+        if ($record === null) {
+            unset($data['has_cover']);
+            unset($data['cover_direction']);
+        } else {
+            $data['has_cover'] = $record->has_cover;
+            $data['cover_direction'] = $record->cover_direction;
+        }
+
         return $data;
+    }
+
+    private static function coverInput(string $field, string $label): TextInput
+    {
+        return TextInput::make($field)
+            ->label($label)
+            ->placeholder('5.00')
+            ->numeric()
+            ->suffix('%')
+            ->minValue(0)
+            ->maxValue(999.99)
+            ->extraInputAttributes(['step' => '0.01'])
+            ->readOnly(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record));
     }
 
     /**

@@ -7,15 +7,18 @@
         $isApproved = $this->activeRevisionApproved;
         $isReadyToApprove = $this->activeRevisionReadyForApproval;
         $canViewPrices = $this->canViewPrices();
+        $projectHasCover = $this->projectHasCover();
         $canEditPrices = $this->canEditPrices();
         $canEditCover = $this->canEditCover();
         $canUpdateValidationLines = $this->canUpdateValidationLines();
         $canFlagValidationLines = $this->canFlagValidationLines();
         $canMergeValidationLines = $this->canMergeValidationLines();
         $canApproveValidationLines = $this->canApproveValidationLines();
-        $validatedLineGridColumns = $canViewPrices
+        $validatedLineGridColumns = $canViewPrices && $projectHasCover
             ? '130px 1fr 70px 95px 210px 95px 1.4fr 110px'
-            : '130px 1fr 70px 95px 1.4fr 110px';
+            : ($canViewPrices
+                ? '130px 1fr 70px 95px 95px 1.4fr 110px'
+                : '130px 1fr 70px 95px 1.4fr 110px');
     @endphp
 
     <div class="space-y-6">
@@ -55,14 +58,18 @@
                     class="border-b border-gray-200 px-5 py-4 last:border-b-0 dark:border-gray-700"
                 >
                     <div class="flex items-center gap-4">
-                        <x-heroicon-o-exclamation-circle class="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+                        <x-dynamic-component
+                            :component="$this->validationIssueIcon($issue)"
+                            class="mt-0.5 h-5 w-5 shrink-0 {{ $this->validationIssueIconClasses($issue) }}"
+                        />
 
                         <div class="min-w-0 flex-1">
                             <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                                <span class="font-mono font-medium text-gray-950 dark:text-white">{{ $issue['code'] }}</span>
-                                <span class="text-gray-500 dark:text-gray-400">{{ $issue['description'] }}</span>
-                                <span class="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                                    Warning
+                                @if(filled($issue['description']))
+                                    <span class="text-gray-500 dark:text-gray-400">{{ $issue['description'] }}</span>
+                                @endif
+                                <span class="rounded-md px-2 py-0.5 text-xs font-medium {{ $this->validationIssueBadgeClasses($issue) }}">
+                                    {{ $this->validationIssueLabel($issue) }}
                                 </span>
                                 @if($issue['flagged'])
                                     <span class="rounded-md bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900/40 dark:text-red-300">
@@ -71,7 +78,7 @@
                                 @endif
                             </div>
 
-                            <p class="mt-2 text-sm text-gray-950 dark:text-white">{{ $issue['message'] }}</p>
+                            <p class="mt-2 text-sm font-medium text-gray-950 dark:text-white">{!! $this->validationIssueMessage($issue) !!}</p>
                             @if(filled($issue['flag_note'] ?? null) && $issue['type'] !== 'manual_flag')
                                 <p class="mt-1 text-xs text-red-600 dark:text-red-300">
                                     Flag note: {{ $issue['flag_note'] }}
@@ -81,84 +88,85 @@
                         </div>
 
                         @if($issue['type'] === 'price_mismatch' && $canViewPrices)
-                            <div class="flex w-[32rem] shrink-0 items-end gap-2 self-center text-sm">
-                                <div class="grid w-52 shrink-0 grid-cols-2 gap-2">
-                                    <label class="space-y-1">
-                                        <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">RRP</span>
-                                        <input
-                                            type="text"
-                                            value="{{ $issue['rrp'] !== null ? number_format((float) $issue['rrp'], 2) : '-' }}"
-                                            disabled
-                                            class="h-[34px] w-full rounded-lg border border-gray-200 bg-gray-50 px-2 py-0 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
-                                        />
-                                    </label>
+                            <div class="flex w-[38rem] shrink-0 items-end justify-end gap-2 self-center text-sm">
+                                <label class="w-24 space-y-1">
+                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">RRP</span>
+                                    <span class="block h-[34px] px-1 py-2 text-left text-sm text-gray-500 dark:text-gray-400">
+                                        {{ $issue['rrp'] !== null ? '£'.number_format((float) $issue['rrp'], 2) : '—' }}
+                                    </span>
+                                </label>
 
-                                    <label class="space-y-1">
-                                        <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Quote</span>
+                                <label class="w-24 space-y-1">
+                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Quote</span>
+                                    @if(! $issue['approved'] && $canEditPrices && $canUpdateValidationLines)
                                         <input
                                             type="number"
                                             step="0.01"
                                             min="0"
                                             value="{{ $issue['quote_price'] }}"
-                                            @disabled($issue['approved'] || ! $canEditPrices || ! $canUpdateValidationLines)
                                             x-on:blur="$wire.updateIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }}, $el.value)"
-                                            class="h-[34px] w-full rounded-lg border border-gray-300 bg-white px-2 py-0 text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:border-gray-700 dark:disabled:bg-gray-800/70 dark:disabled:text-gray-400"
+                                            class="h-[34px] w-full rounded-lg border border-gray-300 bg-white px-2 py-0 text-left text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                                         />
-                                    </label>
-                                </div>
-
-                                @if($canEditPrices && $canUpdateValidationLines && ($issue['rrp'] ?? null) !== null)
-                                    <x-filament::button
-                                        wire:click="matchIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }})"
-                                        color="gray"
-                                        size="sm"
-                                        icon="heroicon-o-arrows-right-left"
-                                        class="h-[34px] min-h-[34px] whitespace-nowrap"
-                                    >
-                                        Match and Approve
-                                    </x-filament::button>
-                                @endif
+                                    @else
+                                        <span class="block h-[34px] px-1 py-2 text-left text-sm font-semibold text-gray-700 dark:text-gray-200">
+                                            {{ ($issue['quote_price'] ?? null) !== null ? '£'.number_format((float) $issue['quote_price'], 2) : '—' }}
+                                        </span>
+                                    @endif
+                                </label>
                             </div>
                         @endif
 
                         @if($issue['type'] === 'cover_mismatch' && $canViewPrices)
-                            <div class="grid w-[25rem] shrink-0 grid-cols-[5.5rem_repeat(3,4.75rem)] gap-2 self-center text-sm">
-                                <label class="space-y-1">
-                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Quote</span>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value="{{ $issue['quote_price'] }}"
-                                        @disabled($issue['approved'] || ! $canEditPrices || ! $canUpdateValidationLines)
-                                        x-on:blur="$wire.updateIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }}, $el.value)"
-                                        class="h-[34px] w-full rounded-lg border border-gray-300 bg-white px-2 py-0 text-right text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:border-gray-700 dark:disabled:bg-gray-800/70 dark:disabled:text-gray-400"
-                                    />
+                            <div class="flex w-[38rem] shrink-0 items-end justify-end gap-2 self-center text-sm">
+                                <label class="w-24 space-y-1">
+                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">RRP</span>
+                                    <span class="block h-[34px] px-1 py-2 text-left text-sm text-gray-500 dark:text-gray-400">
+                                        {{ ($issue['rrp'] ?? null) !== null ? '£'.number_format((float) $issue['rrp'], 2) : '—' }}
+                                    </span>
+                                </label>
+
+                                <label class="w-24 space-y-1">
+                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Unit</span>
+                                    <span class="block h-[34px] px-1 py-2 text-left text-sm text-gray-500 dark:text-gray-400">
+                                        {{ ($issue['unit_price'] ?? null) !== null ? '£'.number_format((float) $issue['unit_price'], 2) : '—' }}
+                                    </span>
+                                </label>
+
+                                <label class="w-24 space-y-1">
+                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Net</span>
+                                    <span class="block h-[34px] px-1 py-2 text-left text-sm font-semibold text-gray-700 dark:text-gray-200">
+                                        {{ ($issue['net_price'] ?? null) !== null ? '£'.number_format((float) $issue['net_price'], 2) : '—' }}
+                                    </span>
                                 </label>
 
                                 @foreach(['cover_1' => 'C1', 'cover_2' => 'C2', 'cover_3' => 'C3'] as $coverField => $coverLabel)
-                                    <label class="space-y-1">
+                                    <label class="w-20 space-y-1">
                                         <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                             {{ $coverLabel }} {{ ($issue['cover_defaults'][$coverField] ?? null) !== null ? number_format((float) $issue['cover_defaults'][$coverField], 2) : '—' }}%
                                         </span>
-                                        <span class="relative block">
-                                            <input
-                                                type="number"
-                                                step="0.01"
-                                                min="0"
-                                                max="999.99"
-                                                value="{{ ($issue['cover_values'][$coverField] ?? null) !== null ? number_format((float) $issue['cover_values'][$coverField], 2, '.', '') : '' }}"
-                                                @disabled($issue['approved'] || ! $canEditCover || ! $canUpdateValidationLines)
-                                                x-on:blur="
-                                                    const value = $el.value === '' ? '' : Number.parseFloat($el.value).toFixed(2);
-                                                    $el.value = value;
-                                                    $wire.updateIssueCoverValue({{ \Illuminate\Support\Js::from($issue['key']) }}, '{{ $coverField }}', value);
-                                                "
-                                                placeholder="{{ $coverLabel }}"
-                                                class="h-[34px] w-full rounded-lg border border-gray-300 bg-white px-1.5 py-0 pr-4 text-right text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:disabled:border-gray-700 dark:disabled:bg-gray-800/70 dark:disabled:text-gray-400"
-                                            />
-                                            <span class="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
-                                        </span>
+                                        @if(! $issue['approved'] && $canEditCover && $canUpdateValidationLines)
+                                            <span class="relative block">
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0"
+                                                    max="999.99"
+                                                    value="{{ ($issue['cover_values'][$coverField] ?? null) !== null ? number_format((float) $issue['cover_values'][$coverField], 2, '.', '') : '' }}"
+                                                    x-on:blur="
+                                                        const value = $el.value === '' ? '' : Number.parseFloat($el.value).toFixed(2);
+                                                        $el.value = value;
+                                                        $wire.updateIssueCoverValue({{ \Illuminate\Support\Js::from($issue['key']) }}, '{{ $coverField }}', value);
+                                                    "
+                                                    placeholder="{{ $coverLabel }}"
+                                                    class="h-[34px] w-full rounded-lg border border-gray-300 bg-white px-1.5 py-0 pr-4 text-right text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                                                />
+                                                <span class="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                                            </span>
+                                        @else
+                                            <span class="block h-[34px] px-1 py-2 text-right text-sm font-semibold text-gray-700 dark:text-gray-200">
+                                                {{ ($issue['cover_values'][$coverField] ?? null) !== null ? number_format((float) $issue['cover_values'][$coverField], 2).'%' : '—' }}
+                                            </span>
+                                        @endif
                                     </label>
                                 @endforeach
                             </div>
@@ -166,19 +174,19 @@
 
                         <div
                             @class([
-                                'flex w-52 shrink-0 items-center justify-end gap-2',
+                                'flex w-80 shrink-0 items-center justify-end gap-2',
                                 'self-start pt-5' => in_array($issue['type'], ['price_mismatch', 'cover_mismatch'], true),
                             ])
                         >
-                            @if($canFlagValidationLines && ! $issue['flagged'])
+                            @if($issue['type'] === 'price_mismatch' && $canViewPrices && $canEditPrices && $canUpdateValidationLines && ($issue['rrp'] ?? null) !== null)
                                 <x-filament::button
-                                    wire:click="openFlagIssueModal({{ \Illuminate\Support\Js::from($issue['key']) }})"
+                                    wire:click="matchIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }})"
                                     color="gray"
                                     size="sm"
-                                    icon="heroicon-o-flag"
+                                    icon="heroicon-o-arrows-right-left"
                                     class="h-[34px] min-h-[34px] whitespace-nowrap"
                                 >
-                                    Flag Issue
+                                    Match
                                 </x-filament::button>
                             @endif
 
@@ -204,6 +212,20 @@
                                     Approve
                                 </x-filament::button>
                             @endif
+
+                            @if($canFlagValidationLines)
+                                <x-filament::button
+                                    wire:click="openFlagIssueModal({{ \Illuminate\Support\Js::from($issue['key']) }})"
+                                    color="gray"
+                                    size="sm"
+                                    icon="heroicon-o-flag"
+                                    :disabled="$issue['flagged']"
+                                    class="h-[34px] min-h-[34px] w-[34px] min-w-[34px] justify-center border-red-500/70 px-0 text-red-500 hover:border-red-400 hover:bg-red-500/10 hover:text-red-400 disabled:cursor-not-allowed disabled:border-red-500/30 disabled:text-red-500/40 disabled:hover:bg-transparent dark:border-red-500/60 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300 dark:disabled:border-red-500/25 dark:disabled:text-red-400/35"
+                                    aria-label="Flag issue"
+                                >
+                                    <span class="sr-only">Flag issue</span>
+                                </x-filament::button>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -225,6 +247,8 @@
                 <div class="text-center">Qty</div>
                 @if($canViewPrices)
                     <div class="text-right">Quote</div>
+                @endif
+                @if($canViewPrices && $projectHasCover)
                     <div>Cover</div>
                 @endif
                 <div>Status</div>
@@ -238,13 +262,18 @@
                     class="grid items-center gap-3 border-b border-gray-100 px-5 py-3 text-sm last:border-b-0 dark:border-gray-800"
                     style="grid-template-columns: {{ $validatedLineGridColumns }}"
                 >
-                    <div class="truncate font-mono font-medium text-gray-950 dark:text-white">{{ $line['code'] ?: '—' }}</div>
+                    <div class="flex min-w-0 items-center gap-2">
+                        <x-heroicon-o-check-circle class="h-4 w-4 shrink-0 text-green-500" />
+                        <span class="truncate font-mono font-medium text-gray-950 dark:text-white">{{ $line['code'] ?: '—' }}</span>
+                    </div>
                     <div class="truncate text-gray-600 dark:text-gray-300">{{ $line['description'] }}</div>
                     <div class="text-center text-gray-600 dark:text-gray-300">{{ $line['qty'] }}</div>
                     @if($canViewPrices)
                     <div class="text-right text-gray-600 dark:text-gray-300">
                         {{ $line['unit_price'] !== null ? '£'.number_format((float) $line['unit_price'], 2) : '—' }}
                     </div>
+                    @endif
+                    @if($canViewPrices && $projectHasCover)
                     <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
                         @foreach(['cover_1' => 'C1', 'cover_2' => 'C2', 'cover_3' => 'C3'] as $coverField => $coverLabel)
                             <span class="whitespace-nowrap">
@@ -272,9 +301,10 @@
                             color="gray"
                             size="sm"
                             icon="heroicon-o-flag"
-                            class="h-[34px] min-h-[34px]"
+                            class="h-[34px] min-h-[34px] w-[34px] min-w-[34px] justify-center border-red-500/70 px-0 text-red-500 hover:border-red-400 hover:bg-red-500/10 hover:text-red-400 dark:border-red-500/60 dark:text-red-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+                            aria-label="Flag issue"
                         >
-                            Flag Issue
+                            <span class="sr-only">Flag issue</span>
                         </x-filament::button>
                         @endif
                     </div>

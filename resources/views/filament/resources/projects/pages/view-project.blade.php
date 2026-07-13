@@ -6,10 +6,13 @@
     $canEditCover = $this->canEditCover();
     $canCreateRevisions = $this->canCreateRevisions();
     $revisionLocked = $this->isViewingRevisionValidated;
-    $showLineCovers = $canViewPrices && $this->showLineCovers;
-    $lineGridColumns = $canViewPrices
-        ? '20px 110px 65px 1fr 60px 90px 95px 1fr 84px 60px'
-        : '20px 110px 65px 1fr 60px 90px 1fr 60px';
+    $projectHasCover = $this->projectHasCover();
+    $showLineCovers = $canViewPrices && $projectHasCover && $this->showLineCovers;
+    $lineGridColumns = match (true) {
+        $canViewPrices && $projectHasCover => '20px 110px 65px 1fr 60px 76px 95px 95px 1fr 70px 48px',
+        $canViewPrices => '20px 110px 65px 1fr 60px 76px 95px 1fr 70px 48px',
+        default => '20px 110px 65px 1fr 60px 76px 1fr 48px',
+    };
 @endphp
 <div x-data="{ confirmDeleteLineId: null }" wire:poll.30s="heartbeat">
 
@@ -58,7 +61,8 @@
     @php $revisionTotals = $this->getRevisionTotals(); @endphp
     <div @class([
         'mb-4 grid gap-3',
-        'sm:grid-cols-3' => $canViewPrices,
+        'sm:grid-cols-4' => $canViewPrices && $projectHasCover,
+        'sm:grid-cols-3' => $canViewPrices && ! $projectHasCover,
         'sm:grid-cols-2' => ! $canViewPrices,
     ])>
         <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
@@ -74,6 +78,12 @@
                 <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Project Total</div>
                 <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">&pound;{{ number_format($revisionTotals['value'], 2) }}</div>
             </div>
+            @if($projectHasCover)
+                <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
+                    <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Net Project Total</div>
+                    <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">&pound;{{ number_format($revisionTotals['net_value'], 2) }}</div>
+                </div>
+            @endif
         @endif
     </div>
 
@@ -145,7 +155,7 @@
             <div x-show="open" x-collapse>
                 {{-- Column headers --}}
                 <div
-                    class="grid items-center gap-2 px-4 py-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/40"
+                    class="grid items-center gap-1.5 px-4 py-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/40"
                     style="grid-template-columns: {{ $lineGridColumns }}"
                 >
                     <div></div>
@@ -156,10 +166,13 @@
                     <div>Type</div>
                     @if($canViewPrices)
                         <div class="text-center">Unit Price</div>
+                        @if($projectHasCover)
+                            <div class="text-center">Net Price</div>
+                        @endif
                     @endif
                     <div class="flex items-center gap-2">
                         <span>{{ $showLineCovers ? 'Cover' : 'Notes' }}</span>
-                        @if($canViewPrices)
+                        @if($canViewPrices && $projectHasCover)
                             <button
                                 type="button"
                                 wire:click="$toggle('showLineCovers')"
@@ -186,7 +199,7 @@
                     <div
                         wire:key="line-{{ $line->id }}"
                         x-sort:item="{{ $line->id }}"
-                        class="grid items-center gap-2 px-4 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 {{ match($line->type) {
+                        class="grid items-center gap-1.5 px-4 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 {{ match($line->type) {
                             \App\Enums\ProjectLineType::Modified => 'bg-amber-50/60 dark:bg-amber-900/10',
                             \App\Enums\ProjectLineType::Custom   => 'bg-blue-50/60 dark:bg-blue-900/10',
                             default => '',
@@ -245,7 +258,7 @@
                         />
 
                         {{-- Type badge --}}
-                        <span class="inline-flex items-center justify-center rounded px-2 py-0.5 text-xs font-semibold {{ match($line->type) {
+                        <span class="inline-flex items-center justify-center rounded px-1.5 py-0.5 text-xs font-semibold {{ match($line->type) {
                             \App\Enums\ProjectLineType::Modified => 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400',
                             \App\Enums\ProjectLineType::Custom   => 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-400',
                             default                              => 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
@@ -264,6 +277,11 @@
                                 placeholder="0.00"
                                 class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
                             />
+                            @if($projectHasCover)
+                                <div class="px-2 py-1 text-right text-sm font-medium text-gray-900 dark:text-white">
+                                    {{ $line->netUnitPriceForProject($this->record) !== null ? '£'.number_format((float) $line->netUnitPriceForProject($this->record), 2) : '—' }}
+                                </div>
+                            @endif
                         @endif
 
                         @if($showLineCovers)

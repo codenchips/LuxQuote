@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\ProjectRevisionStatus;
 use App\Models\Product;
+use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
@@ -25,12 +26,16 @@ class ProjectRevisionValidator
      *     flagged: bool,
      *     rrp?: string|null,
      *     quote_price?: string|null,
+     *     unit_price?: string|null,
+     *     net_price?: float|null,
      *     cover_values?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null},
      *     cover_defaults?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null}
      * }>
      */
     public function issues(ProjectRevision $revision): array
     {
+        $revision->loadMissing('project');
+
         $areas = ProjectArea::query()
             ->where('project_revision_id', $revision->id)
             ->with(['lines' => fn ($query) => $query->orderBy('sort_order')])
@@ -42,13 +47,16 @@ class ProjectRevisionValidator
             ->get(['sku', 'price'])
             ->mapWithKeys(fn (Product $product): array => [$this->normaliseSku($product->sku) => $product]);
 
+        $projectHasCover = $this->projectHasCover($revision);
         $projectCoverDefaults = $this->projectCoverDefaults($revision);
 
         return $areas
-            ->flatMap(function (ProjectArea $area) use ($productsBySku, $projectCoverDefaults): array {
+            ->flatMap(function (ProjectArea $area) use ($revision, $productsBySku, $projectHasCover, $projectCoverDefaults): array {
                 $duplicateIssues = $this->duplicateSkuIssues($area);
                 $priceReviewIssues = $this->priceReviewIssues($area, $productsBySku);
-                $coverIssues = $this->coverMismatchIssues($area, $projectCoverDefaults);
+                $coverIssues = $projectHasCover && $revision->project !== null
+                    ? $this->coverMismatchIssues($area, $projectCoverDefaults, $productsBySku, $revision->project)
+                    : [];
                 $coveredLineIds = collect([...$duplicateIssues, ...$priceReviewIssues, ...$coverIssues])
                     ->flatMap(fn (array $issue): array => $issue['line_ids'])
                     ->unique();
@@ -301,27 +309,40 @@ class ProjectRevisionValidator
      *     approved: bool,
      *     flagged: bool,
      *     quote_price?: string|null,
+     *     rrp?: string|null,
+     *     unit_price?: string|null,
+     *     net_price?: float|null,
      *     cover_values: array{cover_1: string|null, cover_2: string|null, cover_3: string|null},
      *     cover_defaults: array{cover_1: string|null, cover_2: string|null, cover_3: string|null}
      * }>
      */
-    private function coverMismatchIssues(ProjectArea $area, array $projectCoverDefaults): array
+    private function coverMismatchIssues(ProjectArea $area, array $projectCoverDefaults, Collection $productsBySku, Project $project): array
     {
         return $area->lines
             ->filter(fn (ProjectLine $line): bool => $this->lineCoverValues($line, $projectCoverDefaults) !== $projectCoverDefaults)
-            ->map(fn (ProjectLine $line): array => $this->issue(
-                key: "cover-mismatch-{$line->id}",
-                type: 'cover_mismatch',
-                area: $area,
-                line: $line,
-                lines: collect([$line]),
-                message: "Cover values for SKU \"{$line->code}\" differ from the project defaults.",
-                extra: [
-                    'cover_values' => $this->lineCoverValues($line, $projectCoverDefaults),
-                    'cover_defaults' => $projectCoverDefaults,
-                    'quote_price' => $line->unit_price,
-                ],
-            ))
+            ->map(function (ProjectLine $line) use ($area, $productsBySku, $projectCoverDefaults, $project): array {
+                /** @var Product|null $product */
+                $product = filled($line->code)
+                    ? $productsBySku->get($this->normaliseSku($line->code))
+                    : null;
+
+                return $this->issue(
+                    key: "cover-mismatch-{$line->id}",
+                    type: 'cover_mismatch',
+                    area: $area,
+                    line: $line,
+                    lines: collect([$line]),
+                    message: "Cover values for SKU \"{$line->code}\" differ from the project defaults.",
+                    extra: [
+                        'rrp' => $product?->price,
+                        'unit_price' => $line->unit_price,
+                        'net_price' => $line->netUnitPriceForProject($project),
+                        'quote_price' => $line->unit_price,
+                        'cover_values' => $this->lineCoverValues($line, $projectCoverDefaults),
+                        'cover_defaults' => $projectCoverDefaults,
+                    ],
+                );
+            })
             ->values()
             ->all();
     }
@@ -415,6 +436,13 @@ class ProjectRevisionValidator
             'cover_2' => $this->normaliseCover($revision->project?->cover_2),
             'cover_3' => $this->normaliseCover($revision->project?->cover_3),
         ];
+    }
+
+    private function projectHasCover(ProjectRevision $revision): bool
+    {
+        $revision->loadMissing('project');
+
+        return (bool) $revision->project?->has_cover;
     }
 
     /**

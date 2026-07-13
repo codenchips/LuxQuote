@@ -108,6 +108,8 @@ class ValidationProject extends ViewRecord
      *     flagged: bool,
      *     rrp?: string|null,
      *     quote_price?: string|null,
+     *     unit_price?: string|null,
+     *     net_price?: float|null,
      *     flag_note?: string|null,
      *     cover_values?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null},
      *     cover_defaults?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null}
@@ -170,6 +172,70 @@ class ValidationProject extends ViewRecord
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array{type: string, message: string}  $issue
+     */
+    public function validationIssueLabel(array $issue): string
+    {
+        return match ($issue['type']) {
+            'cover_mismatch' => 'Cover value',
+            'duplicate_sku' => 'Duplicate SKU',
+            'manual_flag' => 'Issue reported',
+            'price_mismatch' => 'Quote price',
+            default => $this->issueLabelFromMessage($issue['message']),
+        };
+    }
+
+    /**
+     * @param  array{type: string}  $issue
+     */
+    public function validationIssueBadgeClasses(array $issue): string
+    {
+        return match ($issue['type']) {
+            'cover_mismatch' => 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300',
+            'duplicate_sku' => 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
+            'manual_flag' => 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
+            'price_mismatch' => 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+            default => 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
+        };
+    }
+
+    /**
+     * @param  array{type: string}  $issue
+     */
+    public function validationIssueIcon(array $issue): string
+    {
+        return match ($issue['type']) {
+            'cover_mismatch' => 'heroicon-o-adjustments-horizontal',
+            'duplicate_sku' => 'heroicon-o-square-2-stack',
+            'manual_flag' => 'heroicon-o-flag',
+            'price_mismatch' => 'heroicon-o-currency-pound',
+            default => 'heroicon-o-exclamation-circle',
+        };
+    }
+
+    /**
+     * @param  array{type: string}  $issue
+     */
+    public function validationIssueIconClasses(array $issue): string
+    {
+        return match ($issue['type']) {
+            'cover_mismatch' => 'text-sky-500',
+            'duplicate_sku' => 'text-purple-500',
+            'manual_flag' => 'text-red-500',
+            'price_mismatch' => 'text-amber-500',
+            default => 'text-gray-500',
+        };
+    }
+
+    /**
+     * @param  array{type: string, code: string, message: string}  $issue
+     */
+    public function validationIssueMessage(array $issue): HtmlString
+    {
+        return $this->highlightValidationMessage($issue['message']);
     }
 
     #[Computed]
@@ -324,7 +390,7 @@ class ValidationProject extends ViewRecord
 
         $issue = $this->findIssue($issueKey);
 
-        abort_unless(in_array($issue['type'], ['price_mismatch', 'cover_mismatch'], true) && ! $issue['approved'], 404);
+        abort_unless($issue['type'] === 'price_mismatch' && ! $issue['approved'], 404);
 
         $quotePrice = $value === '' || $value === null
             ? null
@@ -371,6 +437,7 @@ class ValidationProject extends ViewRecord
     public function updateIssueCoverValue(string $issueKey, string $field, mixed $value): void
     {
         abort_unless($this->canUpdateValidationLines() && $this->canEditCover(), 403);
+        abort_unless($this->projectHasCover(), 404);
 
         $this->ensureActiveRevisionIsEditable();
 
@@ -489,6 +556,43 @@ class ValidationProject extends ViewRecord
     public static function canAccess(array $parameters = []): bool
     {
         return auth()->user()?->can('validation.view') ?? false;
+    }
+
+    private function issueLabelFromMessage(string $message): string
+    {
+        if (preg_match('/^([[:alpha:]]+)\s+([[:alpha:]]+)/u', $message, $matches) !== 1) {
+            return 'Issue';
+        }
+
+        return "{$matches[1]} {$matches[2]}";
+    }
+
+    private function highlightValidationMessage(string $message): HtmlString
+    {
+        $message = trim((string) $message);
+
+        if ($message === '') {
+            return new HtmlString('');
+        }
+
+        $parts = preg_split('/("[^"]+")/u', $message, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+
+        if ($parts === false) {
+            return new HtmlString(e($message));
+        }
+
+        $message = collect($parts)
+            ->map(fn (string $part): string => str_starts_with($part, '"') && str_ends_with($part, '"')
+                ? $this->highlightValidationData($part)
+                : e($part))
+            ->implode('');
+
+        return new HtmlString($message);
+    }
+
+    private function highlightValidationData(string $value): string
+    {
+        return '<span class="font-semibold text-sky-300">'.e($value).'</span>';
     }
 
     private function activeRevision(): ProjectRevision
@@ -811,6 +915,11 @@ class ValidationProject extends ViewRecord
     public function canEditCover(): bool
     {
         return $this->canViewPrices() && (auth()->user()?->can('cover.update') ?? false);
+    }
+
+    public function projectHasCover(): bool
+    {
+        return (bool) $this->record->has_cover;
     }
 
     public function canRunValidation(): bool

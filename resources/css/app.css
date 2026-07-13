@@ -16,12 +16,12 @@
 
 @media (min-width: 1024px) {
     .fi-body.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar:not(.fi-sidebar-open) {
-        width: 4.5rem;
+        width: 4.125rem;
     }
 
     .fi-body.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar:not(.fi-sidebar-open) .fi-sidebar-nav {
         padding-left: 0.75rem;
-        padding-right: 0.75rem;
+        padding-right: 0.375rem;
     }
 
     .fi-body.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar:not(.fi-sidebar-open) .fi-sidebar-nav-groups {

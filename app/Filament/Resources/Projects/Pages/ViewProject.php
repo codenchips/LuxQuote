@@ -237,7 +237,7 @@ class ViewProject extends ViewRecord
             ->get();
     }
 
-    /** @return array{qty: int, items: int, value: float} */
+    /** @return array{qty: int, items: int, value: float, net_value: float} */
     public function getRevisionTotals(): array
     {
         $areas = $this->getAreas();
@@ -246,6 +246,11 @@ class ViewProject extends ViewRecord
             'qty' => $areas->sum(fn (ProjectArea $area): int => $area->line_total_qty),
             'items' => $areas->sum(fn (ProjectArea $area): int => $area->lines->count()),
             'value' => $areas->sum(fn (ProjectArea $area): float => $area->line_total),
+            'net_value' => $areas->sum(
+                fn (ProjectArea $area): float => $area->lines->sum(
+                    fn (ProjectLine $line): float => $line->netLineTotalForProject($this->record)
+                )
+            ),
         ];
     }
 
@@ -1365,6 +1370,10 @@ class ViewProject extends ViewRecord
     {
         abort_unless($this->canEditCover(), 403);
 
+        if (! $this->projectHasCover()) {
+            return false;
+        }
+
         if ($this->viewingRevisionIsApproved()) {
             unset($this->isViewingRevisionValidated);
             $this->notifyApprovedRevisionLocked();
@@ -1402,6 +1411,11 @@ class ViewProject extends ViewRecord
         return $this->canViewPrices() && (auth()->user()?->can('cover.update') ?? false);
     }
 
+    public function projectHasCover(): bool
+    {
+        return (bool) $this->record->has_cover;
+    }
+
     public function canEditLines(): bool
     {
         return auth()->user()?->can('projects.update-lines') ?? false;
@@ -1427,6 +1441,14 @@ class ViewProject extends ViewRecord
      */
     private function defaultLineCoverAttributes(): array
     {
+        if (! $this->projectHasCover()) {
+            return [
+                'cover_1' => null,
+                'cover_2' => null,
+                'cover_3' => null,
+            ];
+        }
+
         return [
             'cover_1' => $this->record->cover_1,
             'cover_2' => $this->record->cover_2,
