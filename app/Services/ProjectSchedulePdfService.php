@@ -6,8 +6,10 @@ use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectRevision;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\LaravelPdf\PdfBuilder;
+use Throwable;
 
 class ProjectSchedulePdfService
 {
@@ -41,9 +43,7 @@ class ProjectSchedulePdfService
             ->get();
 
         $generatedAt = now()->format('M d Y H:i');
-        $salesEngineer = filled($project->salesforce_id)
-            ? app(SalesforceService::class)->getOpportunityOwner((string) $project->salesforce_id)
-            : null;
+        $salesEngineer = $this->salesEngineerForProject($project);
 
         $footerHtml = '<style>
             * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -73,7 +73,7 @@ class ProjectSchedulePdfService
             'documentType' => $documentType,
             'documentTitle' => $documentType === 'quote' ? 'Lighting Quote' : 'Lighting Schedule',
             'showPrices' => $documentType === 'quote',
-            'salesEngineerName' => $salesEngineer['name'] ?? $project->user?->name,
+            'salesEngineerName' => $salesEngineer['name'] ?? null,
             'salesEngineerEmail' => $salesEngineer['email'] ?? $project->owner_email,
         ])
             ->withBrowsershot(function ($browsershot) use ($footerHtml): void {
@@ -111,6 +111,30 @@ class ProjectSchedulePdfService
     private function filenamePart(string $part): string
     {
         return trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-');
+    }
+
+    /**
+     * @return array{id: string, name: string|null, email: string|null}|null
+     */
+    private function salesEngineerForProject(Project $project): ?array
+    {
+        if (blank($project->salesforce_id)) {
+            return null;
+        }
+
+        try {
+            return app(SalesforceService::class)->getOpportunityOwner((string) $project->salesforce_id);
+        } catch (Throwable $exception) {
+            Log::warning('Salesforce owner lookup failed during PDF generation', [
+                'project_id' => $project->id,
+                'project_reference' => $project->reference_number,
+                'salesforce_id' => $project->salesforce_id,
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     private function configureBrowsershot(object $browsershot): void

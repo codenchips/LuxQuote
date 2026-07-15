@@ -463,6 +463,41 @@ class SalesforceServiceTest extends TestCase
         Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), "SELECT Id, Name, Email FROM User WHERE Id = '005000000000001AAA'"));
     }
 
+    public function test_opportunity_owner_lookup_returns_null_when_user_fields_are_not_permitted(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains((string) ($request->data()['q'] ?? ''), 'FROM Opportunity')) {
+                return Http::response([
+                    'records' => [[
+                        'Id' => '006000000000001AAA',
+                        'OwnerId' => '005000000000001AAA',
+                    ]],
+                ]);
+            }
+
+            if (str_contains((string) ($request->data()['q'] ?? ''), 'FROM User')) {
+                return Http::response([[
+                    'message' => 'Insufficient permissions: secure query included inaccessible field',
+                    'errorCode' => 'INSUFFICIENT_ACCESS',
+                ]], 403);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $owner = app(SalesforceService::class)->getOpportunityOwner('006000000000001AAA');
+
+        $this->assertNull($owner);
+    }
+
     public function test_authentication_token_is_cached_between_requests(): void
     {
         Http::fake(function (Request $request) {

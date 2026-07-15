@@ -23,11 +23,13 @@ use App\Models\ProjectRevision;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\ProjectSchedulePdfService;
+use App\Services\SalesforceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Livewire\Livewire;
 use Symfony\Component\Process\Process;
 use Tests\TestCase;
@@ -1313,6 +1315,35 @@ class AdminProjectResourceTest extends TestCase
         $this->assertLessThan(strpos($html, '<th class="col-qty">Qty</th>'), strpos($html, '<th class="col-ref">Ref</th>'));
         $this->assertLessThan(strpos($html, '<th class="col-code">Code</th>'), strpos($html, '<th class="col-qty">Qty</th>'));
         $this->assertLessThan(strpos($html, '<th class="col-desc">Description</th>'), strpos($html, '<th class="col-code">Code</th>'));
+    }
+
+    public function test_pdf_builder_continues_when_salesforce_owner_lookup_throws_an_exception(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'PDF-SF-FALLBACK',
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+            'owner_email' => 'stored.owner@example.com',
+        ]);
+
+        $this->instance(SalesforceService::class, new class extends SalesforceService
+        {
+            public function getOpportunityOwner(string $opportunityId): ?array
+            {
+                throw new \RuntimeException('Salesforce connection failed');
+            }
+        });
+        Log::spy();
+
+        $builder = app(ProjectSchedulePdfService::class)->builder($project, $project->activeRevision);
+
+        $this->assertNotNull($builder);
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->withArgs(fn (string $message, array $context): bool => $message === 'Salesforce owner lookup failed during PDF generation'
+                && $context['project_id'] === $project->id
+                && $context['salesforce_id'] === '006000000000001AAA');
     }
 
     public function test_output_pdf_urls_include_datasheet_flag_when_enabled(): void
