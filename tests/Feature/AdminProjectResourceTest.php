@@ -1244,6 +1244,80 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('42.50');
     }
 
+    public function test_cover_net_is_always_lower_than_total_for_added_and_deducted_storage(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Cover Totals Project',
+            'has_cover' => true,
+            'cover_direction' => 'deducted',
+            'cover_1' => '10.00',
+            'cover_2' => null,
+            'cover_3' => null,
+        ]);
+        $line = $project->activeRevision->areas()->first()->lines()->create([
+            'code' => 'COVER-TOTAL',
+            'description' => 'Cover total line',
+            'qty' => 2,
+            'type' => ProjectLineType::Standard->value,
+            'unit_price' => 100.00,
+            'sort_order' => 0,
+        ]);
+
+        $this->assertSame('100.00', $line->fresh()->unit_price);
+        $this->assertSame(90.00, $line->netUnitPriceForProject($project));
+        $this->assertSame(100.00, $line->totalUnitPriceForProject($project));
+
+        $deductedComponent = Livewire::test(ViewProject::class, ['record' => $project->id]);
+        $this->assertSame(180.00, $deductedComponent->instance()->getRevisionTotals()['net_value']);
+        $this->assertSame(200.00, $deductedComponent->instance()->getRevisionTotals()['value']);
+
+        $project->update(['cover_direction' => 'added']);
+        $line->update(['unit_price' => 90.00]);
+        $project->refresh();
+        $line->refresh();
+
+        $this->assertSame('90.00', $line->unit_price);
+        $this->assertSame(90.00, $line->netUnitPriceForProject($project));
+        $this->assertSame(100.00, $line->totalUnitPriceForProject($project));
+
+        $addedComponent = Livewire::test(ViewProject::class, ['record' => $project->id]);
+        $this->assertSame(180.00, $addedComponent->instance()->getRevisionTotals()['net_value']);
+        $this->assertSame(200.00, $addedComponent->instance()->getRevisionTotals()['value']);
+
+        $html = $addedComponent->html();
+        $this->assertLessThan(strpos($html, 'Project Total'), strpos($html, 'Net Project Total'));
+        $this->assertLessThan(strpos($html, 'Total Price'), strpos($html, 'Net Price'));
+
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        $csvResponse = $this->get(route('projects.export.csv', [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+        ]));
+        $csvResponse->assertOk();
+        $csv = $csvResponse->streamedContent();
+        $this->assertStringContainsString('COVER-TOTAL', $csv);
+        $this->assertStringContainsString('100.00,200.00', $csv);
+
+        $quoteHtml = view('pdfs.schedule', [
+            'project' => $project->fresh(['user']),
+            'revision' => $project->activeRevision,
+            'areas' => $project->activeRevision->areas()->with('lines')->get(),
+            'showPrices' => true,
+            'documentTitle' => 'Lighting Quote',
+        ])->render();
+        $this->assertStringContainsString('&pound;100.00', $quoteHtml);
+        $this->assertStringContainsString('&pound;200.00', $quoteHtml);
+    }
+
     public function test_admin_can_view_output_options_for_the_active_revision(): void
     {
         $admin = User::factory()->admin()->create();

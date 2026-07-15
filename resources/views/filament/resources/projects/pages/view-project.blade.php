@@ -74,16 +74,16 @@
             <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{{ number_format($revisionTotals['items']) }}</div>
         </div>
         @if($canViewPrices)
-            <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
-                <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Project Total</div>
-                <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">&pound;{{ number_format($revisionTotals['value'], 2) }}</div>
-            </div>
             @if($projectHasCover)
                 <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
                     <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Net Project Total</div>
                     <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">&pound;{{ number_format($revisionTotals['net_value'], 2) }}</div>
                 </div>
             @endif
+            <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
+                <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Project Total</div>
+                <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">&pound;{{ number_format($revisionTotals['value'], 2) }}</div>
+            </div>
         @endif
     </div>
 
@@ -111,8 +111,13 @@
                 @if($area->lines->isNotEmpty())
                     <span class="text-sm text-gray-500 dark:text-gray-400 mr-3">Qty: {{ $area->line_total_qty }}</span>
                     @if($canViewPrices)
+                        @php
+                            $areaTotal = $area->lines->sum(
+                                fn ($line) => $line->totalLineTotalForProject($this->record)
+                            );
+                        @endphp
                         <span class="text-sm font-medium text-gray-900 dark:text-white mr-4">
-                            £{{ number_format($area->line_total, 2) }}
+                            £{{ number_format($areaTotal, 2) }}
                         </span>
                     @endif
                 @endif
@@ -165,9 +170,11 @@
                     <div class="text-center">Qty</div>
                     <div>Type</div>
                     @if($canViewPrices)
-                        <div class="text-center">Unit Price</div>
                         @if($projectHasCover)
                             <div class="text-center">Net Price</div>
+                            <div class="text-center">Total Price</div>
+                        @else
+                            <div class="text-center">Unit Price</div>
                         @endif
                     @endif
                     <div class="flex items-center gap-2">
@@ -267,20 +274,44 @@
                         </span>
 
                         @if($canViewPrices)
-                            {{-- Unit Price --}}
-                            <input
-                                type="number"
-                                step="0.01"
-                                value="{{ $line->unit_price }}"
-                                @disabled(! $canEditPrices || $this->isViewingRevisionValidated)
-                                x-on:blur="$wire.updateLineField({{ $line->id }}, 'unit_price', $el.value)"
-                                placeholder="0.00"
-                                class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
-                            />
                             @if($projectHasCover)
-                                <div class="px-2 py-1 text-right text-sm font-medium text-gray-900 dark:text-white">
-                                    {{ $line->netUnitPriceForProject($this->record) !== null ? '£'.number_format((float) $line->netUnitPriceForProject($this->record), 2) : '—' }}
-                                </div>
+                                @if($this->record->cover_direction === 'added')
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value="{{ $line->unit_price }}"
+                                        @disabled(! $canEditPrices || $this->isViewingRevisionValidated)
+                                        x-on:blur="$wire.updateLineField({{ $line->id }}, 'unit_price', $el.value)"
+                                        placeholder="0.00"
+                                        class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
+                                    />
+                                    <div class="px-2 py-1 text-right text-sm font-medium text-gray-900 dark:text-white">
+                                        {{ $line->totalUnitPriceForProject($this->record) !== null ? '£'.number_format((float) $line->totalUnitPriceForProject($this->record), 2) : '—' }}
+                                    </div>
+                                @else
+                                    <div class="px-2 py-1 text-right text-sm font-medium text-gray-900 dark:text-white">
+                                        {{ $line->netUnitPriceForProject($this->record) !== null ? '£'.number_format((float) $line->netUnitPriceForProject($this->record), 2) : '—' }}
+                                    </div>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value="{{ $line->unit_price }}"
+                                        @disabled(! $canEditPrices || $this->isViewingRevisionValidated)
+                                        x-on:blur="$wire.updateLineField({{ $line->id }}, 'unit_price', $el.value)"
+                                        placeholder="0.00"
+                                        class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
+                                    />
+                                @endif
+                            @else
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    value="{{ $line->unit_price }}"
+                                    @disabled(! $canEditPrices || $this->isViewingRevisionValidated)
+                                    x-on:blur="$wire.updateLineField({{ $line->id }}, 'unit_price', $el.value)"
+                                    placeholder="0.00"
+                                    class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
+                                />
                             @endif
                         @endif
 

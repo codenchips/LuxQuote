@@ -28,6 +28,7 @@ class ProjectRevisionValidator
      *     quote_price?: string|null,
      *     unit_price?: string|null,
      *     net_price?: float|null,
+     *     total_price?: float|null,
      *     cover_values?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null},
      *     cover_defaults?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null}
      * }>
@@ -312,6 +313,7 @@ class ProjectRevisionValidator
      *     rrp?: string|null,
      *     unit_price?: string|null,
      *     net_price?: float|null,
+     *     total_price?: float|null,
      *     cover_values: array{cover_1: string|null, cover_2: string|null, cover_3: string|null},
      *     cover_defaults: array{cover_1: string|null, cover_2: string|null, cover_3: string|null}
      * }>
@@ -337,6 +339,7 @@ class ProjectRevisionValidator
                         'rrp' => $product?->price,
                         'unit_price' => $line->unit_price,
                         'net_price' => $line->netUnitPriceForProject($project),
+                        'total_price' => $line->totalUnitPriceForProject($project),
                         'quote_price' => $line->unit_price,
                         'cover_values' => $this->lineCoverValues($line, $projectCoverDefaults),
                         'cover_defaults' => $projectCoverDefaults,

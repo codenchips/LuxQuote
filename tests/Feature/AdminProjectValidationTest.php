@@ -110,7 +110,8 @@ class AdminProjectValidationTest extends TestCase
 
         Livewire::test(ValidationProject::class, ['record' => $project->id])
             ->assertSee('Issues (1)')
-            ->assertSee("SKU \"{$missingLine->code}\" was not found in the product catalogue and has no quote price.")
+            ->assertSee($missingLine->code)
+            ->assertSee('was not found in the product catalogue and has no quote price.')
             ->assertSee('Validated (1)')
             ->assertSee($validLine->code)
             ->assertSee('Approved: no current validation issues.')
@@ -132,17 +133,21 @@ class AdminProjectValidationTest extends TestCase
             ->assertSee('Issues (0)')
             ->assertSee('Validated (1)')
             ->assertSee('Approved: SKU "MISSING-SKU" was not found in the product catalogue and has no quote price.')
-            ->assertSee('Flag Issue')
+            ->assertSee('Flag issue')
             ->assertDontSee('Undo');
 
         $this->assertTrue($line->fresh()->approved);
         $this->assertFalse($line->fresh()->validation_flagged);
 
         $component
-            ->call('flagValidatedLine', $line->id)
+            ->call('openFlagValidatedLineModal', $line->id)
+            ->assertSet('flagIssueModalOpen', true)
+            ->set('flagIssueNote', 'Check this missing product')
+            ->call('submitFlagIssue')
             ->assertSee('Issues (1)')
             ->assertSee('Issue flagged')
-            ->assertSee('SKU "MISSING-SKU" was not found in the product catalogue and has no quote price.');
+            ->assertSee('MISSING-SKU')
+            ->assertSee('was not found in the product catalogue and has no quote price.');
 
         $this->assertFalse($line->fresh()->approved);
         $this->assertTrue($line->fresh()->validation_flagged);
@@ -170,12 +175,16 @@ class AdminProjectValidationTest extends TestCase
         $line = $this->createLine($project, $product->sku, unitPrice: 10.00);
 
         Livewire::test(ValidationProject::class, ['record' => $project->id])
-            ->assertSee('Flag Issue')
+            ->assertSee('Flag issue')
             ->assertDontSee('Issue flagged')
-            ->call('flagIssue', "price-mismatch-{$line->id}")
+            ->call('openFlagIssueModal', "price-mismatch-{$line->id}")
+            ->assertSet('flagIssueModalOpen', true)
+            ->set('flagIssueNote', 'Review the quoted price')
+            ->call('submitFlagIssue')
             ->assertSee('Issues (1)')
             ->assertSee('Issue flagged')
-            ->assertSee('Quote price for SKU "FLAG-PRICE-SKU" does not match the product RRP.');
+            ->assertSee('FLAG-PRICE-SKU')
+            ->assertSee('does not match the product RRP.');
 
         $this->assertFalse($line->fresh()->approved);
         $this->assertTrue($line->fresh()->validation_flagged);
@@ -195,10 +204,13 @@ class AdminProjectValidationTest extends TestCase
 
         Livewire::test(ValidationProject::class, ['record' => $project->id])
             ->assertSee('Validated (1)')
-            ->call('flagValidatedLine', $line->id)
+            ->call('openFlagValidatedLineModal', $line->id)
+            ->set('flagIssueNote', 'Review this product line')
+            ->call('submitFlagIssue')
             ->assertSee('Issues (1)')
             ->assertSee('Issue flagged')
-            ->assertSee('SKU "VALID-SKU" has been manually flagged for review.');
+            ->assertSee('VALID-SKU')
+            ->assertSee('has been manually flagged for review.');
 
         $this->assertFalse($line->fresh()->approved);
         $this->assertTrue($line->fresh()->validation_flagged);
@@ -394,9 +406,12 @@ class AdminProjectValidationTest extends TestCase
         $this->assertTrue($project->activeRevision->fresh()->validated);
 
         $component
-            ->call('flagValidatedLine', $firstLine->id)
+            ->call('openFlagValidatedLineModal', $firstLine->id)
+            ->set('flagIssueNote', 'Review the merged line')
+            ->call('submitFlagIssue')
             ->assertSee('Issues (1)')
-            ->assertSee('SKU "DUPLICATE-SKU" has been manually flagged for review.');
+            ->assertSee('DUPLICATE-SKU')
+            ->assertSee('has been manually flagged for review.');
 
         $this->assertTrue($firstLine->fresh()->validation_flagged);
         $this->assertFalse($project->activeRevision->fresh()->validated);
@@ -425,7 +440,8 @@ class AdminProjectValidationTest extends TestCase
 
         Livewire::test(ViewProject::class, ['record' => $project->id])
             ->call('updateLineField', $line->id, 'qty', 11)
-            ->assertForbidden();
+            ->assertOk()
+            ->assertNotified('Revision locked');
 
         $this->assertSame(10, $line->fresh()->qty);
 
@@ -503,7 +519,8 @@ class AdminProjectValidationTest extends TestCase
 
         $component = Livewire::test(ValidationProject::class, ['record' => $project->id])
             ->assertSee('1 unresolved issue')
-            ->assertSee('Quote price for SKU "PRICE-SKU" does not match the product RRP.')
+            ->assertSee('PRICE-SKU')
+            ->assertSee('does not match the product RRP.')
             ->assertSee('RRP')
             ->assertSee('Quote')
             ->call('approveIssue', $issueKey)
@@ -511,7 +528,7 @@ class AdminProjectValidationTest extends TestCase
             ->assertSee('Issues (0)')
             ->assertSee('Validated (1)')
             ->assertSee('Approved: Quote price for SKU "PRICE-SKU" does not match the product RRP.')
-            ->assertSee('Flag Issue')
+            ->assertSee('Flag issue')
             ->assertDontSee('Undo');
 
         $this->assertSame('10.00', $line->fresh()->unit_price);
@@ -560,7 +577,8 @@ class AdminProjectValidationTest extends TestCase
 
         Livewire::test(ValidationProject::class, ['record' => $project->id])
             ->assertSee('1 unresolved issue')
-            ->assertSee('SKU "UNPRICED-SKU" has no product RRP and no quote price.')
+            ->assertSee('UNPRICED-SKU')
+            ->assertSee('has no product RRP and no quote price.')
             ->assertSee('RRP')
             ->assertSee('Quote')
             ->assertDontSee('Match');
@@ -579,9 +597,11 @@ class AdminProjectValidationTest extends TestCase
         $issueKey = "price-mismatch-{$line->id}";
 
         Livewire::test(ValidationProject::class, ['record' => $project->id])
-            ->assertSee('SKU "CUSTOM-SKU" was not found in the product catalogue and has no quote price.')
+            ->assertSee('CUSTOM-SKU')
+            ->assertSee('was not found in the product catalogue and has no quote price.')
             ->call('updateIssueQuotePrice', $issueKey, '125.50')
-            ->assertSee('SKU "CUSTOM-SKU" was not found in the product catalogue. Review the quote price before approving.')
+            ->assertSee('CUSTOM-SKU')
+            ->assertSee('was not found in the product catalogue. Review the quote price before approving.')
             ->call('approveIssue', $issueKey)
             ->assertSee('Ready to approve');
 
@@ -606,7 +626,7 @@ class AdminProjectValidationTest extends TestCase
         $line = $this->createLine($project, $product->sku, unitPrice: 10.00);
 
         Livewire::test(ValidationProject::class, ['record' => $project->id])
-            ->assertSee('Match and Approve')
+            ->assertSee('Match')
             ->call('matchIssueQuotePrice', "price-mismatch-{$line->id}")
             ->assertSee('Ready to approve');
 

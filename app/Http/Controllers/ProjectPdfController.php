@@ -251,7 +251,7 @@ class ProjectPdfController extends Controller
             ->orderBy('sort_order')
             ->get();
 
-        return response()->streamDownload(function () use ($areas, $includePrices): void {
+        return response()->streamDownload(function () use ($areas, $includePrices, $project): void {
             $handle = fopen('php://output', 'w');
 
             $headings = [
@@ -273,7 +273,7 @@ class ProjectPdfController extends Controller
 
             foreach ($areas as $area) {
                 foreach ($area->lines as $line) {
-                    $unitPrice = (float) ($line->unit_price ?? 0);
+                    $unitPrice = (float) ($line->totalUnitPriceForProject($project) ?? 0);
                     $quantity = (int) ($line->qty ?? 0);
 
                     $row = [

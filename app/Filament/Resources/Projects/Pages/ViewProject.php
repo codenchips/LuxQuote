@@ -245,7 +245,11 @@ class ViewProject extends ViewRecord
         return [
             'qty' => $areas->sum(fn (ProjectArea $area): int => $area->line_total_qty),
             'items' => $areas->sum(fn (ProjectArea $area): int => $area->lines->count()),
-            'value' => $areas->sum(fn (ProjectArea $area): float => $area->line_total),
+            'value' => $areas->sum(
+                fn (ProjectArea $area): float => $area->lines->sum(
+                    fn (ProjectLine $line): float => $line->totalLineTotalForProject($this->record)
+                )
+            ),
             'net_value' => $areas->sum(
                 fn (ProjectArea $area): float => $area->lines->sum(
                     fn (ProjectLine $line): float => $line->netLineTotalForProject($this->record)

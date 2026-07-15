@@ -11,7 +11,9 @@
 
     $grandQty   = $areas->sum(fn ($a) => $a->lines->sum('qty'));
     $grandItems = $areas->sum(fn ($a) => $a->lines->count());
-    $grandTotal = $areas->sum(fn ($a) => $a->lines->sum(fn ($line) => ((int) ($line->qty ?? 0)) * (float) ($line->unit_price ?? 0)));
+    $grandTotal = $areas->sum(fn ($a) => $a->lines->sum(
+        fn ($line) => $line->totalLineTotalForProject($project)
+    ));
     $showPrices = $showPrices ?? false;
     $documentTitle = $documentTitle ?? 'Lighting Schedule';
     $areasWithLines = $areas->filter(fn ($area) => $area->lines->isNotEmpty())->values();
@@ -483,7 +485,9 @@
     @foreach ($areasWithLines as $area)
         @php
             $areaQty = $area->lines->sum('qty');
-            $areaTotal = $area->lines->sum(fn ($line) => ((int) ($line->qty ?? 0)) * (float) ($line->unit_price ?? 0));
+            $areaTotal = $area->lines->sum(
+                fn ($line) => $line->totalLineTotalForProject($project)
+            );
             $isFinalLineItemArea = $loop->last;
         @endphp
         <div class="area-block">
@@ -536,7 +540,7 @@
                         <td class="col-desc">{!! $hasSku ? e($line->description ?? '') : '&nbsp;' !!}</td>
                         @if($showPrices)
                             @php
-                                $unitPrice = (float) ($line->unit_price ?? 0);
+                                $unitPrice = (float) ($line->totalUnitPriceForProject($project) ?? 0);
                                 $lineTotal = ((int) ($line->qty ?? 0)) * $unitPrice;
                             @endphp
                             <td class="col-money">{!! $hasSku ? '&pound;'.e(number_format($unitPrice, 2)) : '&nbsp;' !!}</td>

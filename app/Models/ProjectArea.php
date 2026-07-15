@@ -36,7 +36,7 @@ class ProjectArea extends Model
     public function getLineTotalAttribute(): float
     {
         return $this->lines->sum(
-            fn (ProjectLine $line): float => ($line->qty ?? 0) * (float) ($line->unit_price ?? 0)
+            fn (ProjectLine $line): float => $line->totalLineTotalForProject($this->project)
         );
     }
 }

@@ -43,6 +43,11 @@ class SalesforcePdfUploadTracker
                 'date' => $project->date?->toDateString(),
                 'quote_notes' => $project->quote_notes,
                 'general_notes' => $project->general_notes,
+                'has_cover' => $project->has_cover,
+                'cover_direction' => $project->cover_direction,
+                'cover_1' => $showPrices ? $project->cover_1 : null,
+                'cover_2' => $showPrices ? $project->cover_2 : null,
+                'cover_3' => $showPrices ? $project->cover_3 : null,
             ],
             'revision' => [
                 'id' => $revision->id,

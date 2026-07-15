@@ -110,6 +110,7 @@ class ValidationProject extends ViewRecord
      *     quote_price?: string|null,
      *     unit_price?: string|null,
      *     net_price?: float|null,
+     *     total_price?: float|null,
      *     flag_note?: string|null,
      *     cover_values?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null},
      *     cover_defaults?: array{cover_1: string|null, cover_2: string|null, cover_3: string|null}

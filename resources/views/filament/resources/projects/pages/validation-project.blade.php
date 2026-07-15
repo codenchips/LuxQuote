@@ -126,16 +126,16 @@
                                 </label>
 
                                 <label class="w-24 space-y-1">
-                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Unit</span>
-                                    <span class="block h-[34px] px-1 py-2 text-left text-sm text-gray-500 dark:text-gray-400">
-                                        {{ ($issue['unit_price'] ?? null) !== null ? '£'.number_format((float) $issue['unit_price'], 2) : '—' }}
+                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Net</span>
+                                    <span class="block h-[34px] px-1 py-2 text-left text-sm font-semibold text-gray-700 dark:text-gray-200">
+                                        {{ ($issue['net_price'] ?? null) !== null ? '£'.number_format((float) $issue['net_price'], 2) : '—' }}
                                     </span>
                                 </label>
 
                                 <label class="w-24 space-y-1">
-                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Net</span>
+                                    <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Total</span>
                                     <span class="block h-[34px] px-1 py-2 text-left text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                        {{ ($issue['net_price'] ?? null) !== null ? '£'.number_format((float) $issue['net_price'], 2) : '—' }}
+                                        {{ ($issue['total_price'] ?? null) !== null ? '£'.number_format((float) $issue['total_price'], 2) : '—' }}
                                     </span>
                                 </label>
 

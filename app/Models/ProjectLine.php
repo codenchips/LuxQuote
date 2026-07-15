@@ -51,27 +51,53 @@ class ProjectLine extends Model
 
     public function netUnitPriceForProject(Project $project): ?float
     {
-        if ($this->unit_price === null) {
-            return null;
-        }
+        $prices = $this->coverAdjustedUnitPricesForProject($project);
 
-        if (! $project->has_cover) {
-            return (float) $this->unit_price;
-        }
+        return $prices !== null ? min($prices) : null;
+    }
 
-        $multiplier = $this->coverMultiplierForProject($project);
-        $unitPrice = (float) $this->unit_price;
+    public function totalUnitPriceForProject(Project $project): ?float
+    {
+        $prices = $this->coverAdjustedUnitPricesForProject($project);
 
-        if ($project->cover_direction === 'added') {
-            return $multiplier > 0 ? round($unitPrice / $multiplier, 2) : $unitPrice;
-        }
-
-        return round($unitPrice * $multiplier, 2);
+        return $prices !== null ? max($prices) : null;
     }
 
     public function netLineTotalForProject(Project $project): float
     {
         return ($this->qty ?? 0) * (float) ($this->netUnitPriceForProject($project) ?? 0);
+    }
+
+    public function totalLineTotalForProject(Project $project): float
+    {
+        return ($this->qty ?? 0) * (float) ($this->totalUnitPriceForProject($project) ?? 0);
+    }
+
+    /**
+     * The stored unit price is the total when Cover is deducted and the net
+     * when Cover is added. Return both monetary sides so their labels never
+     * depend on the selected calculation direction.
+     *
+     * @return array{float, float}|null
+     */
+    private function coverAdjustedUnitPricesForProject(Project $project): ?array
+    {
+        if ($this->unit_price === null) {
+            return null;
+        }
+
+        $unitPrice = (float) $this->unit_price;
+
+        if (! $project->has_cover) {
+            return [$unitPrice, $unitPrice];
+        }
+
+        $multiplier = $this->coverMultiplierForProject($project);
+        $adjustedPrice = $project->cover_direction === 'added'
+            ? ($multiplier > 0 ? round($unitPrice / $multiplier, 2) : $unitPrice)
+            : round($unitPrice * $multiplier, 2);
+
+        return [$unitPrice, $adjustedPrice];
     }
 
     private function coverMultiplierForProject(Project $project): float

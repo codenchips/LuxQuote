@@ -161,6 +161,8 @@ Cover percentages and calculated net prices are price-related. Users need `prici
 
 Cover controls and calculations are active only when `projects.has_cover` is true. Blank line-level Cover values inherit the project Cover defaults. Validation should only flag Cover when the effective line values differ from the project defaults, and it must not emit Cover issues for projects without Cover enabled.
 
+For Cover-enabled projects, Net is always the lower amount and Total is always the higher amount, regardless of Cover Direction. With deducted Cover, the stored `project_lines.unit_price` is Total; with added Cover, it is Net. All price-visible schedule, validation, PDF, CSV, and project-total displays must derive their labelled Net/Total values through the `ProjectLine` Cover calculation methods.
+
 Validation flagging is controlled by `validation.flag-lines`. Flagging an issue or validated line must collect a short note, store it against the affected line(s), and keep the same server-side editable-revision guard as other validation mutations.
 
 ## Salesforce Push Control
