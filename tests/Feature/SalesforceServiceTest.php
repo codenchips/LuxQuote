@@ -332,6 +332,137 @@ class SalesforceServiceTest extends TestCase
             && str_contains((string) ($request->data()['q'] ?? ''), "SELECT Id, Name, BillingCity FROM Account WHERE Id = '001000000000001AAA' LIMIT 1"));
     }
 
+    public function test_users_linked_to_opportunity_can_be_fetched_with_all_available_fields(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/sobjects/User/describe')) {
+                return Http::response([
+                    'fields' => [
+                        ['name' => 'Id'],
+                        ['name' => 'Name'],
+                        ['name' => 'Email'],
+                    ],
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                $soql = (string) ($request->data()['q'] ?? '');
+
+                if (str_contains($soql, 'FROM Opportunity')) {
+                    return Http::response([
+                        'records' => [[
+                            'Id' => '006000000000001AAA',
+                            'OwnerId' => '005000000000001AAA',
+                            'CreatedById' => '005000000000002AAA',
+                        ]],
+                    ]);
+                }
+
+                if (str_contains($soql, 'FROM User')) {
+                    return Http::response([
+                        'records' => [
+                            [
+                                'Id' => '005000000000001AAA',
+                                'Name' => 'Opportunity Owner',
+                                'Email' => 'owner@example.com',
+                            ],
+                            [
+                                'Id' => '005000000000002AAA',
+                                'Name' => 'Opportunity Creator',
+                                'Email' => 'creator@example.com',
+                            ],
+                        ],
+                    ]);
+                }
+            }
+
+            return Http::response([], 500);
+        });
+
+        $result = app(SalesforceService::class)->fetchUsersForOpportunity('006000000000001AAA');
+
+        $this->assertTrue($result['success']);
+        $this->assertSame([
+            [
+                'Id' => '005000000000001AAA',
+                'Name' => 'Opportunity Owner',
+                'Email' => 'owner@example.com',
+                '_OpportunityRelationships' => ['Owner'],
+            ],
+            [
+                'Id' => '005000000000002AAA',
+                'Name' => 'Opportunity Creator',
+                'Email' => 'creator@example.com',
+                '_OpportunityRelationships' => ['CreatedBy'],
+            ],
+        ], $result['records']);
+
+        Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/services/data/v65.0/query/')
+            && str_contains((string) ($request->data()['q'] ?? ''), 'SELECT Id, OwnerId, CreatedById FROM Opportunity'));
+
+        Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/sobjects/User/describe'));
+
+        Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/services/data/v65.0/query/')
+            && str_contains((string) ($request->data()['q'] ?? ''), 'SELECT Id, Name, Email FROM User WHERE Id IN'));
+    }
+
+    public function test_opportunity_owner_name_and_email_are_fetched_from_the_linked_user(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                $soql = (string) ($request->data()['q'] ?? '');
+
+                if (str_contains($soql, 'FROM Opportunity')) {
+                    return Http::response([
+                        'records' => [[
+                            'Id' => '006000000000001AAA',
+                            'OwnerId' => '005000000000001AAA',
+                        ]],
+                    ]);
+                }
+
+                if (str_contains($soql, 'FROM User')) {
+                    return Http::response([
+                        'records' => [[
+                            'Id' => '005000000000001AAA',
+                            'Name' => 'Jamie Engineer',
+                            'Email' => 'jamie.engineer@example.com.invalid',
+                        ]],
+                    ]);
+                }
+            }
+
+            return Http::response([], 500);
+        });
+
+        $owner = app(SalesforceService::class)->getOpportunityOwner('006000000000001AAA');
+
+        $this->assertSame([
+            'id' => '005000000000001AAA',
+            'name' => 'Jamie Engineer',
+            'email' => 'jamie.engineer@example.com',
+        ], $owner);
+
+        Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), 'SELECT Id, OwnerId FROM Opportunity'));
+        Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), "SELECT Id, Name, Email FROM User WHERE Id = '005000000000001AAA'"));
+    }
+
     public function test_authentication_token_is_cached_between_requests(): void
     {
         Http::fake(function (Request $request) {

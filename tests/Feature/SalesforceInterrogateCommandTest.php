@@ -52,6 +52,30 @@ class SalesforceInterrogateCommandTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_interrogate_command_can_output_users_linked_to_opportunity(): void
+    {
+        $this->fakeSalesforceService();
+
+        $users = [
+            [
+                'Id' => '005000000000001AAA',
+                'Name' => 'Opportunity Owner',
+                'Email' => 'owner@example.com',
+                '_OpportunityRelationships' => ['Owner'],
+            ],
+            [
+                'Id' => '005000000000002AAA',
+                'Name' => 'Opportunity Creator',
+                'Email' => 'creator@example.com',
+                '_OpportunityRelationships' => ['CreatedBy'],
+            ],
+        ];
+
+        $this->artisan('salesforce:interrogate --format=json --users-for-opportunity=006000000000001AAA')
+            ->expectsOutput(json_encode($users, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR))
+            ->assertSuccessful();
+    }
+
     private function fakeSalesforceService(): void
     {
         $this->instance(SalesforceService::class, new class extends SalesforceService
@@ -87,6 +111,28 @@ class SalesforceInterrogateCommandTest extends TestCase
                         'Id' => '001000000000001AAA',
                         'Name' => 'Hartest Customer',
                         'BillingCity' => 'Bury St Edmunds',
+                    ],
+                ];
+            }
+
+            public function fetchUsersForOpportunity(string $opportunityId): array
+            {
+                return [
+                    'success' => true,
+                    'opportunityId' => $opportunityId,
+                    'records' => [
+                        [
+                            'Id' => '005000000000001AAA',
+                            'Name' => 'Opportunity Owner',
+                            'Email' => 'owner@example.com',
+                            '_OpportunityRelationships' => ['Owner'],
+                        ],
+                        [
+                            'Id' => '005000000000002AAA',
+                            'Name' => 'Opportunity Creator',
+                            'Email' => 'creator@example.com',
+                            '_OpportunityRelationships' => ['CreatedBy'],
+                        ],
                     ],
                 ];
             }

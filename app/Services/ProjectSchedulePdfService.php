@@ -41,6 +41,9 @@ class ProjectSchedulePdfService
             ->get();
 
         $generatedAt = now()->format('M d Y H:i');
+        $salesEngineer = filled($project->salesforce_id)
+            ? app(SalesforceService::class)->getOpportunityOwner((string) $project->salesforce_id)
+            : null;
 
         $footerHtml = '<style>
             * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -70,6 +73,8 @@ class ProjectSchedulePdfService
             'documentType' => $documentType,
             'documentTitle' => $documentType === 'quote' ? 'Lighting Quote' : 'Lighting Schedule',
             'showPrices' => $documentType === 'quote',
+            'salesEngineerName' => $salesEngineer['name'] ?? $project->user?->name,
+            'salesEngineerEmail' => $salesEngineer['email'] ?? $project->owner_email,
         ])
             ->withBrowsershot(function ($browsershot) use ($footerHtml): void {
                 $this->configureBrowsershot($browsershot);

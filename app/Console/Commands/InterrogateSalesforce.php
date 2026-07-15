@@ -8,7 +8,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use JsonException;
 
-#[Signature('salesforce:interrogate {--limit=5 : Number of Opportunity records to fetch} {--format=table : Output format: table, json, or ndjson} {--account-for-opportunity= : Fetch all fields for the Account linked to this Opportunity ID}')]
+#[Signature('salesforce:interrogate {--limit=5 : Number of Opportunity records to fetch} {--format=table : Output format: table, json, or ndjson} {--account-for-opportunity= : Fetch all fields for the Account linked to this Opportunity ID} {--users-for-opportunity= : Fetch all fields for the Owner and Created By users linked to this Opportunity ID}')]
 #[Description('Fetch raw project/opportunity records from the Salesforce API and print them to the terminal.')]
 class InterrogateSalesforce extends Command
 {
@@ -39,6 +39,12 @@ class InterrogateSalesforce extends Command
 
         if (filled($accountOpportunityId)) {
             return $this->writeAccountForOpportunity((string) $accountOpportunityId, $format);
+        }
+
+        $usersOpportunityId = $this->option('users-for-opportunity');
+
+        if (filled($usersOpportunityId)) {
+            return $this->writeUsersForOpportunity((string) $usersOpportunityId, $format);
         }
 
         $response = $this->salesforce->fetchAllOpportunityFields($limit);
@@ -145,6 +151,53 @@ class InterrogateSalesforce extends Command
                 ),
             ],
         );
+
+        return self::SUCCESS;
+    }
+
+    private function writeUsersForOpportunity(string $opportunityId, string $format): int
+    {
+        $response = $this->salesforce->fetchUsersForOpportunity($opportunityId);
+
+        if (! ($response['success'] ?? false)) {
+            $this->error(sprintf('Salesforce User lookup failed for Opportunity %s', $opportunityId));
+
+            if (! empty($response['errors'])) {
+                foreach ((array) $response['errors'] as $error) {
+                    $this->line(is_array($error) ? json_encode($error) : (string) $error);
+                }
+            }
+
+            return self::FAILURE;
+        }
+
+        $records = $response['records'] ?? [];
+
+        if ($format !== 'table') {
+            return $this->writeStructuredRecords($records, $format);
+        }
+
+        $this->info(sprintf(
+            'Received %d User record(s) linked to Opportunity %s.',
+            count($records),
+            $opportunityId,
+        ));
+
+        foreach ($records as $record) {
+            $relationships = implode(', ', $record['_OpportunityRelationships'] ?? []);
+            $this->line('');
+            $this->info(sprintf('%s: %s', $relationships ?: 'Linked User', $record['Name'] ?? $record['Id'] ?? 'unknown'));
+            $this->table(
+                ['Field', 'Value'],
+                collect($record)
+                    ->map(fn (mixed $value, string $field): array => [
+                        $field,
+                        is_array($value) ? json_encode($value) : (string) $value,
+                    ])
+                    ->values()
+                    ->all(),
+            );
+        }
 
         return self::SUCCESS;
     }

@@ -1302,9 +1302,12 @@ class AdminProjectResourceTest extends TestCase
             'areas' => $project->activeRevision->areas()->with('lines')->get(),
             'showPrices' => true,
             'documentTitle' => 'Lighting Quote',
+            'salesEngineerName' => 'Jamie Engineer',
+            'salesEngineerEmail' => 'sales.engineer@example.com',
         ])->render();
 
-        $this->assertStringContainsString('Sales Engineer: </span><span class="ref-val">sales.engineer@example.com</span>', $html);
+        $this->assertStringContainsString('Sales Engineer: </span><span class="ref-val">Jamie Engineer</span>', $html);
+        $this->assertStringContainsString('Email: </span><span class="ref-val">sales.engineer@example.com</span>', $html);
         $this->assertStringNotContainsString('Generated: </span><span class="ref-val">', $html);
 
         $this->assertLessThan(strpos($html, '<th class="col-qty">Qty</th>'), strpos($html, '<th class="col-ref">Ref</th>'));

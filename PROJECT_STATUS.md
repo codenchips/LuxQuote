@@ -1,20 +1,25 @@
 # Company App — Project Status
 
-_Last updated: 10 July 2026_
+_Last updated: 13 July 2026_
 
 ---
 
-## Cover Pricing and Validation Workflow — 10 July 2026
+## Cover Pricing, Validation, and Activity Search — 13 July 2026
 
 - **Cover data model added**: Projects and project lines now carry `cover_1`, `cover_2`, and `cover_3` percentage fields. Existing project `cover_percentage` values are backfilled into `cover_1` during migration for continuity.
+- **Cover is explicitly enabled per project**: Projects now store `has_cover`. Existing projects with any Cover percentage are backfilled as enabled; projects without Cover keep the Cover controls, calculations, and validation hidden.
+- **Cover direction added**: Projects store whether Cover is added to or deducted from the entered unit price. The default and migrated production behaviour is **Cover is Deducted**.
+- **Net price calculations implemented**: Cover percentages are applied sequentially. Deducted Cover multiplies the unit price by each `(1 - cover / 100)` factor; added Cover divides by the same combined multiplier. The schedule shows per-line Net Price and a Net Project Total when Cover is enabled.
 - **Cover values standardised**: Cover values are treated as two-decimal percentages throughout the UI and database. Typing `4` is normalised to `4.00`; blank line-level Cover values inherit the project defaults and are not flagged as overrides.
 - **Cover permission added**: `cover.update` controls whether a user can change Cover percentages. Cover remains price-related, so users must also have `pricing.view` to see Cover fields.
-- **Project details Cover fields**: The project details slide-over exposes Cover 1, Cover 2, and Cover 3. Salesforce `CEF_Cover__c` now populates Cover 1.
-- **Line-level Cover fields**: New project lines inherit the three project Cover values. The project line table can toggle its Notes column into compact Cover inputs without adding another wide table column.
-- **Validation Cover issues**: Lines with explicit Cover values that differ from the project defaults are listed as validation Issues. Cover issue rows show Quote plus compact Cover inputs so permitted users can fix price and Cover in context. Validated/approved rows show Cover as read-only text.
+- **Project details Cover fields**: The project details slide-over exposes Has Cover, Cover Direction, and Cover 1–3. Salesforce projects with `CEF_Cover__c` enable Cover automatically, use deducted Cover, populate Cover 1 from Salesforce, and default Cover 2 and Cover 3 to `5.00`.
+- **Line-level Cover fields**: New project lines inherit the three project Cover values only when the project has Cover enabled. The project line table can toggle its Notes column into compact Cover inputs without adding another wide table column.
+- **Validation Cover issues**: Lines with effective Cover values that differ from the project defaults are listed as validation Issues only for Cover-enabled projects. Cover issue rows show RRP, Unit, calculated Net, and compact Cover inputs so permitted users can review the full calculation in context. Validated/approved rows show Cover as read-only text.
+- **Validation layout refreshed**: Issue cards now use consistent type badges/icons and aligned action controls. Price mismatches show RRP and Quote with a separate **Match** action; Cover mismatches show RRP, Unit, Net, and C1–C3; flag actions use a compact red flag control.
 - **Issue grouping**: Multiple issues for the same line/SKU are grouped together in validation, ordered as duplicate SKU, price mismatch, Cover mismatch, then manual flag.
 - **Issue-specific approval**: Approving one issue on a line no longer approves every issue for that same line. Each explicit approval is tracked by its own approval note; a line moves to Validated only when all unresolved issues are resolved or individually approved.
 - **Flag notes**: Flagging an issue or validated line now opens a short-note dialog. The note is stored on the affected line(s), displayed for manual flagged issues, and shown as a `Flag note` on flagged validation issues.
+- **Activity-log search improved**: The rendered Action Performed text is now searchable across action labels, payload values, project snapshots, and user email snapshots. Action filters use the same clearer labels, including **Approved and locked** and **Unapproved and unlocked**.
 - **Salesforce details save cleanup**: Saving project details no longer attempts a Salesforce PDF upload. Salesforce Amount is only pushed when the project value actually changes and outbound pushes are enabled.
 - **Production deploy safety**: The production deploy script now runs pending migrations automatically, records migration status, keeps a full pre-deploy backup, keeps one rolling protected-table data restore file, and has a conservative catastrophic data-loss guard that can restore protected data into the migrated schema before failing loudly.
 
@@ -117,7 +122,8 @@ projects
   id, user_id (FK), name, reference_number, customer_name, contractor
   site_location, owner_email, created_by_email, department
   date, revision, visibility (open|private), status (draft|in_progress|complete|cancelled|archived)
-  branch_name, cover_percentage (string, nullable), cover_1, cover_2, cover_3, value (decimal, nullable)
+  branch_name, has_cover (bool), cover_direction (added|deducted)
+  cover_percentage (legacy string, nullable), cover_1, cover_2, cover_3, value (decimal, nullable)
   quote_notes, internal_notes, general_notes
   active_revision_id (FK → project_revisions, nullOnDelete)
   last_edited_at (nullable timestamp)
@@ -356,7 +362,7 @@ The validation page now separates unresolved warnings from resolved lines:
 
 - **Issues** shows only unresolved validation warnings.
 - **Validated** shows clean lines and explicitly approved warning lines.
-- Each validated row includes status (`Resolved` or `Approved`), quote price, read-only Cover values, note text, and **Flag Issue** when the revision is not approved.
+- Each validated row includes status (`Resolved` or `Approved`), quote price, read-only Cover values when Cover is enabled, note text, and a flag action when the revision is not approved.
 - Resolution and approval notes are stored on `project_lines.validation_note`.
 - Manual flags are stored with `project_lines.validation_flagged = true`; the entered flag reason is stored in `project_lines.validation_note` and shown on the validation issue until resolved.
 
@@ -520,7 +526,7 @@ Primary generation and request actions use Filament's orange primary button conv
 |---|---|
 | `Feature/AuthenticationTest.php` | Login / auth flows |
 | `Feature/AdminProductResourceTest.php` | Filament Products list page (admin) |
-| `Feature/AdminProjectResourceTest.php` | ViewProject server-side revision/project scoping for line actions; paste products, create form gating, status badges, Activity Logs revision display, project reference-number URLs, output URLs, PDF progress endpoint, and datasheet PDF merge flow |
+| `Feature/AdminProjectResourceTest.php` | ViewProject server-side revision/project scoping for line actions; paste products, create form gating, status badges, Activity Logs revision display/search/filtering, project reference-number URLs, output URLs, PDF progress endpoint, and datasheet PDF merge flow |
 | `Feature/AdminProjectValidationTest.php` | Revision validation, validated-lines table, manual flagging, automatic/explicit approval, Undo, Merge, revalidation, and approval locking |
 | `Feature/AdminDocumentPackTest.php` | Pack CRUD/order, uploaded PDF validation, revision-aware merge order, permissions, project ownership, cleanup, and quote-approval generation lock |
 | `Feature/BadgeStyleTest.php` | Shared badge palette rules, including brand colours and deterministic fallback colours |
@@ -783,9 +789,8 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 9 July 2026)
+## Known Gaps / Next Steps (as of 13 July 2026)
 
-- [ ] Implement Cover price calculations
 - [ ] Teams
 - [ ] Move long-running PDF/document-pack generation toward queued jobs with polling/download links so browser/proxy timeouts and remote datasheet delays do not surface as user-facing 500 errors
 - [ ] Add structured logging around PDF generation with project reference, revision, document type, include-datasheets flag, progress token, qpdf step, datasheet endpoint result, and exception class/message

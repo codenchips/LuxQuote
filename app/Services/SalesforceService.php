@@ -852,6 +852,125 @@ class SalesforceService
     }
 
     /**
+     * Fetch all available fields for the Owner and Created By users linked to an Opportunity.
+     *
+     * @return array{success: bool, opportunityId: string, records?: array<int, array<string, mixed>>, status?: int, errors?: mixed}
+     */
+    public function fetchUsersForOpportunity(string $opportunityId): array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return [
+                'success' => false,
+                'opportunityId' => $opportunityId,
+                'status' => 0,
+                'errors' => ['Authentication failed'],
+            ];
+        }
+
+        $escapedOpportunityId = $this->soqlEscape($opportunityId);
+        $opportunityResult = $this->soqlQuery(
+            $auth,
+            "SELECT Id, OwnerId, CreatedById FROM Opportunity WHERE Id = '{$escapedOpportunityId}' LIMIT 1",
+        );
+        $opportunity = ($opportunityResult['records'] ?? [])[0] ?? null;
+
+        if ($opportunity === null) {
+            return [
+                'success' => false,
+                'opportunityId' => $opportunityId,
+                'status' => 0,
+                'errors' => ['Opportunity was not found or its User links could not be read'],
+            ];
+        }
+
+        $relationshipsByUserId = collect([
+            'Owner' => $opportunity['OwnerId'] ?? null,
+            'CreatedBy' => $opportunity['CreatedById'] ?? null,
+        ])
+            ->filter(fn (mixed $userId): bool => filled($userId))
+            ->groupBy(fn (mixed $userId): string => (string) $userId, preserveKeys: true)
+            ->map(fn ($relationships): array => $relationships->keys()->all());
+
+        if ($relationshipsByUserId->isEmpty()) {
+            return [
+                'success' => false,
+                'opportunityId' => $opportunityId,
+                'status' => 0,
+                'errors' => ['No OwnerId or CreatedById was found on the Opportunity'],
+            ];
+        }
+
+        $records = $this->fetchAllUserFieldsUsingAuth($auth, $relationshipsByUserId->keys()->all());
+
+        if ($records === null) {
+            return [
+                'success' => false,
+                'opportunityId' => $opportunityId,
+                'status' => 0,
+                'errors' => ['User describe or query failed'],
+            ];
+        }
+
+        return [
+            'success' => true,
+            'opportunityId' => $opportunityId,
+            'records' => collect($records)
+                ->map(function (array $record) use ($relationshipsByUserId): array {
+                    $record['_OpportunityRelationships'] = $relationshipsByUserId->get((string) ($record['Id'] ?? ''), []);
+
+                    return $record;
+                })
+                ->all(),
+        ];
+    }
+
+    /**
+     * Fetch the name and email of the User referenced by Opportunity.OwnerId.
+     *
+     * @return array{id: string, name: string|null, email: string|null}|null
+     */
+    public function getOpportunityOwner(string $opportunityId): ?array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return null;
+        }
+
+        $escapedOpportunityId = $this->soqlEscape($opportunityId);
+        $opportunityResult = $this->soqlQuery(
+            $auth,
+            "SELECT Id, OwnerId FROM Opportunity WHERE Id = '{$escapedOpportunityId}' LIMIT 1",
+        );
+        $ownerId = ($opportunityResult['records'] ?? [])[0]['OwnerId'] ?? null;
+
+        if (blank($ownerId)) {
+            return null;
+        }
+
+        $escapedOwnerId = $this->soqlEscape((string) $ownerId);
+        $userResult = $this->soqlQuery(
+            $auth,
+            "SELECT Id, Name, Email FROM User WHERE Id = '{$escapedOwnerId}' LIMIT 1",
+        );
+        $user = ($userResult['records'] ?? [])[0] ?? null;
+
+        if ($user === null) {
+            return null;
+        }
+
+        return [
+            'id' => (string) ($user['Id'] ?? $ownerId),
+            'name' => filled($user['Name'] ?? null) ? (string) $user['Name'] : null,
+            'email' => filled($user['Email'] ?? null)
+                ? str_replace('.invalid', '', (string) $user['Email'])
+                : null,
+        ];
+    }
+
+    /**
      * @param  array{token: string, instanceUrl: string}  $auth
      */
     private function findAccountIdForOpportunityUsingAuth(array $auth, string $opportunityId): ?string
@@ -916,5 +1035,42 @@ class SalesforceService
         );
 
         return ($result['records'] ?? [])[0] ?? null;
+    }
+
+    /**
+     * @param  array{token: string, instanceUrl: string}  $auth
+     * @param  array<int, string>  $userIds
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function fetchAllUserFieldsUsingAuth(array $auth, array $userIds): ?array
+    {
+        $describe = Http::withToken($auth['token'])
+            ->acceptJson()
+            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/User/describe');
+
+        if ($describe->failed()) {
+            Log::error('Salesforce User describe failed', [
+                'status' => $describe->status(),
+                'body' => $describe->body(),
+            ]);
+
+            return null;
+        }
+
+        $fieldNames = array_column($describe->json()['fields'] ?? [], 'name');
+
+        if (empty($fieldNames)) {
+            return null;
+        }
+
+        $escapedUserIds = collect($userIds)
+            ->map(fn (string $userId): string => "'{$this->soqlEscape($userId)}'")
+            ->implode(', ');
+        $result = $this->soqlQuery(
+            $auth,
+            'SELECT '.implode(', ', $fieldNames)." FROM User WHERE Id IN ({$escapedUserIds})",
+        );
+
+        return $result['records'] ?? null;
     }
 }

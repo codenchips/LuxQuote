@@ -429,7 +429,8 @@
                     <div><span class="ref-label">Rev: </span><span class="ref-val">{{ $revision->label() }}</span></div>
                 @endif
                 <div><span class="ref-label">Date: </span><span class="ref-val">{!! $formatPdfDate($project->date) !!}</span></div>
-                <div><span class="ref-label">Sales Engineer: </span><span class="ref-val">{{ $project->owner_email ?? '-' }}</span></div>
+                <div><span class="ref-label">Sales Engineer: </span><span class="ref-val">{{ $salesEngineerName ?? $project->user?->name ?? '-' }}</span></div>
+                <div><span class="ref-label">Email: </span><span class="ref-val">{{ $salesEngineerEmail ?? $project->owner_email ?? '-' }}</span></div>
             </div>
         </div>
 
