@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.0-beta.9 - 2026-07-16
+
+Version: `0.1.0-beta.8` -> `0.1.0-beta.9`
+
+Changes included:
+
+- `1f7581f` Status docs updated
+- `40b7ff5` SF Get Account CLI only
+- `a6f9d8c` Teams!
+- `f3d41f1` Cover fields (passive)
+- `1d35d6c` Cover fields doc'd
+- `de2bf82` log search tweaks
+- `1b7e072` Cover maths and validation layout
+- `e2cbb54` Engineer Name of PDFs (check SF User permissions)
+- `6f006d6` Hardened SF failuire responses
+- `6ef84eb` NET always LOWEST .  Tests updated
+- `0925e45` Area rename and copy
+- `9e4bb34` Branch name included
+
 ## 0.1.0-beta.8 - 2026-07-09
 
 Version: `0.1.0-beta.7` -> `0.1.0-beta.8`
