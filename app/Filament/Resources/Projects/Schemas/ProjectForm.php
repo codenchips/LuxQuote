@@ -152,6 +152,7 @@ class ProjectForm
                             $set('reference_number', $data['Project_Reference_Number__c'] ?? '');
                             $set('customer_name', $data['Miscellaneous_Customer_Name__c'] ?? $data['Account']['Name'] ?? $data['Name'] ?? '');
                             $set('owner_email', str_replace('.invalid', '', $data['Owner']['Email'] ?? ''));
+                            $set('branch_name', data_get($data, 'CEF_Branch__r.Name'));
                             $hasSalesforceCover = filled($data['CEF_Cover__c'] ?? null);
                             $set('has_cover', $hasSalesforceCover);
                             $set('cover_direction', 'deducted');
@@ -600,6 +601,7 @@ class ProjectForm
         $set('salesforce_id', $record['Id'] ?? null);
         $set('salesforce_reference_id', $record['Id'] ?? null);
         $set('salesforce_pending_data', json_encode($record));
+        $set('branch_name', data_get($record, 'CEF_Branch__r.Name'));
     }
 
     private static function clearSalesforceSelection(Set $set): void

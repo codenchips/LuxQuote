@@ -455,13 +455,20 @@ class SalesforceService
             "SELECT Id, Name, Project_Reference_Number__c, Miscellaneous_Customer_Name__c, CEF_Cover__c, Amount, OwnerId FROM Opportunity{$where} LIMIT 1",
         );
 
-        $record = ($result['records'] ?? [])[0] ?? null;
+        $record = ($result['records'] ?? [])[0] ?? $this->getOpportunitySummaryByIdUsingAuth($auth, $id);
 
         if ($record === null) {
-            return $this->getOpportunitySummaryByIdUsingAuth($auth, $id);
+            return null;
         }
 
-        return array_replace_recursive($record, $this->getOpportunityRelationshipFieldsByIdUsingAuth($auth, $id) ?? []);
+        $record = array_replace_recursive($record, $this->getOpportunityRelationshipFieldsByIdUsingAuth($auth, $id) ?? []);
+        $branch = $this->getOpportunityBranchByIdUsingAuth($auth, $id);
+
+        if ($branch !== null) {
+            $record['CEF_Branch__r']['Name'] = $branch;
+        }
+
+        return $record;
     }
 
     /**
@@ -499,6 +506,32 @@ class SalesforceService
         );
 
         return ($result['records'] ?? [])[0] ?? null;
+    }
+
+    public function getOpportunityBranch(string $opportunityId): ?string
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return null;
+        }
+
+        return $this->getOpportunityBranchByIdUsingAuth($auth, $opportunityId);
+    }
+
+    /**
+     * @param  array{token: string, instanceUrl: string}  $auth
+     */
+    private function getOpportunityBranchByIdUsingAuth(array $auth, string $id): ?string
+    {
+        $escaped = $this->soqlEscape($id);
+        $result = $this->soqlQuery(
+            $auth,
+            "SELECT Id, CEF_Branch__c, CEF_Branch__r.Name FROM Opportunity WHERE Id = '{$escaped}' LIMIT 1",
+        );
+        $branch = ($result['records'] ?? [])[0]['CEF_Branch__r']['Name'] ?? null;
+
+        return filled($branch) ? (string) $branch : null;
     }
 
     public function updateOpportunityAmount(Project $project, float $amount): array

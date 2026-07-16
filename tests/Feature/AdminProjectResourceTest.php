@@ -213,6 +213,8 @@ class AdminProjectResourceTest extends TestCase
                         'Id' => '006000000000001AAA',
                         'Name' => 'HARTEST PRIMARY SCHOOL',
                         'Project_Reference_Number__c' => '22600',
+                        'CEF_Branch__c' => '001000000000001AAA',
+                        'CEF_Branch__r' => ['Name' => 'Birmingham Central'],
                         'Account' => ['Name' => 'Example Customer'],
                         'Owner' => ['Email' => 'owner@example.com'],
                     ]],
@@ -251,7 +253,7 @@ class AdminProjectResourceTest extends TestCase
         $this->assertNull($data['owner_email']);
         $this->assertSame($admin->email, $data['created_by_email']);
         $this->assertSame('2026-06-23', $data['date']);
-        $this->assertNull($data['branch_name']);
+        $this->assertSame('Birmingham Central', $data['branch_name']);
         $this->assertNull($data['cover_percentage']);
         $this->assertNull($data['value']);
         $this->assertNull($data['quote_notes']);
@@ -291,6 +293,53 @@ class AdminProjectResourceTest extends TestCase
             ->assertNotified('Project already exists');
 
         $this->assertSame(1, Project::query()->where('reference_number', '25948')->count());
+    }
+
+    public function test_salesforce_project_creation_stores_the_opportunity_branch(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $this->instance(SalesforceService::class, new class extends SalesforceService
+        {
+            public function getOpportunityById(string $id): ?array
+            {
+                return [
+                    'Id' => $id,
+                    'Name' => 'BRANCH PROJECT',
+                    'Project_Reference_Number__c' => 'BRANCH-001',
+                    'CEF_Branch__c' => '001000000000001AAA',
+                    'CEF_Branch__r' => ['Name' => 'Birmingham Central'],
+                ];
+            }
+        });
+
+        Livewire::test(ListProjects::class)
+            ->mountAction('create')
+            ->setActionData([
+                'salesforce_project' => true,
+                'salesforce_id' => '006000000000001AAA',
+                'salesforce_reference_id' => '006000000000001AAA',
+                'salesforce_pending_data' => json_encode([
+                    'Id' => '006000000000001AAA',
+                    'Name' => 'BRANCH PROJECT',
+                    'Project_Reference_Number__c' => 'BRANCH-001',
+                    'CEF_Branch__c' => '001000000000001AAA',
+                    'CEF_Branch__r' => ['Name' => 'Birmingham Central'],
+                ]),
+                'name' => 'Branch Project',
+                'reference_number' => 'BRANCH-001',
+                'customer_name' => 'Example Customer',
+                'created_by_email' => $admin->email,
+                'date' => now()->toDateString(),
+            ])
+            ->callMountedAction()
+            ->assertHasNoActionErrors();
+
+        $this->assertDatabaseHas(Project::class, [
+            'salesforce_id' => '006000000000001AAA',
+            'branch_name' => 'Birmingham Central',
+        ]);
     }
 
     public function test_project_table_shows_details_pencil_before_copy_action(): void
@@ -1577,6 +1626,7 @@ class AdminProjectResourceTest extends TestCase
             'salesforce_project' => true,
             'salesforce_id' => '006000000000001AAA',
             'owner_email' => 'stored.owner@example.com',
+            'branch_name' => 'Stored Branch',
         ]);
 
         $this->instance(SalesforceService::class, new class extends SalesforceService
@@ -1594,6 +1644,40 @@ class AdminProjectResourceTest extends TestCase
         Log::shouldHaveReceived('warning')
             ->once()
             ->withArgs(fn (string $message, array $context): bool => $message === 'Salesforce owner lookup failed during PDF generation'
+                && $context['project_id'] === $project->id
+                && $context['salesforce_id'] === '006000000000001AAA');
+    }
+
+    public function test_pdf_builder_continues_when_salesforce_branch_lookup_throws_an_exception(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'PDF-SF-BRANCH-FALLBACK',
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+            'branch_name' => null,
+        ]);
+
+        $this->instance(SalesforceService::class, new class extends SalesforceService
+        {
+            public function getOpportunityOwner(string $opportunityId): ?array
+            {
+                return null;
+            }
+
+            public function getOpportunityBranch(string $opportunityId): ?string
+            {
+                throw new \RuntimeException('Salesforce branch field is unavailable');
+            }
+        });
+        Log::spy();
+
+        $builder = app(ProjectSchedulePdfService::class)->builder($project, $project->activeRevision);
+
+        $this->assertNotNull($builder);
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->withArgs(fn (string $message, array $context): bool => $message === 'Salesforce branch lookup failed during PDF generation'
                 && $context['project_id'] === $project->id
                 && $context['salesforce_id'] === '006000000000001AAA');
     }
@@ -2109,6 +2193,7 @@ class AdminProjectResourceTest extends TestCase
         $project = Project::factory()->for($user)->create([
             'contractor' => 'Hidden Contractor',
             'site_location' => 'Visible Project Location',
+            'branch_name' => 'Birmingham Central',
         ]);
         $revision = $project->activeRevision;
         $areas = $revision->areas()->with('lines')->get();
@@ -2131,6 +2216,31 @@ class AdminProjectResourceTest extends TestCase
             $this->assertStringNotContainsString('Hidden Contractor', $html);
             $this->assertStringContainsString('Project Location:', $html);
             $this->assertStringContainsString('Visible Project Location', $html);
+            $this->assertMatchesRegularExpression(
+                '/<div class="project-meta-row">\s*<span class="meta-lbl">Project Location:<\/span> Visible Project Location.*?<span class="meta-lbl">Branch:<\/span> Birmingham Central\s*<\/div>/s',
+                $html,
+            );
+        }
+
+        $project->update([
+            'site_location' => null,
+            'branch_name' => null,
+        ]);
+
+        foreach ([
+            ['title' => 'Lighting Schedule', 'showPrices' => false],
+            ['title' => 'Lighting Quote', 'showPrices' => true],
+        ] as $document) {
+            $html = view('pdfs.schedule', [
+                'project' => $project->fresh(['user']),
+                'revision' => $revision,
+                'areas' => $areas,
+                'documentTitle' => $document['title'],
+                'showPrices' => $document['showPrices'],
+            ])->render();
+
+            $this->assertStringNotContainsString('Project Location:', $html);
+            $this->assertStringNotContainsString('Branch:', $html);
         }
     }
 

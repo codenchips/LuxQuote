@@ -45,6 +45,7 @@ class ListProjects extends ListRecords
                         if (is_array($sfData) && ! empty($sfData['Name'])) {
                             $data['name'] = ProjectForm::titleCaseProjectName($sfData['Name']);
                             $data['salesforce_id'] = $sfData['Id'] ?? $data['salesforce_id'] ?? null;
+                            $data['branch_name'] = data_get($sfData, 'CEF_Branch__r.Name');
                             $hasSalesforceCover = filled($sfData['CEF_Cover__c'] ?? null);
                             $data['has_cover'] = $hasSalesforceCover;
                             $data['cover_direction'] = 'deducted';

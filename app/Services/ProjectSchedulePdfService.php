@@ -44,6 +44,7 @@ class ProjectSchedulePdfService
 
         $generatedAt = now()->format('M d Y H:i');
         $salesEngineer = $this->salesEngineerForProject($project);
+        $branchName = $this->branchNameForProject($project);
 
         $footerHtml = '<style>
             * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -75,6 +76,7 @@ class ProjectSchedulePdfService
             'showPrices' => $documentType === 'quote',
             'salesEngineerName' => $salesEngineer['name'] ?? null,
             'salesEngineerEmail' => $salesEngineer['email'] ?? $project->owner_email,
+            'branchName' => $branchName,
         ])
             ->withBrowsershot(function ($browsershot) use ($footerHtml): void {
                 $this->configureBrowsershot($browsershot);
@@ -126,6 +128,31 @@ class ProjectSchedulePdfService
             return app(SalesforceService::class)->getOpportunityOwner((string) $project->salesforce_id);
         } catch (Throwable $exception) {
             Log::warning('Salesforce owner lookup failed during PDF generation', [
+                'project_id' => $project->id,
+                'project_reference' => $project->reference_number,
+                'salesforce_id' => $project->salesforce_id,
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    private function branchNameForProject(Project $project): ?string
+    {
+        if (filled($project->branch_name)) {
+            return (string) $project->branch_name;
+        }
+
+        if (blank($project->salesforce_id)) {
+            return null;
+        }
+
+        try {
+            return app(SalesforceService::class)->getOpportunityBranch((string) $project->salesforce_id);
+        } catch (Throwable $exception) {
+            Log::warning('Salesforce branch lookup failed during PDF generation', [
                 'project_id' => $project->id,
                 'project_reference' => $project->reference_number,
                 'salesforce_id' => $project->salesforce_id,

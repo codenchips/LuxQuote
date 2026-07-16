@@ -16,6 +16,7 @@
     ));
     $showPrices = $showPrices ?? false;
     $documentTitle = $documentTitle ?? 'Lighting Schedule';
+    $pdfBranchName = $branchName ?? $project->branch_name;
     $areasWithLines = $areas->filter(fn ($area) => $area->lines->isNotEmpty())->values();
 
     // Build a set of SKUs that actually exist in the products table,
@@ -451,9 +452,19 @@
         <div class="project-meta-row">
             <span class="meta-lbl">Customer:</span> {{ $project->customer_name ?? '-' }}
         </div>
-        <div class="project-meta-row">
-            <span class="meta-lbl">Project Location:</span> {{ $project->site_location ?? '-' }}
-        </div>
+        @if(filled($project->site_location) || filled($pdfBranchName))
+            <div class="project-meta-row">
+                @if(filled($project->site_location))
+                    <span class="meta-lbl">Project Location:</span> {{ $project->site_location }}
+                @endif
+                @if(filled($project->site_location) && filled($pdfBranchName))
+                    <span class="meta-sep">&middot;</span>
+                @endif
+                @if(filled($pdfBranchName))
+                    <span class="meta-lbl">Branch:</span> {{ $pdfBranchName }}
+                @endif
+            </div>
+        @endif
         <div class="project-meta-row">
             @if($revision->revision_number > 0)
                 <span class="meta-lbl">Revision:</span> {{ $revision->label() }}
@@ -582,7 +593,7 @@
                                                     <strong>NOTE: ALL QUANTITIES MUST BE CROSS REFERENCED AGAINST ANY DRAWINGS AND/OR LIGHTING REPORTS PRIOR TO ORDER</strong><br>
                                                     &bull; Suspension kits available where applicable, please contact Tamlite sales office for further details 01527 517 777.<br>
                                                     &bull; All quantities shown are strictly budgetary at this stage, subject to fully scaled drawings being submitted.<br>
-                                                    &bull; Emergency lighting has been designed in accordance with BS [TBC] but is an indicative layout only - additional lighting may be required.
+                                                    &bull; Emergency lighting has been designed in accordance with BS EN 1838 but is an indicative layout only - additional lighting may be required.
                                                 </p>
                                             </td>
                                         </tr>
