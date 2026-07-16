@@ -476,6 +476,81 @@ class ViewProject extends ViewRecord
         $this->findAreaInViewingRevision($areaId)->delete();
     }
 
+    public function renameArea(int $areaId, mixed $name): void
+    {
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
+
+        $area = $this->findAreaInViewingRevision($areaId);
+        $name = trim((string) $name);
+
+        if ($name === '') {
+            Notification::make()
+                ->title('Area name required')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        if (mb_strlen($name) > 255) {
+            Notification::make()
+                ->title('Area name too long')
+                ->body('Area names must be 255 characters or fewer.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        if ($area->name !== $name) {
+            $area->update(['name' => $name]);
+        }
+    }
+
+    public function copyArea(int $areaId): void
+    {
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
+
+        $area = $this->findAreaInViewingRevision($areaId);
+
+        DB::transaction(function () use ($area): void {
+            $maxSort = ProjectArea::query()
+                ->where('project_revision_id', $this->viewingRevisionId)
+                ->lockForUpdate()
+                ->max('sort_order') ?? -1;
+
+            $areaCopy = ProjectArea::create([
+                'project_id' => $this->record->id,
+                'project_revision_id' => $this->viewingRevisionId,
+                'name' => mb_substr($area->name, 0, 248).' - Copy',
+                'sort_order' => $maxSort + 1,
+            ]);
+
+            foreach ($area->lines()->orderBy('sort_order')->get() as $line) {
+                $lineCopy = $line->replicate();
+                $lineCopy->project_area_id = $areaCopy->id;
+                $lineCopy->approved = false;
+                $lineCopy->approved_at = null;
+                $lineCopy->approved_by = null;
+                $lineCopy->validation_flagged = false;
+                $lineCopy->validation_note = null;
+                $lineCopy->save();
+            }
+
+            ProjectRevision::query()
+                ->whereKey($this->viewingRevisionId)
+                ->update([
+                    'validated' => false,
+                    'validated_at' => null,
+                    'validated_by' => null,
+                ]);
+        });
+    }
+
     // ── Line management ───────────────────────────────────────────────────────
 
     public function openProductPicker(int $areaId): void

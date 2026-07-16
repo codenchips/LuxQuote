@@ -9,9 +9,9 @@
     $projectHasCover = $this->projectHasCover();
     $showLineCovers = $canViewPrices && $projectHasCover && $this->showLineCovers;
     $lineGridColumns = match (true) {
-        $canViewPrices && $projectHasCover => '20px 110px 65px 1fr 60px 76px 95px 95px 1fr 70px 48px',
-        $canViewPrices => '20px 110px 65px 1fr 60px 76px 95px 1fr 70px 48px',
-        default => '20px 110px 65px 1fr 60px 76px 1fr 48px',
+        $canViewPrices && $projectHasCover => '20px 150px 65px 1fr 60px 76px 95px 95px 1fr 70px 48px',
+        $canViewPrices => '20px 150px 65px 1fr 60px 76px 95px 1fr 70px 48px',
+        default => '20px 150px 65px 1fr 60px 76px 1fr 48px',
     };
 @endphp
 <div x-data="{ confirmDeleteLineId: null }" wire:poll.30s="heartbeat">
@@ -171,10 +171,15 @@
                     <div>Type</div>
                     @if($canViewPrices)
                         @if($projectHasCover)
-                            <div class="text-center">Net Price</div>
-                            <div class="text-center">Total Price</div>
+                            @if($this->record->cover_direction === 'added')
+                                <div class="text-center">Net</div>
+                                <div class="text-right">Price</div>
+                            @else
+                                <div class="text-right">Net</div>
+                                <div class="text-center">Price</div>
+                            @endif
                         @else
-                            <div class="text-center">Unit Price</div>
+                            <div class="text-center">Price</div>
                         @endif
                     @endif
                     <div class="flex items-center gap-2">
@@ -286,11 +291,11 @@
                                         class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
                                     />
                                     <div class="px-2 py-1 text-right text-sm font-medium text-gray-900 dark:text-white">
-                                        {{ $line->totalUnitPriceForProject($this->record) !== null ? '£'.number_format((float) $line->totalUnitPriceForProject($this->record), 2) : '—' }}
+                                        {{ $line->totalUnitPriceForProject($this->record) !== null ? number_format((float) $line->totalUnitPriceForProject($this->record), 2) : '—' }}
                                     </div>
                                 @else
                                     <div class="px-2 py-1 text-right text-sm font-medium text-gray-900 dark:text-white">
-                                        {{ $line->netUnitPriceForProject($this->record) !== null ? '£'.number_format((float) $line->netUnitPriceForProject($this->record), 2) : '—' }}
+                                        {{ $line->netUnitPriceForProject($this->record) !== null ? number_format((float) $line->netUnitPriceForProject($this->record), 2) : '—' }}
                                     </div>
                                     <input
                                         type="number"

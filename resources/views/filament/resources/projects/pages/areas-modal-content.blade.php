@@ -30,14 +30,31 @@
         @foreach($areas as $area)
         <li wire:key="modal-area-{{ $area->id }}" class="flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-900">
             <x-heroicon-o-map-pin class="size-4 text-gray-400 shrink-0" />
-            <span class="flex-1 text-sm text-gray-900 dark:text-white">{{ $area->name }}</span>
+            <input
+                type="text"
+                value="{{ $area->name }}"
+                maxlength="255"
+                wire:change="renameArea({{ $area->id }}, $event.target.value)"
+                x-on:keydown.enter="$el.blur()"
+                aria-label="Rename {{ $area->name }}"
+                class="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-gray-900 hover:border-gray-300 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:text-white dark:hover:border-gray-600"
+            />
             <span class="text-xs text-gray-400">{{ $area->lines->count() }} {{ Str::plural('item', $area->lines->count()) }}</span>
             <button
                 type="button"
                 @click.stop="confirmDeleteAreaId = {{ $area->id }}; confirmDeleteAreaName = '{{ addslashes($area->name) }}'"
+                title="Delete area"
                 class="text-gray-400 hover:text-red-500 dark:hover:text-red-400 rounded p-1 hover:bg-gray-100 dark:hover:bg-gray-800"
             >
                 <x-heroicon-o-trash class="size-4" />
+            </button>
+            <button
+                type="button"
+                wire:click.stop="copyArea({{ $area->id }})"
+                title="Copy area"
+                class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            >
+                <x-heroicon-o-document-duplicate class="size-4" />
             </button>
         </li>
         @endforeach

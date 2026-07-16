@@ -30,6 +30,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\ViewErrorBag;
 use Livewire\Livewire;
 use Symfony\Component\Process\Process;
 use Tests\TestCase;
@@ -380,7 +381,170 @@ class AdminProjectResourceTest extends TestCase
             ->assertOk()
             ->assertNotified('Revision locked');
 
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('renameArea', $area->id, 'Renamed Area')
+            ->assertOk()
+            ->assertNotified('Revision locked');
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('copyArea', $area->id)
+            ->assertOk()
+            ->assertNotified('Revision locked');
+
         $this->assertSame(0, $area->lines()->count());
+        $this->assertNotSame('Renamed Area', $area->fresh()->name);
+        $this->assertSame(1, $project->activeRevision->areas()->count());
+    }
+
+    public function test_admin_can_rename_an_area_from_the_areas_dialog(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->first();
+        $area->update(['name' => 'Original Area']);
+
+        $areasDialog = view('filament.resources.projects.pages.areas-modal-content', [
+            'areas' => $project->activeRevision->areas()->with('lines')->get(),
+            'errors' => new ViewErrorBag,
+        ])->render();
+
+        $this->assertStringContainsString('wire:change="renameArea('.$area->id.', $event.target.value)"', $areasDialog);
+        $this->assertStringContainsString('wire:click.stop="copyArea('.$area->id.')"', $areasDialog);
+        $this->assertLessThan(
+            strpos($areasDialog, 'title="Copy area"'),
+            strpos($areasDialog, 'title="Delete area"'),
+        );
+
+        $component = Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->assertActionVisible('manageAreas')
+            ->call('renameArea', $area->id, '  First Floor  ')
+            ->assertSee('First Floor');
+
+        $this->assertSame('First Floor', $area->fresh()->name);
+
+        $component
+            ->call('renameArea', $area->id, '   ')
+            ->assertNotified('Area name required');
+
+        $this->assertSame('First Floor', $area->fresh()->name);
+    }
+
+    public function test_admin_can_copy_an_area_with_its_product_lines(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->first();
+        $area->update(['name' => 'Reception']);
+        $product = Product::factory()->create();
+        $line = $area->lines()->create([
+            'product_id' => $product->id,
+            'code' => $product->sku,
+            'ref' => 'RCP001',
+            'description' => 'Reception fitting',
+            'qty' => 4,
+            'type' => ProjectLineType::Modified->value,
+            'unit_price' => 24.50,
+            'cover_1' => 10,
+            'cover_2' => 5,
+            'notes' => 'Copied area note',
+            'status' => 'Priced',
+            'approved' => true,
+            'approved_at' => now(),
+            'approved_by' => $admin->id,
+            'validation_flagged' => true,
+            'validation_note' => 'Review source line',
+            'sort_order' => 0,
+        ]);
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('copyArea', $area->id)
+            ->assertSee('Reception - Copy');
+
+        $areaCopy = $project->activeRevision->areas()
+            ->where('name', 'Reception - Copy')
+            ->firstOrFail();
+        $lineCopy = $areaCopy->lines()->firstOrFail();
+
+        $this->assertSame(1, $areaCopy->sort_order);
+        $this->assertNotSame($line->id, $lineCopy->id);
+        $this->assertSame($line->only([
+            'product_id', 'code', 'ref', 'description', 'qty', 'type', 'unit_price',
+            'cover_1', 'cover_2', 'cover_3', 'notes', 'status', 'sort_order',
+        ]), $lineCopy->only([
+            'product_id', 'code', 'ref', 'description', 'qty', 'type', 'unit_price',
+            'cover_1', 'cover_2', 'cover_3', 'notes', 'status', 'sort_order',
+        ]));
+        $this->assertFalse($lineCopy->approved);
+        $this->assertNull($lineCopy->approved_at);
+        $this->assertNull($lineCopy->approved_by);
+        $this->assertFalse($lineCopy->validation_flagged);
+        $this->assertNull($lineCopy->validation_note);
+        $this->assertFalse($project->activeRevision->fresh()->validated);
+    }
+
+    public function test_area_copy_requires_line_edit_permission_and_the_viewed_project_area(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $otherProject = Project::factory()->for($admin)->create();
+        $otherArea = $otherProject->activeRevision->areas()->first();
+
+        $this->assertLivewireCallFails(function () use ($project, $otherArea): void {
+            Livewire::test(ViewProject::class, ['record' => $project->id])
+                ->call('copyArea', $otherArea->id);
+        });
+
+        $this->assertSame(1, $project->activeRevision->areas()->count());
+
+        $salesUser = User::factory()->sales()->create();
+        $salesProject = Project::factory()->for($salesUser)->create();
+        $salesArea = $salesProject->activeRevision->areas()->first();
+        $this->actingAs($salesUser);
+
+        Livewire::test(ViewProject::class, ['record' => $salesProject->id])
+            ->call('copyArea', $salesArea->id)
+            ->assertForbidden();
+
+        $this->assertSame(1, $salesProject->activeRevision->areas()->count());
+    }
+
+    public function test_area_rename_requires_line_edit_permission_and_the_viewed_project_area(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $otherProject = Project::factory()->for($admin)->create();
+        $otherArea = $otherProject->activeRevision->areas()->first();
+
+        $this->assertLivewireCallFails(function () use ($project, $otherArea): void {
+            Livewire::test(ViewProject::class, ['record' => $project->id])
+                ->call('renameArea', $otherArea->id, 'Wrong Project');
+        });
+
+        $this->assertNotSame('Wrong Project', $otherArea->fresh()->name);
+
+        $salesUser = User::factory()->sales()->create();
+        $salesProject = Project::factory()->for($salesUser)->create();
+        $salesArea = $salesProject->activeRevision->areas()->first();
+        $this->actingAs($salesUser);
+
+        Livewire::test(ViewProject::class, ['record' => $salesProject->id])
+            ->call('renameArea', $salesArea->id, 'Forbidden Rename')
+            ->assertForbidden();
+
+        $this->assertNotSame('Forbidden Rename', $salesArea->fresh()->name);
     }
 
     public function test_stale_project_page_does_not_show_403_when_revision_was_approved_elsewhere(): void
@@ -1139,9 +1303,10 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(ViewProject::class, ['record' => $project->id])
             ->assertSee('HIDDEN-STATUS-SKU')
             ->assertSee('Notes')
+            ->assertSee('20px 150px 65px 1fr')
             ->assertDontSeeHtml('<div>Status</div>')
             ->assertDontSee('Pending')
-            ->assertDontSee('Unit Price');
+            ->assertDontSeeHtml('<div class="text-center">Price</div>');
     }
 
     public function test_schedule_pdf_generation_is_recorded_in_activity_logs(): void
@@ -1218,7 +1383,7 @@ class AdminProjectResourceTest extends TestCase
         $area = $project->activeRevision->areas()->first();
         $area->lines()->createMany([
             [
-                'code' => 'TOTAL-1',
+                'code' => 'CYP4310NWDM3VB3',
                 'description' => 'First total line',
                 'qty' => 2,
                 'type' => ProjectLineType::Standard->value,
@@ -1241,7 +1406,12 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('Line Items')
             ->assertSee('2')
             ->assertSee('Project Total')
-            ->assertSee('42.50');
+            ->assertSee('42.50')
+            ->assertSee('CYP4310NWDM3VB3')
+            ->assertSee('20px 150px 65px 1fr')
+            ->assertSeeHtml('<div class="text-center">Qty</div>')
+            ->assertSeeHtml('<div class="text-center">Price</div>')
+            ->assertDontSee('Unit Price');
     }
 
     public function test_cover_net_is_always_lower_than_total_for_added_and_deducted_storage(): void
@@ -1273,6 +1443,11 @@ class AdminProjectResourceTest extends TestCase
         $deductedComponent = Livewire::test(ViewProject::class, ['record' => $project->id]);
         $this->assertSame(180.00, $deductedComponent->instance()->getRevisionTotals()['net_value']);
         $this->assertSame(200.00, $deductedComponent->instance()->getRevisionTotals()['value']);
+        $deductedComponent
+            ->assertSee('20px 150px 65px 1fr')
+            ->assertSeeHtml('<div class="text-right">Net</div>')
+            ->assertSeeHtml('<div class="text-center">Price</div>');
+        $deductedComponent->assertDontSee('£90.00');
 
         $project->update(['cover_direction' => 'added']);
         $line->update(['unit_price' => 90.00]);
@@ -1289,7 +1464,10 @@ class AdminProjectResourceTest extends TestCase
 
         $html = $addedComponent->html();
         $this->assertLessThan(strpos($html, 'Project Total'), strpos($html, 'Net Project Total'));
-        $this->assertLessThan(strpos($html, 'Total Price'), strpos($html, 'Net Price'));
+        $this->assertStringContainsString('<div class="text-center">Net</div>', $html);
+        $this->assertStringContainsString('<div class="text-right">Price</div>', $html);
+        $this->assertLessThan(strpos($html, '>Price</div>'), strpos($html, '>Net</div>'));
+        $addedComponent->assertDontSee('£100.00');
 
         $project->activeRevision->update([
             'validated' => true,
