@@ -206,17 +206,9 @@ class ProjectsTable
                             return $query;
                         }
 
-                        return $query->where(function (Builder $query) use ($teamIds): void {
-                            $query->where('visibility', ProjectVisibility::Open)
-                                ->orWhere(function (Builder $query): void {
-                                    $query->where('visibility', ProjectVisibility::Private)
-                                        ->where('user_id', auth()->id());
-                                })
-                                ->orWhere(function (Builder $query) use ($teamIds): void {
-                                    $query->where('visibility', ProjectVisibility::Team)
-                                        ->whereIn('team_id', $teamIds);
-                                });
-                        });
+                        return $query
+                            ->where('visibility', ProjectVisibility::Team)
+                            ->whereIn('team_id', $teamIds);
                     }),
 
                 SelectFilter::make('user_group')

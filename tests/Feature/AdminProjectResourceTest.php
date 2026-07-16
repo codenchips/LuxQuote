@@ -712,15 +712,14 @@ class AdminProjectResourceTest extends TestCase
         ]);
 
         Livewire::test(ListProjects::class)
+            ->assertCanSeeTableRecords([$primaryTeamProject, $secondaryTeamProject])
+            ->assertCanNotSeeTableRecords([$otherTeamProject, $ownPrivateProject, $otherPrivateProject])
+            ->filterTable('team', [$primaryTeam->id])
+            ->assertCanSeeTableRecords([$primaryTeamProject])
+            ->assertCanNotSeeTableRecords([$secondaryTeamProject, $otherTeamProject, $ownPrivateProject, $otherPrivateProject])
+            ->filterTable('team', [])
             ->assertCanSeeTableRecords([$primaryTeamProject, $secondaryTeamProject, $otherTeamProject, $ownPrivateProject])
-            ->assertCanNotSeeTableRecords([$otherPrivateProject])
-            ->filterTable('team', [$otherTeam->id])
-            ->assertCanSeeTableRecords([$otherTeamProject, $ownPrivateProject])
-            ->assertCanNotSeeTableRecords([$primaryTeamProject, $secondaryTeamProject, $otherPrivateProject]);
-
-        Livewire::test(ListProjects::class)
-            ->assertCanSeeTableRecords([$otherTeamProject, $ownPrivateProject])
-            ->assertCanNotSeeTableRecords([$primaryTeamProject, $secondaryTeamProject, $otherPrivateProject]);
+            ->assertCanNotSeeTableRecords([$otherPrivateProject]);
     }
 
     public function test_team_visibility_projects_are_visible_to_team_members(): void
@@ -2071,10 +2070,48 @@ class AdminProjectResourceTest extends TestCase
 
         $csv = $response->streamedContent();
 
-        $this->assertStringContainsString('Area,Code,Ref,Description,Qty,Type,"Unit Price","Line Total",Notes,Status', $csv);
+        $this->assertStringContainsString('Area,Ref,Qty,Code,Description,Type,"Unit Price","Line Total",Notes,Status', $csv);
+        $this->assertStringContainsString(',A1,3,CSV-SKU,"CSV product",', $csv);
         $this->assertStringContainsString('CSV-SKU', $csv);
         $this->assertStringContainsString('12.50', $csv);
         $this->assertStringContainsString('37.50', $csv);
+    }
+
+    public function test_admin_can_export_the_active_revision_as_csv_without_prices_in_pdf_column_order(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'CSV-002',
+        ]);
+        $area = $project->activeRevision->areas()->first();
+        $area->lines()->create([
+            'code' => 'CSV-SKU',
+            'ref' => 'A1',
+            'description' => 'CSV product',
+            'qty' => 3,
+            'type' => ProjectLineType::Standard->value,
+            'unit_price' => 12.50,
+            'notes' => 'CSV notes',
+            'status' => 'Approved',
+            'sort_order' => 0,
+        ]);
+
+        $response = $this->get(route('projects.export.unpriced-csv', [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+        ]));
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+        $csv = $response->streamedContent();
+
+        $this->assertStringContainsString('Area,Ref,Qty,Code,Description,Type,Notes,Status', $csv);
+        $this->assertStringContainsString(',A1,3,CSV-SKU,"CSV product",', $csv);
+        $this->assertStringNotContainsString('Unit Price', $csv);
+        $this->assertStringNotContainsString('12.50', $csv);
     }
 
     public function test_quote_pdf_can_be_generated_for_the_active_revision(): void

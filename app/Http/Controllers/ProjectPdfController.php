@@ -256,10 +256,10 @@ class ProjectPdfController extends Controller
 
             $headings = [
                 'Area',
-                'Code',
                 'Ref',
-                'Description',
                 'Qty',
+                'Code',
+                'Description',
                 'Type',
                 'Notes',
                 'Status',
@@ -278,10 +278,10 @@ class ProjectPdfController extends Controller
 
                     $row = [
                         $area->name,
-                        $line->code,
                         $line->ref,
-                        $line->description,
                         $quantity,
+                        $line->code,
+                        $line->description,
                         $line->type?->value,
                         $line->notes,
                         $line->status,
