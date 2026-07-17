@@ -141,6 +141,15 @@ docker compose ps
 If container recreation fails with an iptables error containing `No chain/target/match by that name`, restart Docker to recreate its managed chains, then restore the Compose stack:
 
 ```bash
+cd /home/tamliteco/luxquote.app
+bash scripts/recover-docker-iptables.sh
+```
+
+`scripts/recover-docker-iptables.sh` is the preferred fast recovery path for this specific Docker firewall-chain failure. It restarts Docker, runs `docker compose up -d`, clears Laravel caches if the app container is ready, checks local and public HTTP status, and prints useful log tails. It does not remove Docker volumes and does not restore the database.
+
+The manual equivalent is:
+
+```bash
 systemctl restart docker
 cd /home/tamliteco/luxquote.app
 docker compose up -d
