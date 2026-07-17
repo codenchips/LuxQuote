@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-beta.10 - 2026-07-17
+
+Version: `0.1.0-beta.9` -> `0.1.0-beta.10`
+
+Changes included:
+
+- `d0b5c92` Teams filter better and CSV Order
+- `0a5cf1b` Docs updated
+
 ## 0.1.0-beta.9 - 2026-07-16
 
 Version: `0.1.0-beta.8` -> `0.1.0-beta.9`
