@@ -1,6 +1,20 @@
 # Company App — Project Status
 
-_Last updated: 13 July 2026_
+_Last updated: 16 July 2026_
+
+---
+
+## Output, Team Filtering, and Production Firewall Recovery — 16 July 2026
+
+- **CSV column order aligned with PDFs**: Both priced and unpriced schedule CSV exports now begin with `Area, Ref, Qty, Code, Description`. Existing price, type, notes, status, permission, and validation behaviour is unchanged.
+- **Team filter made exclusive**: When one or more Teams are selected on the Projects table, only Team-visible projects assigned to those selected Teams are shown. Open and Private projects are hidden until the Team filter is cleared. The underlying project visibility and Team membership authorization rules are unchanged.
+- **Implementation commit**: The CSV ordering and Team-filter changes are committed on `main` as `d0b5c92` (`Teams filter better and CSV Order`).
+- **Focused export verification**: Priced and unpriced CSV coverage passed with 2 tests and 15 assertions.
+- **Focused Team-filter verification**: Default Team selection, exact selected-Team filtering, cleared-filter behaviour, Team membership access, and Open/Private exclusion passed with 2 tests and 21 assertions. The stale second-component filter-persistence expectation from the previously reported wider-suite failure was removed from this focused behaviour test.
+- **Production Salesforce incident resolved without key rotation**: After the VPS deployment, JWT Salesforce requests failed with `cURL error 28: Resolving timed out`. The private key existed and was readable; host DNS resolved Salesforce while the `laravel.test` container did not, proving the failure occurred before Salesforce received the JWT assertion.
+- **Docker firewall root cause**: The host's `/root/apply_iptables_rules.sh` used global `iptables -F` / `iptables -X` operations and replaced forwarding state, deleting Docker-managed chains required for bridge DNS, NAT, outbound HTTPS, and published ports. Container recreation then failed with `No chain/target/match by that name` for the missing `DOCKER` chain.
+- **Production recovery**: Restarting Docker recreated its firewall chains, `docker compose up -d` restored the stack, and the host firewall script was changed to manage only a dedicated `LUXQUOTE_INPUT` chain. It no longer flushes/deletes Docker chains, changes Docker's forwarding policy, or restarts the iptables service while Docker is running. Container DNS and the Salesforce interrogator smoke test then succeeded.
+- **Deployment runbook updated**: `DEPLOYMENT.md` now records the Docker/firewall diagnostic sequence, volume-safe recovery commands, and the rule that a container DNS timeout does not justify rotating the Salesforce JWT certificate.
 
 ---
 

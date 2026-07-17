@@ -91,6 +91,75 @@ curl -I https://quote.tamlite.co.uk
 
 If the runner is not listed, recreate it using the runner container command in the Deployment Method section with a fresh GitHub runner token.
 
+## Docker Firewall and Container DNS Recovery
+
+The production host uses a custom iptables script at `/root/apply_iptables_rules.sh`. Docker creates and manages its own filter/NAT chains for bridge networking, container DNS, outbound traffic, and published ports. The host firewall script must not flush, delete, replace, or restart those Docker-managed rules while Docker is running.
+
+The live firewall script should:
+
+- manage host traffic through its own `LUXQUOTE_INPUT` chain
+- attach that chain to `INPUT` without globally flushing other chains
+- leave `FORWARD`, `DOCKER`, `DOCKER-USER`, `DOCKER-FORWARD`, Docker bridge chains, and Docker NAT rules untouched
+- avoid global `iptables -F`, `iptables -X`, and `iptables -Z` operations
+- avoid changing the `FORWARD` policy as part of host `INPUT` filtering
+- avoid `systemctl restart iptables` after applying live rules while Docker is running
+- use `DOCKER-USER` for any future policy that intentionally filters forwarded container traffic
+
+Do not allowlist fixed Salesforce edge IP addresses. Salesforce hostnames may resolve to changing edge addresses; working container DNS and outbound HTTPS are required instead.
+
+### Salesforce JWT requests timing out during DNS resolution
+
+If Salesforce project loading or `salesforce:interrogate` fails after a deploy, read the Laravel log before rotating keys:
+
+```bash
+cd /home/tamliteco/luxquote.app
+docker compose exec -T laravel.test tail -n 120 storage/logs/laravel.log
+```
+
+An error such as:
+
+```text
+cURL error 28: Resolving timed out ... /services/oauth2/token
+```
+
+means the request did not reach Salesforce. If the configured private key exists and is readable, this is a network/DNS failure rather than evidence that the Salesforce Connected App certificate has changed.
+
+Compare host and container DNS:
+
+```bash
+getent hosts tamlite-lighting.my.salesforce.com
+docker compose exec -T laravel.test getent hosts tamlite-lighting.my.salesforce.com
+```
+
+If the host resolves the hostname but the container does not, verify Docker's firewall chain still exists:
+
+```bash
+iptables -nL DOCKER-USER
+docker compose ps
+```
+
+If container recreation fails with an iptables error containing `No chain/target/match by that name`, restart Docker to recreate its managed chains, then restore the Compose stack:
+
+```bash
+systemctl restart docker
+cd /home/tamliteco/luxquote.app
+docker compose up -d
+docker compose ps
+```
+
+This is volume-preserving. Do not use `docker compose down -v`, remove volumes, restore the database, or rotate Salesforce keys for this symptom.
+
+After correcting the host firewall script, verify Docker networking and Salesforce:
+
+```bash
+iptables -nL DOCKER-USER
+docker compose exec -T laravel.test getent hosts tamlite-lighting.my.salesforce.com
+docker compose exec -T laravel.test php artisan optimize:clear
+docker compose exec -T -u sail laravel.test php artisan salesforce:interrogate --limit=1 --format=json
+```
+
+Only generate a new key/certificate pair when the original private key is permanently lost or the Salesforce Connected App certificate is deliberately being rotated. A Docker image rebuild, container recreation, DNS failure, or missing Docker firewall chain does not require a new certificate.
+
 ## Emergency Stack Recovery
 
 If production is returning HTTP 500 because the Docker stack or MySQL container is wedged, use the checked-in emergency recovery script from the production app directory:
