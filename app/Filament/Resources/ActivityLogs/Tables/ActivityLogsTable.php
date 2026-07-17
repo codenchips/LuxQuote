@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ActivityLogsTable
 {
+    private const ACTION_DISPLAY_LIMIT = 160;
+
     public static function configure(Table $table): Table
     {
         return $table
@@ -75,44 +77,31 @@ class ActivityLogsTable
                                 return "Deleted area <strong>{$name}</strong> — {$count} item".($count !== 1 ? 's' : '')." removed: {$items}";
                             })(),
 
-                            'project.created' => 'Created the project structure',
+                            'project.created' => 'Created the project <strong>'.e(self::projectName($record)).'</strong>',
 
-                            'project.details_saved' => (function () use ($payload): string {
+                            'project.details_saved' => (function () use ($payload, $record): string {
                                 $url = $payload['salesforce_pdf_url'] ?? null;
                                 $filename = e((string) ($payload['salesforce_pdf_filename'] ?? 'schedule PDF'));
+                                $projectName = e(self::projectName($record));
+                                $prefix = "Changed project details for <strong>{$projectName}</strong>";
 
                                 if (blank($url)) {
-                                    return 'Saved project details';
+                                    return $prefix;
                                 }
 
                                 $href = e((string) $url);
 
-                                return "Saved project details and uploaded <strong>{$filename}</strong> to Salesforce: <a href=\"{$href}\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-primary-600 underline dark:text-primary-400\">View file</a>";
+                                return "{$prefix} and uploaded <strong>{$filename}</strong> to Salesforce: <a href=\"{$href}\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-primary-600 underline dark:text-primary-400\">View file</a>";
                             })(),
 
-                            'project.updated' => (function () use ($payload): string {
+                            'project.updated' => (function () use ($payload, $record): string {
+                                $projectName = e(self::projectName($record));
+
                                 if (empty($payload)) {
-                                    return 'Updated project details';
-                                }
-                                $fieldNames = [
-                                    'visibility' => 'Privacy Status',
-                                    'reference_number' => 'Quote Reference',
-                                    'customer_name' => 'Customer Name',
-                                    'cover_percentage' => 'Cover Percentage',
-                                    'cover_1' => 'Cover 1',
-                                    'cover_2' => 'Cover 2',
-                                    'cover_3' => 'Cover 3',
-                                    'branch_name' => 'Branch Name',
-                                ];
-                                $parts = [];
-                                foreach ($payload as $key => $change) {
-                                    $label = $fieldNames[$key] ?? (string) str($key)->headline();
-                                    $old = e(self::formatChangedValue($change['old'] ?? null));
-                                    $new = e(self::formatChangedValue($change['new'] ?? null));
-                                    $parts[] = "Changed <strong>{$label}</strong> from <strong>{$old}</strong> to <strong>{$new}</strong>";
+                                    return "Changed project details for <strong>{$projectName}</strong>";
                                 }
 
-                                return 'Updated project details: '.implode('; ', $parts);
+                                return "Changed project details for <strong>{$projectName}</strong>: ".self::formatProjectChanges($payload);
                             })(),
 
                             'project.deleted' => 'Permanently <strong>deleted</strong> the project',
@@ -357,6 +346,10 @@ class ActivityLogsTable
 
     private static function formatActionHtml(string $html, string $actionType): string
     {
+        $copyText = self::plainActionText($html);
+        $html = self::truncateActionHtml($html);
+        $copyValue = e(json_encode($copyText, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR));
+
         $html = str_replace(
             ['<strong>', '</strong>'],
             ['<span class="font-semibold text-sky-600 dark:text-sky-300">', '</span>'],
@@ -365,7 +358,23 @@ class ActivityLogsTable
         $html = self::styleActionLead($html, self::actionToneClass($actionType));
         $html = self::styleConnectorPhrases($html);
 
-        return '<span class="block overflow-hidden text-ellipsis whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">'.$html.'</span>';
+        return '<span title="Copy to clipboard" x-on:click.stop="navigator.clipboard.writeText('.$copyValue.')" class="block max-w-full cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">'.$html.'</span>';
+    }
+
+    private static function truncateActionHtml(string $html): string
+    {
+        $plainText = self::plainActionText($html);
+
+        if (mb_strlen($plainText) <= self::ACTION_DISPLAY_LIMIT) {
+            return $html;
+        }
+
+        return e(mb_substr($plainText, 0, self::ACTION_DISPLAY_LIMIT - 3).'...');
+    }
+
+    private static function plainActionText(string $html): string
+    {
+        return html_entity_decode(trim(strip_tags($html)), ENT_QUOTES | ENT_HTML5, 'UTF-8');
     }
 
     private static function formatChangedValue(mixed $value): string
@@ -383,6 +392,57 @@ class ActivityLogsTable
         return (string) str($value)
             ->replace('_', ' ')
             ->headline();
+    }
+
+    /**
+     * @param  array<string, array{old?: mixed, new?: mixed}>  $changes
+     */
+    private static function formatProjectChanges(array $changes): string
+    {
+        $fieldNames = [
+            'branch_name' => 'Branch Name',
+            'contractor' => 'Contractor',
+            'cover_1' => 'Cover 1',
+            'cover_2' => 'Cover 2',
+            'cover_3' => 'Cover 3',
+            'cover_direction' => 'Cover Direction',
+            'cover_percentage' => 'Cover Percentage',
+            'created_by_email' => 'Created By Email',
+            'customer_name' => 'Customer Name',
+            'date' => 'Date',
+            'department' => 'Department',
+            'general_notes' => 'General Notes',
+            'has_cover' => 'Has Cover',
+            'internal_notes' => 'Internal Notes',
+            'name' => 'Project Name',
+            'owner_email' => 'Project Owner Email',
+            'quote_notes' => 'Quote Notes',
+            'reference_number' => 'Quote Reference',
+            'revision' => 'Revision',
+            'site_location' => 'Site Location',
+            'status' => 'Status',
+            'team_id' => 'Team',
+            'value' => 'Value',
+            'visibility' => 'Privacy Status',
+        ];
+
+        $parts = [];
+
+        foreach ($changes as $key => $change) {
+            $label = $fieldNames[$key] ?? (string) str($key)->headline();
+
+            if (in_array($key, ['general_notes', 'internal_notes', 'quote_notes'], true)) {
+                $parts[] = self::formatSensitiveTextChange($label, $change);
+
+                continue;
+            }
+
+            $old = e(self::formatChangedValue($change['old'] ?? null));
+            $new = e(self::formatChangedValue($change['new'] ?? null));
+            $parts[] = "Changed <strong>{$label}</strong> from <strong>{$old}</strong> to <strong>{$new}</strong>";
+        }
+
+        return implode('; ', $parts);
     }
 
     /**
@@ -419,6 +479,11 @@ class ActivityLogsTable
         }
 
         return 'No project';
+    }
+
+    private static function projectName(ActivityLog $record): string
+    {
+        return (string) ($record->project?->name ?? $record->project_name_snapshot ?? 'Unknown project');
     }
 
     private static function shortProjectName(string $projectName): string

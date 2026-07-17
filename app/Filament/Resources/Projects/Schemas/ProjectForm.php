@@ -158,7 +158,7 @@ class ProjectForm
                             $set('cover_direction', 'deducted');
                             $set('cover_1', $hasSalesforceCover ? $data['CEF_Cover__c'] : null);
                             $set('cover_2', $hasSalesforceCover ? '5.00' : null);
-                            $set('cover_3', $hasSalesforceCover ? '5.00' : null);
+                            $set('cover_3', $hasSalesforceCover ? '0.00' : null);
                             $set('value', $data['Amount'] ?? null);
                         }),
                 ])
@@ -261,9 +261,9 @@ class ProjectForm
                             return;
                         }
 
-                        foreach (['cover_1', 'cover_2', 'cover_3'] as $field) {
+                        foreach (self::defaultCoverValues() as $field => $default) {
                             if (blank($get($field))) {
-                                $set($field, '5.00');
+                                $set($field, $default);
                             }
                         }
 
@@ -290,7 +290,7 @@ class ProjectForm
                     ->schema([
                         self::coverInput('cover_1', 'Cover 1'),
                         self::coverInput('cover_2', 'Cover 2'),
-                        self::coverInput('cover_3', 'Cover 3'),
+                        self::coverInput('cover_3', 'Cover 3', '0.00'),
                     ])
                     ->visible(fn (Get $get): bool => (auth()->user()?->can('pricing.view') ?? false) && (bool) $get('has_cover'))
                     ->columnSpanFull(),
@@ -456,9 +456,9 @@ class ProjectForm
                 return $data;
             }
 
-            foreach (['cover_1', 'cover_2', 'cover_3'] as $field) {
+            foreach (self::defaultCoverValues() as $field => $default) {
                 if (($data[$field] ?? null) === '' || ($data[$field] ?? null) === null) {
-                    $data[$field] = '5.00';
+                    $data[$field] = $default;
 
                     continue;
                 }
@@ -494,11 +494,23 @@ class ProjectForm
         return $data;
     }
 
-    private static function coverInput(string $field, string $label): TextInput
+    /**
+     * @return array<string, string>
+     */
+    private static function defaultCoverValues(): array
+    {
+        return [
+            'cover_1' => '5.00',
+            'cover_2' => '5.00',
+            'cover_3' => '0.00',
+        ];
+    }
+
+    private static function coverInput(string $field, string $label, string $placeholder = '5.00'): TextInput
     {
         return TextInput::make($field)
             ->label($label)
-            ->placeholder('5.00')
+            ->placeholder($placeholder)
             ->numeric()
             ->suffix('%')
             ->minValue(0)
