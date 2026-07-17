@@ -1,6 +1,16 @@
 # Company App — Project Status
 
-_Last updated: 16 July 2026_
+_Last updated: 17 July 2026_
+
+---
+
+## Friday UI Polish and Deploy Recovery — 17 July 2026
+
+- **Project owner name in project headers**: Project, Validation, Output, and Project History pages now show the resolved project owner full name in brackets after the revision label, for example `P0 (Jamie Engineer)`. Salesforce projects use a cached Opportunity owner lookup; local projects fall back to matching `owner_email` to a local user.
+- **Cover creation defaults adjusted**: Enabling Cover on a project now defaults Cover 1, Cover 2, and Cover 3 to `5.00`, `5.00`, and `0.00`. Salesforce-derived Cover still enables deducted Cover and uses the Salesforce Cover value for Cover 1.
+- **Validation page final polish**: Validation issue rows now use issue-type icons, compact issue-type badges, aligned price/Cover fields, a softer flag action, disabled flag placeholders for already-flagged issues, and check icons for validated rows.
+- **Activity log readability and copying**: Project creation and detail-change log lines now include the project name, project detail changes describe what changed from old value to new value, long action text is truncated in the table, and clicking an action line copies the full action text to the clipboard.
+- **Production deploy incident captured**: A GitHub Actions runner hang and Docker iptables-chain failure were recovered without touching volumes. `DEPLOYMENT.md` now documents the volume-safe Docker firewall recovery path and the runner container mount/path requirements.
 
 ---
 
@@ -27,7 +37,7 @@ _Last updated: 16 July 2026_
 - **Net/Total display order standardised**: Cover-enabled schedules show Net Price before Total Price, with the editable stored value appearing in the correct column for the selected Cover direction. The Net Project Total panel is always immediately left of Project Total.
 - **Cover values standardised**: Cover values are treated as two-decimal percentages throughout the UI and database. Typing `4` is normalised to `4.00`; blank line-level Cover values inherit the project defaults and are not flagged as overrides.
 - **Cover permission added**: `cover.update` controls whether a user can change Cover percentages. Cover remains price-related, so users must also have `pricing.view` to see Cover fields.
-- **Project details Cover fields**: The project details slide-over exposes Has Cover, Cover Direction, and Cover 1–3. Salesforce projects with `CEF_Cover__c` enable Cover automatically, use deducted Cover, populate Cover 1 from Salesforce, and default Cover 2 and Cover 3 to `5.00`.
+- **Project details Cover fields**: The project details slide-over exposes Has Cover, Cover Direction, and Cover 1–3. Salesforce projects with `CEF_Cover__c` enable Cover automatically, use deducted Cover, populate Cover 1 from Salesforce, and default Cover 2 to `5.00` and Cover 3 to `0.00`.
 - **Line-level Cover fields**: New project lines inherit the three project Cover values only when the project has Cover enabled. The project line table can toggle its Notes column into compact Cover inputs without adding another wide table column.
 - **Validation Cover issues**: Lines with effective Cover values that differ from the project defaults are listed as validation Issues only for Cover-enabled projects. Cover issue rows show RRP, Unit, calculated Net, and compact Cover inputs so permitted users can review the full calculation in context. Validated/approved rows show Cover as read-only text.
 - **Validation layout refreshed**: Issue cards now use consistent type badges/icons and aligned action controls. Price mismatches show RRP and Quote with a separate **Match** action; Cover mismatches show RRP, Unit, Net, and C1–C3; flag actions use a compact red flag control.
@@ -804,12 +814,12 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 13 July 2026)
+## Known Gaps / Next Steps (as of 17 July 2026)
 
-- [ ] Teams
+- [ ] Continue Cover pricing review after beta feedback, especially how Cover values should appear in quote/schedule outputs and approval summaries
 - [ ] Move long-running PDF/document-pack generation toward queued jobs with polling/download links so browser/proxy timeouts and remote datasheet delays do not surface as user-facing 500 errors
 - [ ] Add structured logging around PDF generation with project reference, revision, document type, include-datasheets flag, progress token, qpdf step, datasheet endpoint result, and exception class/message
-- [ ] Add a runner maintenance/checklist script or documented recreate command that persists the GitHub deploy key, `known_hosts`, labels, and app checkout mount for `luxquote-production`
+- [ ] Add a runner maintenance/checklist script that recreates `luxquote-production` with the GitHub deploy key, `known_hosts`, labels, and `/home/tamliteco/luxquote.app` checkout mount intact
 - [ ] Review VPS resources and Docker health: memory/swap, disk pressure, MySQL restart history, Apache proxy timeout, and whether long PDF requests are being killed or timed out
 - [ ] Add off-server database backup/restore verification and keep emergency recovery strictly volume-preserving unless a deliberate restore is chosen
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back

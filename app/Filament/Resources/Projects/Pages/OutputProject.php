@@ -109,7 +109,7 @@ class OutputProject extends ViewRecord
     {
         $parts = array_filter([
             $this->record->visibility?->label(),
-            ProjectRevision::labelForNumber($this->record->revision),
+            $this->projectRevisionLabelWithOwner($this->record->revision),
         ]);
 
         return new HtmlString(implode(' &middot; ', $parts));

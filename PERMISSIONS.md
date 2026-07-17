@@ -159,7 +159,7 @@ Any code that allows `pricing.update` should assume `pricing.view` is also requi
 
 Cover percentages and calculated net prices are price-related. Users need `pricing.view` to see Has Cover, Cover Direction, Cover values, Net Price, and Net Project Total. They also need `cover.update` to change the project Cover configuration, project line Cover overrides, or unresolved validation issue values. Validated/approved rows show Cover values as read-only text.
 
-Cover controls and calculations are active only when `projects.has_cover` is true. Blank line-level Cover values inherit the project Cover defaults. Validation should only flag Cover when the effective line values differ from the project defaults, and it must not emit Cover issues for projects without Cover enabled.
+Cover controls and calculations are active only when `projects.has_cover` is true. Enabling Cover on a project defaults Cover 1, Cover 2, and Cover 3 to `5.00`, `5.00`, and `0.00`. Blank line-level Cover values inherit the project Cover defaults. Validation should only flag Cover when the effective line values differ from the project defaults, and it must not emit Cover issues for projects without Cover enabled.
 
 For Cover-enabled projects, Net is always the lower amount and Total is always the higher amount, regardless of Cover Direction. With deducted Cover, the stored `project_lines.unit_price` is Total; with added Cover, it is Net. All price-visible schedule, validation, PDF, CSV, and project-total displays must derive their labelled Net/Total values through the `ProjectLine` Cover calculation methods.
 

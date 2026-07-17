@@ -151,8 +151,10 @@ class ViewProject extends ViewRecord
         if ($this->viewingRevisionId) {
             $revNum = ProjectRevision::find($this->viewingRevisionId)?->revision_number;
             if ($revNum !== null) {
-                $parts[] = ProjectRevision::labelForNumber($revNum);
+                $parts[] = $this->projectRevisionLabelWithOwner($revNum);
             }
+        } elseif ($ownerName = $this->projectOwnerNameForHeader()) {
+            $parts[] = "({$ownerName})";
         }
 
         $html = collect($parts)

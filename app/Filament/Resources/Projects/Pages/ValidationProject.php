@@ -56,7 +56,7 @@ class ValidationProject extends ViewRecord
             $this->record->site_location,
         ]);
 
-        $parts[] = ProjectRevision::labelForNumber($this->record->revision);
+        $parts[] = $this->projectRevisionLabelWithOwner($this->record->revision);
 
         return new HtmlString(implode(' &middot; ', $parts));
     }

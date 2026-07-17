@@ -594,7 +594,7 @@ docker run -d \
   -e REPO_URL="https://github.com/codenchips/LuxQuote" \
   -e RUNNER_TOKEN="FRESH_TOKEN_FROM_GITHUB" \
   -v /opt/actions-runner/luxquote-production:/home/runner/_work \
-  -v /home/tamliteco/luxquote.app:/home/runner/luxquote.app \
+  -v /home/tamliteco/luxquote.app:/home/tamliteco/luxquote.app \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /usr/bin/docker:/usr/bin/docker:ro \
   -v /usr/libexec/docker/cli-plugins:/usr/libexec/docker/cli-plugins:ro \
@@ -632,7 +632,7 @@ The runner image runs the deploy as root, so Git/SSH looks under `/root/.ssh` in
 - `/root/.ssh/known_hosts` contains GitHub host keys.
 - `/root/.ssh/luxquote_github_repo_deploy` exists inside the runner container.
 - the private key is `chmod 600`, owned by root, and the corresponding public key is registered as a read-only deploy key on `codenchips/LuxQuote`.
-- `/home/tamliteco/luxquote.app` is mounted into the runner at `/home/runner/luxquote.app`, matching the workflow/deploy script path.
+- `/home/tamliteco/luxquote.app` is mounted into the runner at `/home/tamliteco/luxquote.app`, matching the workflow/deploy script path.
 
 If a new runner token is used, remove/recreate only the runner container. Do not remove Docker volumes.
 

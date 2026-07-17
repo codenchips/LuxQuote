@@ -561,7 +561,7 @@
                             @if($hasSku && isset($existingSkus[$line->code]))
                                 @php
                                     $sku   = $line->code;
-                                    $base  = str_starts_with($sku, 'XC')
+                                    $base  = str_starts_with($sku, 'XC')    
                                         ? 'https://xciteledlighting.co.uk/data-sheet/' . urlencode($sku)
                                         : 'https://tamlite.co.uk/data-sheet/' . urlencode($sku);
                                     $dsUrl = $base . '?t=' . $pdfTimestamp . '&source=luxquote';
