@@ -177,6 +177,8 @@ Teams are independent of permission groups. A user may belong to many teams, and
 
 The Teams resource is controlled by `teams.manage`. Users with that permission can create, edit, and delete teams and manage team membership. Users can see their own team memberships on the profile page.
 
+The profile page includes a user-owned **Project list view** preference. The default is **All available projects**, which uses the normal project access query. A user may instead choose one team they belong to, which applies that Team filter by default when they open the Projects table. This is a display preference only; it does not grant access to projects outside the normal Open, Private, and Team visibility rules.
+
 Project visibility supports:
 
 - `Open` — all logged-in users who can view projects may see it.

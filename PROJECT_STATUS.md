@@ -1,6 +1,15 @@
 # Company App — Project Status
 
-_Last updated: 17 July 2026_
+_Last updated: 20 July 2026_
+
+---
+
+## Project List Defaults — 20 July 2026
+
+- **Project list default restored to all accessible projects**: By default, the Projects table now lists all projects the user can access: Open projects, their own Private projects, and Team-scoped projects for teams they belong to.
+- **Profile-controlled project list preference**: The user profile now includes **Project list view**, with **All available projects** plus one option for each team the user belongs to. Choosing a team makes the Projects table open with that Team filter applied by default.
+- **Team filter behaviour preserved**: When the Projects table Team filter is active, it remains an exclusive Team filter and shows only Team-visible projects assigned to the selected team(s). Clearing it returns to all accessible projects.
+- **Production rollback routines added**: Deploys now write rollback manifests in `backups/` that capture the previous commit and pre-deploy backup paths. `scripts/rollback-production.sh` can roll production back to the previous commit without touching the database, or restore the matching pre-deploy database backup only when `--with-database` is explicitly requested and confirmed.
 
 ---
 
@@ -20,7 +29,7 @@ _Last updated: 17 July 2026_
 - **Team filter made exclusive**: When one or more Teams are selected on the Projects table, only Team-visible projects assigned to those selected Teams are shown. Open and Private projects are hidden until the Team filter is cleared. The underlying project visibility and Team membership authorization rules are unchanged.
 - **Implementation commit**: The CSV ordering and Team-filter changes are committed on `main` as `d0b5c92` (`Teams filter better and CSV Order`).
 - **Focused export verification**: Priced and unpriced CSV coverage passed with 2 tests and 15 assertions.
-- **Focused Team-filter verification**: Default Team selection, exact selected-Team filtering, cleared-filter behaviour, Team membership access, and Open/Private exclusion passed with 2 tests and 21 assertions. The stale second-component filter-persistence expectation from the previously reported wider-suite failure was removed from this focused behaviour test.
+- **Focused Team-filter verification**: Exact selected-Team filtering, cleared-filter behaviour, Team membership access, and Open/Private exclusion passed with focused coverage. The stale second-component filter-persistence expectation from the previously reported wider-suite failure was removed from this focused behaviour test.
 - **Production Salesforce incident resolved without key rotation**: After the VPS deployment, JWT Salesforce requests failed with `cURL error 28: Resolving timed out`. The private key existed and was readable; host DNS resolved Salesforce while the `laravel.test` container did not, proving the failure occurred before Salesforce received the JWT assertion.
 - **Docker firewall root cause**: The host's `/root/apply_iptables_rules.sh` used global `iptables -F` / `iptables -X` operations and replaced forwarding state, deleting Docker-managed chains required for bridge DNS, NAT, outbound HTTPS, and published ports. Container recreation then failed with `No chain/target/match by that name` for the missing `DOCKER` chain.
 - **Production recovery**: Restarting Docker recreated its firewall chains, `docker compose up -d` restored the stack, and the host firewall script was changed to manage only a dedicated `LUXQUOTE_INPUT` chain. It no longer flushes/deletes Docker chains, changes Docker's forwarding policy, or restarts the iptables service while Docker is running. Container DNS and the Salesforce interrogator smoke test then succeeded.
@@ -50,7 +59,7 @@ _Last updated: 17 July 2026_
 
 ## Beta Test Prep and Project Workflow — 9 July 2026
 
-- **Project-list filtering**: The projects table now supports filtering by the creator's permission group. The default view is scoped to the logged-in user's own group, and table filters persist in the session when users navigate away and back.
+- **Project-list filtering**: The projects table supports filtering by the creator's permission group, and table filters persist in the session when users navigate away and back.
 - **Technical paste import**: The Paste Products modal now has separate Misos and Technical paste modes. Technical paste validates the pasted structure first, warns that it replaces all existing areas/products in the revision, creates areas from headings, supports tab/comma input, and uses pasted descriptions where supplied while still matching known SKUs to local products.
 - **Paste usability polish**: The paste textarea accepts actual Tab key input, displays tabs as a visible arrow marker, and strips trailing tab markers before import so manual edits remain workable.
 - **Quote/schedule PDF polish**: Quote and schedule PDFs now show `Sales Engineer` using the project owner email instead of the generated timestamp, and line columns are ordered as Ref, Qty, Code, Description, then the remaining existing columns.

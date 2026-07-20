@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['name', 'email', 'password', 'role', 'permission_group_id', 'area_code', 'job_role', 'last_login_at'])]
+#[Fillable(['name', 'email', 'password', 'role', 'permission_group_id', 'area_code', 'project_list_team_id', 'job_role', 'last_login_at'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser, HasAppAuthentication, HasAppAuthenticationRecovery // <-- 3. APPENDED FilamentUser HERE
 {
@@ -42,6 +42,7 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             'password' => 'hashed',
             'role' => UserRole::class,
             'job_role' => JobRole::class,
+            'project_list_team_id' => 'integer',
         ];
     }
 

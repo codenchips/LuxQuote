@@ -557,6 +557,7 @@ The deploy script:
 - starts Docker services so the database is available
 - creates a compressed full pre-deploy MySQL backup in `/home/tamliteco/luxquote.app/backups`
 - creates a single rolling data-only backup of protected business tables at `backups/latest-protected-data-restore.sql.gz` and records their pre-deploy row counts
+- writes `backups/deploy-manifest-pending.env` after the backup is created, recording the previous commit and the backup paths for emergency rollback if the deploy fails mid-run
 - fetches and checks out `origin/production`
 - rebuilds/recreates Docker services with `docker compose up -d --build`
 - removes `public/hot`
@@ -569,10 +570,48 @@ The deploy script:
 - checks protected business table row counts after migrations; if all previously-populated protected tables are empty, it restores the data-only backup into the migrated schema and fails the deploy so the incident is visible
 - clears/rebuilds Laravel caches
 - smoke-checks `https://quote.tamlite.co.uk`
+- writes `backups/deploy-manifest-latest.env` after a successful smoke check, then removes the pending manifest
 - prunes Docker build cache older than 24 hours
 - prunes DB backups older than 14 days
 
 The deploy data-loss guard is intentionally conservative. It only auto-restores when protected business data has catastrophically disappeared from every previously-populated protected table. If only some protected tables look emptied, the deploy stops and leaves the full backup plus `backups/latest-protected-data-restore.sql.gz` in place for manual inspection rather than risking duplicate or mixed-state rows. The rolling data-only restore file is replaced on each deploy, so only one `latest-protected-data-restore.sql.gz` should exist at a time. If the migrated-schema data restore fails, the deploy log explains that the new migrations likely changed table or column structures in a way that needs a custom manual recovery from the full backup. The protected table list can be overridden with `PROTECTED_DATA_TABLES`; automatic catastrophic restore can be disabled with `RESTORE_ON_CATASTROPHIC_DATA_LOSS=false`.
+
+### Production Rollback
+
+Use `scripts/rollback-production.sh` from the production checkout when a deploy needs to be undone quickly. The default path is code-only and does not touch the database:
+
+```bash
+cd /home/tamliteco/luxquote.app
+bash scripts/rollback-production.sh
+```
+
+That reads `backups/deploy-manifest-latest.env`, checks out the commit that was live immediately before the last successful deploy, rebuilds the app containers, reinstalls Composer/npm dependencies, clears/rebuilds Laravel caches, and smoke-checks `https://quote.tamlite.co.uk`. It does not remove Docker volumes and does not restore the database.
+
+If the most recent deploy failed before completion, use the pending manifest created immediately after the pre-deploy backup:
+
+```bash
+cd /home/tamliteco/luxquote.app
+bash scripts/rollback-production.sh --manifest backups/deploy-manifest-pending.env
+```
+
+Only restore the database when code rollback alone is not enough and losing all post-deploy data changes is acceptable:
+
+```bash
+cd /home/tamliteco/luxquote.app
+bash scripts/rollback-production.sh --with-database
+```
+
+The database restore path requires typing `RESTORE` unless `--yes` is passed. It streams the full pre-deploy backup from the selected manifest into the Docker `mysql` service, then clears/rebuilds Laravel caches and smoke-checks the public URL. If the restore fails, the script prints the backup path and explains that the dump may not be a valid full MySQL restore.
+
+Useful overrides:
+
+```bash
+bash scripts/rollback-production.sh --commit <sha>
+bash scripts/rollback-production.sh --with-database --backup backups/pre-deploy-YYYYMMDD-HHMMSS.sql.gz
+bash scripts/rollback-production.sh --manifest backups/deploy-manifest-pending.env --with-database
+```
+
+After a successful rollback the script writes `backups/rollback-latest.env` plus a timestamped `backups/rollback-YYYYMMDD-HHMMSS.env` record.
 
 ### One-Time Server Setup
 

@@ -665,7 +665,7 @@ class AdminProjectResourceTest extends TestCase
             ->assertCanNotSeeTableRecords([$technicalProject]);
     }
 
-    public function test_project_list_defaults_to_logged_in_users_team_filter(): void
+    public function test_project_list_defaults_to_all_available_projects(): void
     {
         $user = User::factory()->sales()->create();
         $technicalUser = User::factory()->technical()->create();
@@ -712,8 +712,66 @@ class AdminProjectResourceTest extends TestCase
         ]);
 
         Livewire::test(ListProjects::class)
-            ->assertCanSeeTableRecords([$primaryTeamProject, $secondaryTeamProject])
-            ->assertCanNotSeeTableRecords([$otherTeamProject, $ownPrivateProject, $otherPrivateProject])
+            ->assertCanSeeTableRecords([$primaryTeamProject, $secondaryTeamProject, $otherTeamProject, $ownPrivateProject])
+            ->assertCanNotSeeTableRecords([$otherPrivateProject])
+            ->filterTable('team', [$primaryTeam->id])
+            ->assertCanSeeTableRecords([$primaryTeamProject])
+            ->assertCanNotSeeTableRecords([$secondaryTeamProject, $otherTeamProject, $ownPrivateProject, $otherPrivateProject])
+            ->filterTable('team', [])
+            ->assertCanSeeTableRecords([$primaryTeamProject, $secondaryTeamProject, $otherTeamProject, $ownPrivateProject])
+            ->assertCanNotSeeTableRecords([$otherPrivateProject]);
+    }
+
+    public function test_project_list_defaults_to_profile_project_list_team(): void
+    {
+        $user = User::factory()->sales()->create();
+        $technicalUser = User::factory()->technical()->create();
+        $primaryTeam = Team::create([
+            'name' => 'Primary Team',
+            'slug' => 'primary-team',
+        ]);
+        $secondaryTeam = Team::create([
+            'name' => 'Secondary Team',
+            'slug' => 'secondary-team',
+        ]);
+        $otherTeam = Team::create([
+            'name' => 'Other Team',
+            'slug' => 'other-team',
+        ]);
+
+        $primaryTeam->users()->attach($user);
+        $secondaryTeam->users()->attach($user);
+        $user->update(['project_list_team_id' => $primaryTeam->id]);
+
+        $this->actingAs($user);
+
+        $primaryTeamProject = Project::factory()->for($technicalUser)->create([
+            'name' => 'Primary Team Project',
+            'visibility' => ProjectVisibility::Team,
+            'team_id' => $primaryTeam->id,
+        ]);
+        $secondaryTeamProject = Project::factory()->for($technicalUser)->create([
+            'name' => 'Secondary Team Project',
+            'visibility' => ProjectVisibility::Team,
+            'team_id' => $secondaryTeam->id,
+        ]);
+        $otherTeamProject = Project::factory()->for($technicalUser)->create([
+            'name' => 'Other Team Project',
+            'visibility' => ProjectVisibility::Open,
+            'team_id' => $otherTeam->id,
+        ]);
+        $ownPrivateProject = Project::factory()->for($user)->create([
+            'name' => 'Own Private Project',
+            'visibility' => ProjectVisibility::Private,
+        ]);
+        $otherPrivateProject = Project::factory()->for($technicalUser)->create([
+            'name' => 'Other Private Project',
+            'visibility' => ProjectVisibility::Private,
+        ]);
+
+        Livewire::test(ListProjects::class)
+            ->assertCanSeeTableRecords([$primaryTeamProject])
+            ->assertCanNotSeeTableRecords([$secondaryTeamProject, $otherTeamProject, $ownPrivateProject, $otherPrivateProject])
             ->filterTable('team', [$primaryTeam->id])
             ->assertCanSeeTableRecords([$primaryTeamProject])
             ->assertCanNotSeeTableRecords([$secondaryTeamProject, $otherTeamProject, $ownPrivateProject, $otherPrivateProject])

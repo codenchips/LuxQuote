@@ -51,7 +51,7 @@ class ListProjects extends ListRecords
                             $data['cover_direction'] = 'deducted';
                             $data['cover_1'] = $hasSalesforceCover ? $sfData['CEF_Cover__c'] : null;
                             $data['cover_2'] = $hasSalesforceCover ? '5.00' : null;
-                            $data['cover_3'] = $hasSalesforceCover ? '5.00' : null;
+                            $data['cover_3'] = $hasSalesforceCover ? '0.00' : null;
                             $data['value'] = $sfData['Amount'] ?? $data['value'] ?? null;
                         }
                     }
@@ -87,21 +87,73 @@ class ListProjects extends ListRecords
 
     private function applyDefaultTeamFilter(): void
     {
-        $teamIds = auth()->user()?->teams()
+        $user = auth()->user();
+
+        if ($user === null) {
+            return;
+        }
+
+        $preferredTeamId = $user->project_list_team_id;
+        $currentTeamValues = $this->teamFilterValues();
+
+        if ($preferredTeamId === null) {
+            if ($this->filterValuesMatchCurrentUserTeams($currentTeamValues)) {
+                unset($this->tableFilters['team']);
+                session()->put($this->getTableFiltersSessionKey(), $this->tableFilters);
+            }
+
+            return;
+        }
+
+        $isMember = $user->teams()
+            ->whereKey($preferredTeamId)
+            ->exists();
+
+        if (! $isMember) {
+            return;
+        }
+
+        if ($currentTeamValues !== []
+            && $currentTeamValues !== [(int) $preferredTeamId]
+            && ! $this->filterValuesMatchCurrentUserTeams($currentTeamValues)) {
+            return;
+        }
+
+        $this->tableFilters['team']['values'] = [(int) $preferredTeamId];
+        session()->put($this->getTableFiltersSessionKey(), $this->tableFilters);
+    }
+
+    /**
+     * @return array<int>
+     */
+    private function teamFilterValues(): array
+    {
+        return collect($this->tableFilters['team']['values'] ?? [])
+            ->filter(fn (mixed $teamId): bool => filled($teamId))
+            ->map(fn (mixed $teamId): int => (int) $teamId)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int>  $teamValues
+     */
+    private function filterValuesMatchCurrentUserTeams(array $teamValues): bool
+    {
+        if ($teamValues === []) {
+            return false;
+        }
+
+        $currentTeamIds = auth()->user()?->teams()
             ->orderBy('name')
             ->pluck('teams.id')
             ->map(fn (int|string $teamId): int => (int) $teamId)
+            ->values()
             ->all() ?? [];
 
-        if ($teamIds === []) {
-            return;
-        }
+        sort($teamValues);
+        sort($currentTeamIds);
 
-        if (array_key_exists('team', $this->tableFilters ?? [])) {
-            return;
-        }
-
-        $this->tableFilters['team']['values'] = $teamIds;
-        session()->put($this->getTableFiltersSessionKey(), $this->tableFilters);
+        return $teamValues === $currentTeamIds;
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Filament\Pages\Auth;
 
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Section;
@@ -21,6 +22,15 @@ class EditProfile extends BaseEditProfile
                         TextInput::make('area_code')
                             ->label('Area Code')
                             ->maxLength(20),
+                        Select::make('project_list_team_id')
+                            ->label('Project list view')
+                            ->options(fn (): array => self::projectListViewOptions())
+                            ->afterStateHydrated(function (Select $component, mixed $state): void {
+                                $component->state(filled($state) ? (string) $state : 'all');
+                            })
+                            ->dehydrateStateUsing(fn (mixed $state): ?int => self::normaliseProjectListTeamId($state))
+                            ->selectablePlaceholder(false)
+                            ->helperText('Choose which projects are shown by default on the Projects page.'),
                     ])
                     ->columnSpanFull(),
                 Section::make('Teams')
@@ -83,5 +93,33 @@ class EditProfile extends BaseEditProfile
             .'<span class="inline-flex rounded-md border border-warning-500/40 bg-warning-500/10 px-2 py-1 text-sm font-medium text-warning-300">'.e($group->name).'</span>'
             .$description
             .'</div>';
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function projectListViewOptions(): array
+    {
+        $teams = auth()->user()?->teams()
+            ->orderBy('name')
+            ->pluck('name', 'teams.id')
+            ->mapWithKeys(fn (string $name, int|string $id): array => [(string) $id => $name])
+            ->all() ?? [];
+
+        return ['all' => 'All available projects'] + $teams;
+    }
+
+    private static function normaliseProjectListTeamId(mixed $state): ?int
+    {
+        if ($state === 'all' || blank($state)) {
+            return null;
+        }
+
+        $teamId = (int) $state;
+        $isMember = auth()->user()?->teams()
+            ->whereKey($teamId)
+            ->exists() ?? false;
+
+        return $isMember ? $teamId : null;
     }
 }

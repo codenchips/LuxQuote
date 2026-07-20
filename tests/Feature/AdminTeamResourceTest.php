@@ -68,10 +68,55 @@ class AdminTeamResourceTest extends TestCase
 
         Livewire::test(EditProfile::class)
             ->assertSuccessful()
+            ->assertSee('Project list view')
+            ->assertSee('All available projects')
             ->assertSee('Lighting Designers')
             ->assertSee('User Group')
             ->assertSee($user->permissionGroup->name)
             ->assertDontSee('Role');
+    }
+
+    public function test_profile_can_store_project_list_view_team_preference(): void
+    {
+        $user = User::factory()->create([
+            'name' => 'Project Viewer',
+            'area_code' => 'PX',
+        ]);
+        $preferredTeam = Team::create([
+            'name' => 'Lighting Designers',
+            'slug' => 'lighting-designers',
+        ]);
+        $otherTeam = Team::create([
+            'name' => 'Sales Team',
+            'slug' => 'sales-team',
+        ]);
+
+        $preferredTeam->users()->attach($user);
+        $otherTeam->users()->attach($user);
+
+        $this->actingAs($user);
+
+        Livewire::test(EditProfile::class)
+            ->fillForm([
+                'name' => 'Project Viewer',
+                'area_code' => 'PX',
+                'project_list_team_id' => (string) $preferredTeam->id,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame($preferredTeam->id, $user->fresh()->project_list_team_id);
+
+        Livewire::test(EditProfile::class)
+            ->fillForm([
+                'name' => 'Project Viewer',
+                'area_code' => 'PX',
+                'project_list_team_id' => 'all',
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertNull($user->fresh()->project_list_team_id);
     }
 
     public function test_admin_can_list_teams(): void

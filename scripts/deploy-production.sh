@@ -17,6 +17,34 @@ log() {
     printf '[%s] %s\n' "$(timestamp)" "$*"
 }
 
+manifest_var() {
+    local path="$1"
+    local key="$2"
+    local value="${3:-}"
+
+    printf '%s=%q\n' "$key" "$value" >> "$path"
+}
+
+write_deploy_manifest() {
+    local path="$1"
+    local status="$2"
+    local deployed_commit="${3:-}"
+
+    : > "$path"
+    manifest_var "$path" "STATUS" "$status"
+    manifest_var "$path" "DEPLOYED_AT" "$(timestamp)"
+    manifest_var "$path" "APP_DIR" "$APP_DIR"
+    manifest_var "$path" "DEPLOY_BRANCH" "$DEPLOY_BRANCH"
+    manifest_var "$path" "PUBLIC_URL" "$PUBLIC_URL"
+    manifest_var "$path" "BACKUP_DIR" "$BACKUP_DIR"
+    manifest_var "$path" "PREVIOUS_COMMIT" "$previous_commit"
+    manifest_var "$path" "DEPLOYED_COMMIT" "$deployed_commit"
+    manifest_var "$path" "FULL_BACKUP" "$full_backup"
+    manifest_var "$path" "DATA_BACKUP" "$data_backup"
+    manifest_var "$path" "BEFORE_COUNTS" "$before_counts"
+    manifest_var "$path" "AFTER_COUNTS" "$after_counts"
+}
+
 cd "$APP_DIR"
 
 env_value() {
@@ -123,6 +151,7 @@ fi
 
 log "Marking production checkout as a safe git directory"
 git config --global --add safe.directory "$APP_DIR"
+previous_commit="$(git rev-parse HEAD 2>/dev/null || true)"
 
 log "Starting production deploy for branch: $DEPLOY_BRANCH"
 
@@ -152,6 +181,8 @@ data_backup="$BACKUP_DIR/latest-protected-data-restore.sql.gz"
 data_backup_tmp="$BACKUP_DIR/latest-protected-data-restore.sql.gz.tmp"
 before_counts="$BACKUP_DIR/pre-deploy-counts-${backup_timestamp}.tsv"
 after_counts="$BACKUP_DIR/post-migration-counts-${backup_timestamp}.tsv"
+manifest_latest="$BACKUP_DIR/deploy-manifest-latest.env"
+manifest_pending="$BACKUP_DIR/deploy-manifest-pending.env"
 
 log "Recording protected table counts before deploy"
 record_table_counts "$before_counts"
@@ -192,9 +223,13 @@ else
     rm -f "$data_backup" "$data_backup_tmp"
 fi
 
+log "Writing pending deploy rollback manifest"
+write_deploy_manifest "$manifest_pending" "pending" ""
+
 log "Fetching latest code"
 git fetch origin "$DEPLOY_BRANCH"
 git checkout -B "$DEPLOY_BRANCH" "origin/$DEPLOY_BRANCH"
+deployed_commit="$(git rev-parse HEAD)"
 
 log "Building and starting Docker services"
 docker compose up -d --build
@@ -278,6 +313,10 @@ docker compose exec laravel.test php artisan view:cache
 
 log "Smoke checking $PUBLIC_URL"
 curl --fail --silent --show-error --location --max-time 20 "$PUBLIC_URL" >/dev/null
+
+log "Writing successful deploy rollback manifest"
+write_deploy_manifest "$manifest_latest" "success" "$deployed_commit"
+rm -f "$manifest_pending"
 
 log "Pruning unused Docker build cache older than 24 hours"
 docker builder prune --all --force --filter "until=24h"

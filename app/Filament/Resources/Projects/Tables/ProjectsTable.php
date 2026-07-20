@@ -190,7 +190,6 @@ class ProjectsTable
                 SelectFilter::make('team')
                     ->label('Team')
                     ->multiple()
-                    ->default(fn (): array => self::currentUserTeamIds())
                     ->options(fn (): array => Team::query()
                         ->orderBy('name')
                         ->pluck('name', 'id')
@@ -338,17 +337,5 @@ class ProjectsTable
             ->modifyQueryUsing(fn (Builder $query) => $query
                 ->with(['activeViewers', 'lastEditor', 'team', 'user.permissionGroup'])
             );
-    }
-
-    /**
-     * @return array<int>
-     */
-    private static function currentUserTeamIds(): array
-    {
-        return auth()->user()?->teams()
-            ->orderBy('name')
-            ->pluck('teams.id')
-            ->map(fn (int|string $teamId): int => (int) $teamId)
-            ->all() ?? [];
     }
 }
