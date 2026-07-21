@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -56,7 +57,9 @@ class AppServiceProvider extends ServiceProvider
                 'action_type' => 'user.login',
                 'user_email_snapshot' => $event->user->email,
                 'project_name_snapshot' => null,
-                'payload' => null,
+                'payload' => [
+                    'login_context' => $this->loginContext(request()),
+                ],
             ]);
         });
 
@@ -94,5 +97,65 @@ class AppServiceProvider extends ServiceProvider
             'view-activity-logs' => PermissionKey::ActivityLogView,
             'view-salesforce' => PermissionKey::SalesforceView,
         ];
+    }
+
+    /**
+     * @return array{display: string, browser: string, platform: string, fingerprint: string, ip_address: ?string, accept_language: ?string, user_agent: ?string}
+     */
+    private function loginContext(Request $request): array
+    {
+        $userAgent = $request->userAgent();
+        $browser = $this->browserName($userAgent);
+        $platform = $this->platformName($request, $userAgent);
+        $fingerprint = strtoupper(substr(hash('sha256', implode('|', [
+            (string) $request->ip(),
+            (string) $userAgent,
+            (string) $request->header('accept-language'),
+            (string) $request->header('sec-ch-ua-platform'),
+        ])), 0, 6));
+
+        return [
+            'display' => "{$browser} on {$platform} · #{$fingerprint}",
+            'browser' => $browser,
+            'platform' => $platform,
+            'fingerprint' => $fingerprint,
+            'ip_address' => $request->ip(),
+            'accept_language' => $request->header('accept-language'),
+            'user_agent' => $userAgent,
+        ];
+    }
+
+    private function browserName(?string $userAgent): string
+    {
+        $userAgent = $userAgent ?? '';
+
+        return match (true) {
+            str_contains($userAgent, 'Edg/') => 'Edge',
+            str_contains($userAgent, 'OPR/'), str_contains($userAgent, 'Opera') => 'Opera',
+            str_contains($userAgent, 'Chrome/'), str_contains($userAgent, 'CriOS/') => 'Chrome',
+            str_contains($userAgent, 'Firefox/'), str_contains($userAgent, 'FxiOS/') => 'Firefox',
+            str_contains($userAgent, 'Safari/') => 'Safari',
+            default => 'Unknown browser',
+        };
+    }
+
+    private function platformName(Request $request, ?string $userAgent): string
+    {
+        $clientHint = trim((string) $request->header('sec-ch-ua-platform'), '" ');
+
+        if ($clientHint !== '') {
+            return Str::of($clientHint)->title()->toString();
+        }
+
+        $userAgent = $userAgent ?? '';
+
+        return match (true) {
+            str_contains($userAgent, 'Windows') => 'Windows',
+            str_contains($userAgent, 'Mac OS X'), str_contains($userAgent, 'Macintosh') => 'macOS',
+            str_contains($userAgent, 'iPhone'), str_contains($userAgent, 'iPad') => 'iOS',
+            str_contains($userAgent, 'Android') => 'Android',
+            str_contains($userAgent, 'Linux') => 'Linux',
+            default => 'Unknown device',
+        };
     }
 }

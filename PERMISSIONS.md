@@ -62,6 +62,8 @@ protected static bool $shouldRegisterNavigation = false;
 
 The permissions catalogue remains directly accessible to authorized users if linked manually, and tests can still render it. It is read-only by design.
 
+The live **History** page and linked **Archived Logs** page are both controlled by `activity-log.view`. Archived Logs searches and displays retained audit snapshots from `activity_log_archives`; it does not appear as a separate left-sidebar navigation item and does not grant any additional project access or mutation capability.
+
 ## Authorization Flow
 
 All permission gates are registered in `App\Providers\AppServiceProvider`.

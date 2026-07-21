@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ActivityLogs\Tables;
 
 use App\Models\ActivityLog;
+use App\Models\ActivityLogArchive;
 use App\Models\ProjectRevision;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -13,253 +14,274 @@ class ActivityLogsTable
 {
     private const ACTION_DISPLAY_LIMIT = 160;
 
-    public static function configure(Table $table): Table
+    public static function configure(Table $table, bool $archived = false): Table
     {
+        $columns = [
+            TextColumn::make('user.name')
+                ->label('Who')
+                ->placeholder(fn (ActivityLog|ActivityLogArchive $record): string => $record->user_email_snapshot)
+                ->searchable()
+                ->width('7rem')
+                ->extraCellAttributes([
+                    'class' => 'w-28 max-w-28 overflow-hidden whitespace-nowrap text-ellipsis',
+                ]),
+
+            TextColumn::make('project.reference_number')
+                ->label('Reference')
+                ->getStateUsing(fn (ActivityLog|ActivityLogArchive $record): string => self::referenceLabel($record))
+                ->searchable()
+                ->sortable()
+                ->width('10rem')
+                ->extraCellAttributes([
+                    'class' => 'w-40 max-w-40 overflow-hidden whitespace-nowrap text-ellipsis',
+                ]),
+
+            TextColumn::make('revision_number')
+                ->label('Rev')
+                ->formatStateUsing(fn (?int $state): ?string => $state !== null ? ProjectRevision::labelForNumber($state) : null)
+                ->placeholder('—')
+                ->sortable()
+                ->width('4.5rem')
+                ->extraCellAttributes([
+                    'class' => 'w-[4.5rem] max-w-[4.5rem] whitespace-nowrap',
+                ]),
+
+            TextColumn::make('action_performed')
+                ->label('Action Performed')
+                ->html()
+                ->searchable(query: fn (Builder $query, string $search): Builder => self::searchActionPerformed($query, $search))
+                ->width('100%')
+                ->extraCellAttributes([
+                    'class' => 'w-full min-w-[36rem] overflow-hidden whitespace-nowrap text-ellipsis',
+                ])
+                ->getStateUsing(function (ActivityLog|ActivityLogArchive $record): string {
+                    $payload = $record->payload ?? [];
+
+                    $html = match ($record->action_type) {
+                        'area.created' => 'Created area <strong>'.e((string) ($payload['area'] ?? '?')).'</strong>',
+
+                        'area.deleted' => (function () use ($payload): string {
+                            $name = e((string) ($payload['area'] ?? '?'));
+                            $lines = $payload['lines'] ?? [];
+                            if (empty($lines)) {
+                                return "Deleted area <strong>{$name}</strong> (no items)";
+                            }
+                            $count = count($lines);
+                            $items = implode(', ', array_map(function (array $line): string {
+                                $code = e((string) ($line['code'] ?? ''));
+                                $desc = e((string) ($line['description'] ?? ''));
+
+                                return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
+                            }, $lines));
+
+                            return "Deleted area <strong>{$name}</strong> — {$count} item".($count !== 1 ? 's' : '')." removed: {$items}";
+                        })(),
+
+                        'project.created' => 'Created the project <strong>'.e(self::projectName($record)).'</strong>',
+
+                        'project.details_saved' => (function () use ($payload, $record): string {
+                            $url = $payload['salesforce_pdf_url'] ?? null;
+                            $filename = e((string) ($payload['salesforce_pdf_filename'] ?? 'schedule PDF'));
+                            $projectName = e(self::projectName($record));
+                            $prefix = "Changed project details for <strong>{$projectName}</strong>";
+
+                            if (blank($url)) {
+                                return $prefix;
+                            }
+
+                            $href = e((string) $url);
+
+                            return "{$prefix} and uploaded <strong>{$filename}</strong> to Salesforce: <a href=\"{$href}\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-primary-600 underline dark:text-primary-400\">View file</a>";
+                        })(),
+
+                        'project.updated' => (function () use ($payload, $record): string {
+                            $projectName = e(self::projectName($record));
+
+                            if (empty($payload)) {
+                                return "Changed project details for <strong>{$projectName}</strong>";
+                            }
+
+                            return "Changed project details for <strong>{$projectName}</strong>: ".self::formatProjectChanges($payload);
+                        })(),
+
+                        'project.deleted' => 'Permanently <strong>deleted</strong> the project',
+
+                        'revision.created' => 'Created a new snapshot: <strong>Revision #'.e((string) ($payload['revision_number'] ?? '?')).'</strong>',
+
+                        'revision.approved' => 'Approved and locked <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
+                        'revision.unapproved' => 'Unapproved and unlocked <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
+
+                        'quote_approval.requested' => 'Requested quote approval for <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
+
+                        'validation.issue_approved' => (function () use ($payload): string {
+                            $lines = $payload['lines'] ?? [];
+                            $items = implode(', ', array_map(function (array $line): string {
+                                $code = e((string) ($line['code'] ?? ''));
+                                $desc = e((string) ($line['description'] ?? ''));
+
+                                return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
+                            }, $lines));
+
+                            return 'Approved validation warning'.($items !== '' ? " for <strong>{$items}</strong>" : '');
+                        })(),
+
+                        'validation.issue_approval_undone' => (function () use ($payload): string {
+                            $lines = $payload['lines'] ?? [];
+                            $items = implode(', ', array_map(function (array $line): string {
+                                $code = e((string) ($line['code'] ?? ''));
+                                $desc = e((string) ($line['description'] ?? ''));
+
+                                return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
+                            }, $lines));
+
+                            return 'Undid validation approval'.($items !== '' ? " for <strong>{$items}</strong>" : '');
+                        })(),
+
+                        'validation.issue_matched' => (function () use ($payload): string {
+                            $lines = $payload['lines'] ?? [];
+                            $items = implode(', ', array_map(function (array $line): string {
+                                $code = e((string) ($line['code'] ?? ''));
+                                $desc = e((string) ($line['description'] ?? ''));
+
+                                return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
+                            }, $lines));
+                            $price = isset($payload['matched_price']) ? ' to <strong>£'.e(number_format((float) $payload['matched_price'], 2)).'</strong>' : '';
+
+                            return 'Matched and approved quote price'.$price.($items !== '' ? " for <strong>{$items}</strong>" : '');
+                        })(),
+
+                        'validation.issue_flagged' => (function () use ($payload): string {
+                            $lines = $payload['lines'] ?? [];
+                            $items = implode(', ', array_map(function (array $line): string {
+                                $code = e((string) ($line['code'] ?? ''));
+                                $desc = e((string) ($line['description'] ?? ''));
+
+                                return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
+                            }, $lines));
+
+                            return 'Flagged validation issue'.($items !== '' ? " for <strong>{$items}</strong>" : '');
+                        })(),
+
+                        'schedule_pdf.generated' => 'Generated schedule PDF <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
+
+                        'quote_pdf.generated' => 'Generated quote PDF <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
+
+                        'document_pack.saved' => 'Saved document pack <strong>'.e((string) ($payload['document_pack_name'] ?? '')).'</strong>',
+
+                        'document_pack.generated' => 'Generated document pack <strong>'.e((string) ($payload['document_pack_name'] ?? '')).'</strong> as <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
+
+                        'document_pack.deleted' => 'Deleted document pack <strong>'.e((string) ($payload['document_pack_name'] ?? '')).'</strong>',
+
+                        'salesforce_pdf.uploaded' => 'Uploaded '.e((string) ($payload['document_label'] ?? 'PDF')).' to Salesforce <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
+
+                        'user.login' => (function () use ($payload): string {
+                            $context = $payload['login_context']['display'] ?? null;
+
+                            if (blank($context)) {
+                                return 'Logged in';
+                            }
+
+                            return 'Logged in <strong>'.e((string) $context).'</strong>';
+                        })(),
+
+                        'product.added' => (function () use ($payload): string {
+                            $qty = e((string) ($payload['qty'] ?? '1'));
+                            $description = e((string) ($payload['description'] ?? ''));
+                            $code = e((string) ($payload['code'] ?? ''));
+                            $ref = isset($payload['ref']) ? ' | Ref: '.e((string) $payload['ref']) : '';
+                            $price = isset($payload['unit_price']) ? ' | £'.e(number_format((float) $payload['unit_price'], 2)) : '';
+                            $notes = isset($payload['notes']) && $payload['notes'] !== '' ? ' | '.e((string) $payload['notes']) : '';
+
+                            $detail = trim("{$code}{$ref}{$price}{$notes}", ' |');
+                            $label = $description !== '' ? "<strong>{$qty}x {$description}</strong>" : "<strong>{$qty}x</strong>";
+
+                            return 'Added '.$label.($detail !== '' ? " ({$detail})" : '');
+                        })(),
+
+                        'line.updated' => (function () use ($payload): string {
+                            $code = e((string) ($payload['code'] ?? '?'));
+                            $changes = $payload['changes'] ?? [];
+                            if (empty($changes)) {
+                                return "Updated line <strong>{$code}</strong>";
+                            }
+                            $fieldNames = [
+                                'code' => 'SKU',
+                                'ref' => 'Reference',
+                                'description' => 'Description',
+                                'qty' => 'Quantity',
+                                'unit_price' => 'Unit Price',
+                                'cover_1' => 'Cover 1',
+                                'cover_2' => 'Cover 2',
+                                'cover_3' => 'Cover 3',
+                                'notes' => 'Notes',
+                                'type' => 'Line Type',
+                                'status' => 'Status',
+                            ];
+                            $parts = [];
+                            foreach ($changes as $field => $change) {
+                                $label = $fieldNames[$field] ?? (string) str($field)->headline();
+
+                                if (in_array($field, ['notes', 'validation_note'], true)) {
+                                    $parts[] = self::formatSensitiveTextChange($label, $change);
+
+                                    continue;
+                                }
+
+                                $old = e(self::formatChangedValue($change['old'] ?? null));
+                                $new = e(self::formatChangedValue($change['new'] ?? null));
+                                $parts[] = "Changed <strong>{$label}</strong> from <strong>{$old}</strong> to <strong>{$new}</strong>";
+                            }
+
+                            return "Updated line <strong>{$code}</strong>: ".implode('; ', $parts);
+                        })(),
+
+                        // Legacy action type — kept for backward compatibility with existing records
+                        'line.qty_updated' => (function () use ($payload): string {
+                            $code = e((string) ($payload['code'] ?? '?'));
+                            $parts = [];
+                            if (isset($payload['qty'])) {
+                                $old = e((string) $payload['qty']['old']);
+                                $new = e((string) $payload['qty']['new']);
+                                $parts[] = "Changed quantity for <strong>{$code}</strong> from {$old} to <strong>{$new}</strong>";
+                            }
+                            if (isset($payload['unit_price'])) {
+                                $old = e((string) $payload['unit_price']['old']);
+                                $new = e((string) $payload['unit_price']['new']);
+                                $parts[] = "Changed price for <strong>{$code}</strong> from {$old} to <strong>{$new}</strong>";
+                            }
+
+                            return implode('; ', $parts) ?: 'Updated line';
+                        })(),
+
+                        default => (string) str($record->action_type)->replace('.', ' ')->title(),
+                    };
+
+                    return self::formatActionHtml($html, $record->action_type);
+                }),
+
+            TextColumn::make('created_at')
+                ->label('Date & Time')
+                ->dateTime('M d Y H:i')
+                ->sortable()
+                ->width('10rem')
+                ->extraCellAttributes([
+                    'class' => 'w-40 max-w-40 whitespace-nowrap',
+                ]),
+        ];
+
+        if ($archived) {
+            $columns[] = TextColumn::make('archived_at')
+                ->label('Archived')
+                ->dateTime('M d Y H:i')
+                ->sortable()
+                ->width('10rem')
+                ->extraCellAttributes([
+                    'class' => 'w-40 max-w-40 whitespace-nowrap',
+                ]);
+        }
+
         return $table
-            ->columns([
-                TextColumn::make('user.name')
-                    ->label('Who')
-                    ->placeholder(fn (ActivityLog $record): string => $record->user_email_snapshot)
-                    ->searchable()
-                    ->width('7rem')
-                    ->extraCellAttributes([
-                        'class' => 'w-28 max-w-28 overflow-hidden whitespace-nowrap text-ellipsis',
-                    ]),
-
-                TextColumn::make('project.reference_number')
-                    ->label('Reference')
-                    ->getStateUsing(fn (ActivityLog $record): string => self::referenceLabel($record))
-                    ->searchable()
-                    ->sortable()
-                    ->width('10rem')
-                    ->extraCellAttributes([
-                        'class' => 'w-40 max-w-40 overflow-hidden whitespace-nowrap text-ellipsis',
-                    ]),
-
-                TextColumn::make('revision_number')
-                    ->label('Rev')
-                    ->formatStateUsing(fn (?int $state): ?string => $state !== null ? ProjectRevision::labelForNumber($state) : null)
-                    ->placeholder('—')
-                    ->sortable()
-                    ->width('4.5rem')
-                    ->extraCellAttributes([
-                        'class' => 'w-[4.5rem] max-w-[4.5rem] whitespace-nowrap',
-                    ]),
-
-                TextColumn::make('action_performed')
-                    ->label('Action Performed')
-                    ->html()
-                    ->searchable(query: fn (Builder $query, string $search): Builder => self::searchActionPerformed($query, $search))
-                    ->width('100%')
-                    ->extraCellAttributes([
-                        'class' => 'w-full min-w-[36rem] overflow-hidden whitespace-nowrap text-ellipsis',
-                    ])
-                    ->getStateUsing(function (ActivityLog $record): string {
-                        $payload = $record->payload ?? [];
-
-                        $html = match ($record->action_type) {
-                            'area.created' => 'Created area <strong>'.e((string) ($payload['area'] ?? '?')).'</strong>',
-
-                            'area.deleted' => (function () use ($payload): string {
-                                $name = e((string) ($payload['area'] ?? '?'));
-                                $lines = $payload['lines'] ?? [];
-                                if (empty($lines)) {
-                                    return "Deleted area <strong>{$name}</strong> (no items)";
-                                }
-                                $count = count($lines);
-                                $items = implode(', ', array_map(function (array $line): string {
-                                    $code = e((string) ($line['code'] ?? ''));
-                                    $desc = e((string) ($line['description'] ?? ''));
-
-                                    return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
-                                }, $lines));
-
-                                return "Deleted area <strong>{$name}</strong> — {$count} item".($count !== 1 ? 's' : '')." removed: {$items}";
-                            })(),
-
-                            'project.created' => 'Created the project <strong>'.e(self::projectName($record)).'</strong>',
-
-                            'project.details_saved' => (function () use ($payload, $record): string {
-                                $url = $payload['salesforce_pdf_url'] ?? null;
-                                $filename = e((string) ($payload['salesforce_pdf_filename'] ?? 'schedule PDF'));
-                                $projectName = e(self::projectName($record));
-                                $prefix = "Changed project details for <strong>{$projectName}</strong>";
-
-                                if (blank($url)) {
-                                    return $prefix;
-                                }
-
-                                $href = e((string) $url);
-
-                                return "{$prefix} and uploaded <strong>{$filename}</strong> to Salesforce: <a href=\"{$href}\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-primary-600 underline dark:text-primary-400\">View file</a>";
-                            })(),
-
-                            'project.updated' => (function () use ($payload, $record): string {
-                                $projectName = e(self::projectName($record));
-
-                                if (empty($payload)) {
-                                    return "Changed project details for <strong>{$projectName}</strong>";
-                                }
-
-                                return "Changed project details for <strong>{$projectName}</strong>: ".self::formatProjectChanges($payload);
-                            })(),
-
-                            'project.deleted' => 'Permanently <strong>deleted</strong> the project',
-
-                            'revision.created' => 'Created a new snapshot: <strong>Revision #'.e((string) ($payload['revision_number'] ?? '?')).'</strong>',
-
-                            'revision.approved' => 'Approved and locked <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
-                            'revision.unapproved' => 'Unapproved and unlocked <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
-
-                            'quote_approval.requested' => 'Requested quote approval for <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
-
-                            'validation.issue_approved' => (function () use ($payload): string {
-                                $lines = $payload['lines'] ?? [];
-                                $items = implode(', ', array_map(function (array $line): string {
-                                    $code = e((string) ($line['code'] ?? ''));
-                                    $desc = e((string) ($line['description'] ?? ''));
-
-                                    return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
-                                }, $lines));
-
-                                return 'Approved validation warning'.($items !== '' ? " for <strong>{$items}</strong>" : '');
-                            })(),
-
-                            'validation.issue_approval_undone' => (function () use ($payload): string {
-                                $lines = $payload['lines'] ?? [];
-                                $items = implode(', ', array_map(function (array $line): string {
-                                    $code = e((string) ($line['code'] ?? ''));
-                                    $desc = e((string) ($line['description'] ?? ''));
-
-                                    return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
-                                }, $lines));
-
-                                return 'Undid validation approval'.($items !== '' ? " for <strong>{$items}</strong>" : '');
-                            })(),
-
-                            'validation.issue_matched' => (function () use ($payload): string {
-                                $lines = $payload['lines'] ?? [];
-                                $items = implode(', ', array_map(function (array $line): string {
-                                    $code = e((string) ($line['code'] ?? ''));
-                                    $desc = e((string) ($line['description'] ?? ''));
-
-                                    return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
-                                }, $lines));
-                                $price = isset($payload['matched_price']) ? ' to <strong>£'.e(number_format((float) $payload['matched_price'], 2)).'</strong>' : '';
-
-                                return 'Matched and approved quote price'.$price.($items !== '' ? " for <strong>{$items}</strong>" : '');
-                            })(),
-
-                            'validation.issue_flagged' => (function () use ($payload): string {
-                                $lines = $payload['lines'] ?? [];
-                                $items = implode(', ', array_map(function (array $line): string {
-                                    $code = e((string) ($line['code'] ?? ''));
-                                    $desc = e((string) ($line['description'] ?? ''));
-
-                                    return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
-                                }, $lines));
-
-                                return 'Flagged validation issue'.($items !== '' ? " for <strong>{$items}</strong>" : '');
-                            })(),
-
-                            'schedule_pdf.generated' => 'Generated schedule PDF <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
-
-                            'quote_pdf.generated' => 'Generated quote PDF <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
-
-                            'document_pack.saved' => 'Saved document pack <strong>'.e((string) ($payload['document_pack_name'] ?? '')).'</strong>',
-
-                            'document_pack.generated' => 'Generated document pack <strong>'.e((string) ($payload['document_pack_name'] ?? '')).'</strong> as <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
-
-                            'document_pack.deleted' => 'Deleted document pack <strong>'.e((string) ($payload['document_pack_name'] ?? '')).'</strong>',
-
-                            'salesforce_pdf.uploaded' => 'Uploaded '.e((string) ($payload['document_label'] ?? 'PDF')).' to Salesforce <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
-
-                            'user.login' => 'Logged in',
-
-                            'product.added' => (function () use ($payload): string {
-                                $qty = e((string) ($payload['qty'] ?? '1'));
-                                $description = e((string) ($payload['description'] ?? ''));
-                                $code = e((string) ($payload['code'] ?? ''));
-                                $ref = isset($payload['ref']) ? ' | Ref: '.e((string) $payload['ref']) : '';
-                                $price = isset($payload['unit_price']) ? ' | £'.e(number_format((float) $payload['unit_price'], 2)) : '';
-                                $notes = isset($payload['notes']) && $payload['notes'] !== '' ? ' | '.e((string) $payload['notes']) : '';
-
-                                $detail = trim("{$code}{$ref}{$price}{$notes}", ' |');
-                                $label = $description !== '' ? "<strong>{$qty}x {$description}</strong>" : "<strong>{$qty}x</strong>";
-
-                                return 'Added '.$label.($detail !== '' ? " ({$detail})" : '');
-                            })(),
-
-                            'line.updated' => (function () use ($payload): string {
-                                $code = e((string) ($payload['code'] ?? '?'));
-                                $changes = $payload['changes'] ?? [];
-                                if (empty($changes)) {
-                                    return "Updated line <strong>{$code}</strong>";
-                                }
-                                $fieldNames = [
-                                    'code' => 'SKU',
-                                    'ref' => 'Reference',
-                                    'description' => 'Description',
-                                    'qty' => 'Quantity',
-                                    'unit_price' => 'Unit Price',
-                                    'cover_1' => 'Cover 1',
-                                    'cover_2' => 'Cover 2',
-                                    'cover_3' => 'Cover 3',
-                                    'notes' => 'Notes',
-                                    'type' => 'Line Type',
-                                    'status' => 'Status',
-                                ];
-                                $parts = [];
-                                foreach ($changes as $field => $change) {
-                                    $label = $fieldNames[$field] ?? (string) str($field)->headline();
-
-                                    if (in_array($field, ['notes', 'validation_note'], true)) {
-                                        $parts[] = self::formatSensitiveTextChange($label, $change);
-
-                                        continue;
-                                    }
-
-                                    $old = e(self::formatChangedValue($change['old'] ?? null));
-                                    $new = e(self::formatChangedValue($change['new'] ?? null));
-                                    $parts[] = "Changed <strong>{$label}</strong> from <strong>{$old}</strong> to <strong>{$new}</strong>";
-                                }
-
-                                return "Updated line <strong>{$code}</strong>: ".implode('; ', $parts);
-                            })(),
-
-                            // Legacy action type — kept for backward compatibility with existing records
-                            'line.qty_updated' => (function () use ($payload): string {
-                                $code = e((string) ($payload['code'] ?? '?'));
-                                $parts = [];
-                                if (isset($payload['qty'])) {
-                                    $old = e((string) $payload['qty']['old']);
-                                    $new = e((string) $payload['qty']['new']);
-                                    $parts[] = "Changed quantity for <strong>{$code}</strong> from {$old} to <strong>{$new}</strong>";
-                                }
-                                if (isset($payload['unit_price'])) {
-                                    $old = e((string) $payload['unit_price']['old']);
-                                    $new = e((string) $payload['unit_price']['new']);
-                                    $parts[] = "Changed price for <strong>{$code}</strong> from {$old} to <strong>{$new}</strong>";
-                                }
-
-                                return implode('; ', $parts) ?: 'Updated line';
-                            })(),
-
-                            default => (string) str($record->action_type)->replace('.', ' ')->title(),
-                        };
-
-                        return self::formatActionHtml($html, $record->action_type);
-                    }),
-
-                TextColumn::make('created_at')
-                    ->label('Date & Time')
-                    ->dateTime('M d Y H:i')
-                    ->sortable()
-                    ->width('10rem')
-                    ->extraCellAttributes([
-                        'class' => 'w-40 max-w-40 whitespace-nowrap',
-                    ]),
-            ])
+            ->columns($columns)
             ->filters([
                 SelectFilter::make('action_type')
                     ->label('Action')
@@ -464,7 +486,7 @@ class ActivityLogsTable
         return "Changed <strong>{$label}</strong>";
     }
 
-    private static function referenceLabel(ActivityLog $record): string
+    private static function referenceLabel(ActivityLog|ActivityLogArchive $record): string
     {
         $reference = $record->project?->reference_number;
 
@@ -481,7 +503,7 @@ class ActivityLogsTable
         return 'No project';
     }
 
-    private static function projectName(ActivityLog $record): string
+    private static function projectName(ActivityLog|ActivityLogArchive $record): string
     {
         return (string) ($record->project?->name ?? $record->project_name_snapshot ?? 'Unknown project');
     }

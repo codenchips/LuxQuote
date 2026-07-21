@@ -10,6 +10,8 @@ _Last updated: 20 July 2026_
 - **Profile-controlled project list preference**: The user profile now includes **Project list view**, with **All available projects** plus one option for each team the user belongs to. Choosing a team makes the Projects table open with that Team filter applied by default.
 - **Team filter behaviour preserved**: When the Projects table Team filter is active, it remains an exclusive Team filter and shows only Team-visible projects assigned to the selected team(s). Clearing it returns to all accessible projects.
 - **Production rollback routines added**: Deploys now write rollback manifests in `backups/` that capture the previous commit and pre-deploy backup paths. `scripts/rollback-production.sh` can roll production back to the previous commit without touching the database, or restore the matching pre-deploy database backup only when `--with-database` is explicitly requested and confirmed.
+- **Activity log archiving added**: `activity_log_archives` now stores old activity-log snapshots, and `app:archive-activity-logs` moves live log rows older than 6 weeks into the archive table in chunks. `DEPLOYMENT.md` records the daily cron entry.
+- **Archived Logs UI added**: The **History** page now links to archived logs, which use the same table layout, action formatting, search, and filters against archived activity logs. Archived logs do not appear as a separate left-sidebar navigation item and are controlled by the existing `activity-log.view` permission.
 
 ---
 
@@ -198,6 +200,11 @@ activity_logs
   id, user_id (nullable FK), project_id (nullable FK), action_type
   user_email_snapshot, project_name_snapshot, revision_number (nullable)
   payload (JSON, nullable), created_at
+
+activity_log_archives
+  id, original_activity_log_id, user_id (nullable snapshot), project_id (nullable snapshot)
+  action_type, user_email_snapshot, project_name_snapshot, revision_number (nullable)
+  payload (JSON, nullable), created_at (original log time), archived_at
 
 salesforce_pdf_uploads
   id, project_id (FK), project_revision_id (FK), document_type

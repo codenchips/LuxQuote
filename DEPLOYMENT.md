@@ -372,6 +372,32 @@ The legacy datasheet endpoint streams JSON progress chunks while it works. The a
 
 Browser-driven PDF opens/downloads use prepared authenticated URLs under `/pdf-downloads/{token}/{filename}` rather than blob URLs. Prepared files live in `storage/app/pdf-downloads`, are user-scoped, are reusable for 10 minutes, and are cleaned opportunistically after 30 minutes. They should not be treated as permanent generated-output storage.
 
+## Activity Log Archiving
+
+The live History pages read from `activity_logs`. To keep that table fast and searchable, logs older than 6 weeks should be moved into `activity_log_archives` by the archive command:
+
+```bash
+cd /home/tamliteco/luxquote.app
+docker compose exec -T laravel.test php artisan app:archive-activity-logs
+```
+
+The command copies eligible rows into `activity_log_archives` in chunks, then deletes only the original rows that are confirmed present in the archive table. The archive table stores snapshot data and does not use foreign keys, so historic audit records survive even if users or projects are later deleted. It does not restore, reset, or prune any Docker volumes.
+
+Useful dry-run:
+
+```bash
+cd /home/tamliteco/luxquote.app
+docker compose exec -T laravel.test php artisan app:archive-activity-logs --dry-run
+```
+
+Suggested daily cron entry:
+
+```cron
+41 1 * * * cd /home/tamliteco/luxquote.app && docker compose exec -T laravel.test php artisan app:archive-activity-logs >> storage/logs/activity-log-archive.log 2>&1
+```
+
+The retention window can be changed with `--weeks=`, and the batch size can be changed with `--chunk=` if the table becomes very large.
+
 ## Production Monitoring
 
 Production should have two separate monitors:
