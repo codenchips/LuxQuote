@@ -24,3 +24,30 @@ jobs:
           set -euo pipefail
           cd /home/tamliteco/luxquote.app
           APP_DIR=/home/tamliteco/luxquote.app DEPLOY_BRANCH=production PUBLIC_URL="$PUBLIC_URL" bash scripts/deploy-production.sh
+
+      - name: Check persistent runner migration
+        if: success()
+        run: |
+          set -euo pipefail
+
+          if docker inspect luxquote-github-runner \
+            --format '{{ range .Mounts }}{{ println .Destination }}{{ end }}' \
+            | grep --fixed-strings --line-regexp --quiet '/runner/config'; then
+            echo 'Persistent GitHub runner configuration is installed.'
+            exit 0
+          fi
+
+          echo '::warning title=Runner maintenance required::The deploy succeeded, but the GitHub runner still uses non-persistent registration. Run the checked-in setup script on the VPS before a later runner restart.'
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## VPS runner maintenance still required
+
+          This deployment succeeded, but `luxquote-github-runner` still uses its old non-persistent registration. At a quiet time, run as `root` on the VPS:
+
+          ```bash
+          cd /home/tamliteco/luxquote.app
+          bash scripts/setup-production-github-runner.sh
+          ```
+
+          Follow the one-time runner migration checklist in `DEPLOYMENT.md`. This warning will disappear after `/runner/config` is mounted by the persistent setup.
+          EOF

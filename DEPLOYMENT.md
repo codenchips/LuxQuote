@@ -510,7 +510,7 @@ Suggested cron entry:
 
 This is intentionally lightweight and can run every 10 minutes. It sends no notification on success.
 
-### ntfy Disk, Docker, Database, and Salesforce Alerts
+### ntfy Disk, Docker, Database, Salesforce, and Runner Alerts
 
 These focused wrappers are also available:
 
@@ -520,6 +520,7 @@ These focused wrappers are also available:
 | `LuxQuoteDocker` | `scripts/production-docker-health-check-ntfy.sh` | Core Docker Compose services are running, MySQL responds, Redis responds | Every 10 minutes |
 | `LuxQuoteDatabase` | `scripts/production-database-health-check-ntfy.sh` | MySQL responds and Laravel can run a `select 1` query | Every 10 minutes |
 | `LuxQuoteSalesforce` | `scripts/production-salesforce-health-check-ntfy.sh` | Read-only Salesforce auth/API smoke using `salesforce:interrogate --limit=1 --format=json` | Hourly |
+| `LuxQuoteRunner` | `scripts/production-github-runner-health-check-ntfy.sh` | Deployment runner container, listener process, persistent registration, and SSH mounts | Every 10 minutes |
 
 Suggested cron entries:
 
@@ -528,6 +529,7 @@ Suggested cron entries:
 */10 * * * * cd /home/tamliteco/luxquote.app && NTFY_URL="https://ntfy.sh/LuxQuoteDocker" bash scripts/production-docker-health-check-ntfy.sh >/dev/null 2>&1
 */10 * * * * cd /home/tamliteco/luxquote.app && NTFY_URL="https://ntfy.sh/LuxQuoteDatabase" bash scripts/production-database-health-check-ntfy.sh >/dev/null 2>&1
 23 * * * * cd /home/tamliteco/luxquote.app && NTFY_URL="https://ntfy.sh/LuxQuoteSalesforce" bash scripts/production-salesforce-health-check-ntfy.sh >/dev/null 2>&1
+*/10 * * * * cd /home/tamliteco/luxquote.app && NTFY_URL="https://ntfy.sh/LuxQuoteRunner" bash scripts/production-github-runner-health-check-ntfy.sh >/dev/null 2>&1
 ```
 
 Disk thresholds default to 85% for both disk space and inodes. Override them in cron if needed:
@@ -647,24 +649,37 @@ The VPS needs SSH access to read the GitHub repo. Create a read-only deploy key 
 
 Because the VPS firewall restricts inbound SSH, deployment uses a self-hosted runner rather than GitHub-hosted runners. The runner runs in Docker as `luxquote-github-runner`, connects outbound to GitHub, and has the host Docker socket mounted so it can run the normal Docker Compose deployment commands.
 
-Runner container shape:
+The runner must be installed with the checked-in setup script:
 
 ```bash
-docker run -d \
-  --name luxquote-github-runner \
-  --restart unless-stopped \
-  -e RUNNER_NAME="luxquote-production" \
-  -e RUNNER_LABELS="luxquote-production" \
-  -e RUNNER_WORKDIR="_work" \
-  -e REPO_URL="https://github.com/codenchips/LuxQuote" \
-  -e RUNNER_TOKEN="FRESH_TOKEN_FROM_GITHUB" \
-  -v /opt/actions-runner/luxquote-production:/home/runner/_work \
-  -v /home/tamliteco/luxquote.app:/home/tamliteco/luxquote.app \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /usr/bin/docker:/usr/bin/docker:ro \
-  -v /usr/libexec/docker/cli-plugins:/usr/libexec/docker/cli-plugins:ro \
-  myoung34/github-runner:latest
+cd /home/tamliteco/luxquote.app
+bash scripts/setup-production-github-runner.sh
 ```
+
+The script creates separate persistent directories under `/opt/actions-runner/luxquote-production`:
+
+- `work` for the Actions working directory.
+- `config` for `.runner` and credential files required to reuse the registration after a container or Docker restart.
+- `ssh` for the read-only repository deploy key, SSH configuration, and `known_hosts`.
+
+It preserves working SSH files from an existing runner before replacing that runner container. On the first persistent installation it prompts, without echoing, for a fresh repository runner registration token. On later container recreations it reuses the persisted registration and does not need a new token. It removes only the `luxquote-github-runner` container and does not run Docker Compose, remove volumes, restore the database, or modify application data.
+
+Before the first persistent installation:
+
+1. Confirm no deployment job is currently running.
+2. In GitHub, open **LuxQuote → Settings → Actions → Runners**, remove the existing `luxquote-production` registration, choose **New self-hosted runner**, and copy only the fresh token value shown after `--token`.
+3. Confirm the currently working runner or VPS host has `/root/.ssh/luxquote_github_repo_deploy` and `known_hosts`. The script copies them into persistent storage before removing the container.
+4. Run the setup script and paste the fresh token when prompted.
+
+After setup, verify:
+
+```bash
+docker ps --filter name=luxquote-github-runner
+docker logs --tail=80 luxquote-github-runner
+bash scripts/production-github-runner-health-check-ntfy.sh
+```
+
+Healthy runner logs include `Listening for Jobs`. The health check verifies the container is running rather than restart-looping, `Runner.Listener` is active, and the persistent registration and SSH files are mounted.
 
 Do not run the official GitHub runner directly on the CentOS 7 host; the host `libstdc++` is too old for the current runner binary.
 
@@ -675,6 +690,7 @@ If GitHub Actions shows `Waiting for a runner to pick up this job...`, check the
 ```bash
 docker ps --filter name=luxquote-github-runner
 docker logs --tail=120 luxquote-github-runner
+bash scripts/production-github-runner-health-check-ntfy.sh
 ```
 
 Healthy logs should end with:
@@ -683,7 +699,7 @@ Healthy logs should end with:
 Listening for Jobs
 ```
 
-The workflow requires labels `self-hosted` and `luxquote-production`. The runner container should be named `luxquote-github-runner`, use `RUNNER_NAME="luxquote-production"`, and include `RUNNER_LABELS="luxquote-production"`.
+The workflow requires labels `self-hosted` and `luxquote-production`. The runner container should be named `luxquote-github-runner`, use `RUNNER_NAME="luxquote-production"`, and include the `luxquote-production` label.
 
 If the job is picked up but deploy fails while fetching GitHub:
 
@@ -692,14 +708,14 @@ docker exec luxquote-github-runner sh -lc 'id; echo HOME=$HOME; ls -la ~/.ssh ||
 docker exec luxquote-github-runner sh -lc 'ssh -T git@github.com || true'
 ```
 
-The runner image runs the deploy as root, so Git/SSH looks under `/root/.ssh` inside the runner container. Ensure:
+The runner image runs the deploy as root, so Git/SSH looks under `/root/.ssh` inside the runner container. That path is mounted read-only from `/opt/actions-runner/luxquote-production/ssh`. Ensure:
 
 - `/root/.ssh/known_hosts` contains GitHub host keys.
 - `/root/.ssh/luxquote_github_repo_deploy` exists inside the runner container.
 - the private key is `chmod 600`, owned by root, and the corresponding public key is registered as a read-only deploy key on `codenchips/LuxQuote`.
 - `/home/tamliteco/luxquote.app` is mounted into the runner at `/home/tamliteco/luxquote.app`, matching the workflow/deploy script path.
 
-If a new runner token is used, remove/recreate only the runner container. Do not remove Docker volumes.
+If the runner must be recreated, run `bash scripts/setup-production-github-runner.sh`. A new token is needed only when `/opt/actions-runner/luxquote-production/config/.runner` is missing or GitHub registration was manually removed. Do not remove `/opt/actions-runner/luxquote-production`, application files, or Docker volumes.
 
 If converting the existing SFTP directory, take a database backup and preserve `.env`, `storage/`, and `backups/` before replacing the working tree with a clean clone. Do not delete the Docker MySQL volume.
 

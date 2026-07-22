@@ -89,6 +89,5 @@ if docker ps --format '{{.Names}}' | grep -qx "$RUNNER_NAME"; then
     log "GitHub runner container is running. Recent runner logs:"
     docker logs --tail=40 "$RUNNER_NAME" || true
 else
-    log "GitHub runner container is not currently running. Recreate it with a fresh GitHub runner token if deploys remain queued."
+    log "GitHub runner container is not currently running. Run scripts/setup-production-github-runner.sh to restore it from persistent state."
 fi
-
