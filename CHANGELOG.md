@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.0-beta.11 - 2026-07-22
+
+Version: `0.1.0-beta.10` -> `0.1.0-beta.11`
+
+Changes included:
+
+- `d3caf1d` Recovery script for deploy issues
+- `b182921` Cover 550
+- `0a4c038` Cover at 550 and show owner name on projects. tweaked log display.
+- `7d1bc28` project list setting in profile and rollback script
+- `40dfe91` Archive logs
+
 ## 0.1.0-beta.10 - 2026-07-17
 
 Version: `0.1.0-beta.9` -> `0.1.0-beta.10`
