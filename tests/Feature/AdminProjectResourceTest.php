@@ -3017,6 +3017,70 @@ class AdminProjectResourceTest extends TestCase
             ->assertDontSee('approval_requested');
     }
 
+    public function test_activity_logs_preserve_sku_formatting_and_hide_empty_to_zero_price_changes(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'REF-SKU-LOG',
+        ]);
+
+        ActivityLog::create([
+            'user_id' => $admin->id,
+            'project_id' => $project->id,
+            'action_type' => 'line.updated',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $project->name,
+            'payload' => [
+                'code' => 'XCLS547CTWD',
+                'changes' => [
+                    'code' => [
+                        'old' => 'XCLS547CTWD',
+                        'new' => 'XCLS547CTBD',
+                    ],
+                    'unit_price' => [
+                        'old' => null,
+                        'new' => '0.00',
+                    ],
+                ],
+            ],
+        ]);
+
+        Livewire::test(ListActivityLogs::class)
+            ->assertSee('XCLS547CTWD')
+            ->assertSee('XCLS547CTBD')
+            ->assertDontSee('X C L S547 C T W D')
+            ->assertDontSee('X C L S547 C T B D')
+            ->assertDontSee('Unit Price')
+            ->assertDontSee('0.00');
+    }
+
+    public function test_empty_to_zero_unit_price_change_does_not_create_a_line_update_log(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $line = $project->activeRevision->areas()->firstOrFail()->lines()->create([
+            'code' => 'ZERO-PRICE-SKU',
+            'description' => 'Zero price logging test',
+            'qty' => 1,
+            'unit_price' => null,
+            'sort_order' => 1,
+        ]);
+
+        $this->travel(6)->minutes();
+
+        $line->update(['unit_price' => 0]);
+
+        $this->assertDatabaseMissing('activity_logs', [
+            'project_id' => $project->id,
+            'action_type' => 'line.updated',
+        ]);
+        $this->assertSame('0.00', $line->fresh()->unit_price);
+    }
+
     public function test_activity_logs_table_hides_note_contents_for_line_updates(): void
     {
         $admin = User::factory()->admin()->create();

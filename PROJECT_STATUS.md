@@ -1,6 +1,23 @@
 # Company App — Project Status
 
-_Last updated: 20 July 2026_
+_Last updated: 23 July 2026_
+
+---
+
+## Activity Log Value Formatting — 23 July 2026
+
+- **SKU values preserved exactly**: Line-update history no longer applies headline formatting to arbitrary field values. SKU, reference, description, and other user-entered values retain their stored characters; enum-style Status and Line Type values remain human-readable.
+- **Empty-to-zero price noise removed**: A Unit Price transition from empty to `0.00` is ignored when line-update activity is recorded. The activity table also suppresses that change inside older combined log entries while retaining any meaningful SKU or other changes from the same entry.
+
+---
+
+## Salesforce Quote and Schedule PDF Versioning — 23 July 2026
+
+- **Schedules upload on every generation**: Generating a Schedule PDF for a Salesforce-backed project now uploads it automatically while outbound Salesforce pushes are enabled. The explicit upload query flag is no longer required for Schedules.
+- **One Salesforce file per document and revision**: Downloaded Quotes and Schedules keep their existing timestamped filenames, while Salesforce receives stable filenames such as `Lighting-Quote-22600-R3.pdf` and `Lighting-Schedule-22600-R3.pdf`. Salesforce therefore creates new `ContentVersion` records on the same `ContentDocument` rather than accumulating timestamped files for that revision.
+- **No delete-before-upload risk**: Older Quote and Schedule versions remain available in Salesforce file version history, while only the current file for each document type and revision is shown normally. Existing historical timestamped duplicates are not deleted automatically.
+- **Quote trigger and approval rules preserved**: Quote upload still requires the existing approved Quote generation flow and explicit upload request, but every requested upload now creates a Salesforce file version under the stable per-revision filename.
+- **Immediate upload confirmation**: Successful Quote and Schedule uploads return notification metadata with the prepared PDF response. The existing PDF-generation JavaScript displays a Filament success card immediately after opening or downloading the PDF; failed uploads retain their danger notification and never show a false success card.
 
 ---
 
@@ -525,7 +542,7 @@ Primary generation and request actions use Filament's orange primary button conv
 - The endpoint generates a combined datasheet PDF under the configured public base URL, then the app downloads it and appends it after the quote/schedule PDF with `qpdf`.
 - Quote/schedule content always stays first; datasheets are appended afterwards.
 - Merged files use filenames ending in `-with-datasheets.pdf`.
-- Salesforce PDF upload fingerprints include the Include Datasheets state so unchanged outputs are not uploaded again, while datasheet-inclusive outputs are tracked separately from non-datasheet outputs.
+- Quote and Schedule upload tracking includes the Include Datasheets state. Every requested Quote upload and every generated Salesforce-backed Schedule upload creates a new version of the document's stable per-revision Salesforce file, including when datasheet selection differs.
 
 ### Pack workflow
 
@@ -655,9 +672,9 @@ Authentication supports both **OAuth2 Client Credentials** and **OAuth2 JWT Bear
 
 Successful bearer-token responses are cached for their reported lifetime, minus a 60-second safety buffer, so normal Salesforce reads and writes do not request a fresh OAuth token for every service call.
 
-Salesforce PDF uploads are tracked per project, revision, and document type. When a quote or schedule PDF is requested with Salesforce upload enabled, the app compares a stable fingerprint of the output data and PDF template against `salesforce_pdf_uploads`; if it matches the last successful upload, no new Salesforce `ContentVersion` is created. Changes to the revision, line content, notes, pricing for quote output, project PDF metadata, or the schedule template produce a new fingerprint and upload a fresh version.
+Salesforce PDF uploads are tracked per project, revision, and document type. Schedule PDFs upload automatically on every generation for Salesforce-backed projects while pushes are enabled; Quote uploads retain the existing approved-generation and explicit-request rules. Downloaded filenames remain timestamped, but Salesforce receives stable project-and-revision filenames so every upload creates a new version of the matching Quote or Schedule `ContentDocument`.
 
-Successful quote/schedule PDF uploads from download routes are recorded in activity history but do not queue Filament success notifications, because PDF responses can display queued notifications late on a later app page. Upload failures still send a danger notification.
+Successful Quote and Schedule PDF uploads from prepared download routes are recorded in activity history and return notification metadata to the browser, which displays an immediate Filament success card after the PDF is opened or downloaded. This avoids delayed session notifications appearing on an unrelated later request. Upload failures still send a danger notification and do not return success metadata.
 
 ### Environment variables required (`.env`)
 
@@ -867,7 +884,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - **Legal-before-datasheets order**: When datasheets are included, merge order is generated quote/schedule PDF, standard legal page, then datasheets.
 - **Document-pack template role**: The document-pack builder now includes **Standard Legal Page** as an app-owned template document, separate from the existing uploaded Legal PDF role.
 - **Document-pack selector cleanup**: New pack items no longer offer Cover or uploaded Legal in the dropdown; **Unpriced Schedule** is labelled **Schedule**, and **Custom PDF** is available for uploaded one-off documents.
-- **Salesforce PDF fingerprints**: Salesforce duplicate-upload fingerprints include the standard legal PDF hash so changes to the legal page trigger a fresh upload.
+- **Salesforce PDF fingerprints**: Quote and Schedule uploads retain output fingerprint tracking for audit state, including the standard legal PDF hash, but deliberately create a new Salesforce version whenever an upload is requested.
 - **Schedule legal blurb**: The generated quote/schedule template now includes the short legal blurb once at the end of the generated document body, grouped into the final line-item table so it stays with the last schedule rows more reliably.
 - **Output datasheet info cleanup**: The Output page datasheet info panel no longer shows the external **Learn more** action.
 - **Production PDF diagnostics**: Production PDF troubleshooting was expanded after finding temp-path and Puppeteer Chrome-cache failures on the VPS.
@@ -878,12 +895,12 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - **Project reference URLs**: Project routes now prefer `reference_number` in URLs, for example `/projects/20930`, while legacy numeric database IDs still resolve as a fallback.
 - **Datasheet embedding**: Include Datasheets is functional for quote and schedule PDFs. The app calls the legacy datasheet endpoint, downloads the generated datasheet PDF, and merges it after the quote/schedule output.
 - **Datasheet endpoint compatibility**: The datasheet request is sent as form data with `skus` as a JSON string, matching the legacy endpoint's expected shape and avoiding blank `.pdf` output.
-- **Salesforce PDF upload tracking**: Quote and schedule PDF uploads use `salesforce_pdf_uploads` fingerprints to avoid duplicate uploads for unchanged outputs; datasheet-inclusive outputs are fingerprinted separately.
+- **Salesforce PDF upload tracking**: Quote and Schedule PDF uploads are recorded in `salesforce_pdf_uploads` and use stable per-revision Salesforce filenames so subsequent uploads become versions of the same file.
 - **PDF generation dialog**: PDF-generating links now show a modal with progress messaging before opening/downloading the generated file.
 - **Live datasheet progress**: Datasheet generation streams progress into the modal through `/pdf-progress/{token}` and uses monotonic browser-side progress to avoid the bar moving backwards.
 - **Single-PDF progress polish**: Non-streaming PDF downloads use staged fallback progress messages so fast downloads do not appear stuck and then abruptly complete.
 - **Timezone correction**: The app timezone is set to `Europe/London` via `APP_TIMEZONE`, so visible times follow BST/GMT correctly.
-- **Output PDF notifications**: Successful Salesforce upload notifications from quote/schedule PDF routes were removed to avoid late, misleading notifications; failures still notify.
+- **Output PDF notifications**: Delayed session-based Salesforce upload success notifications were removed to avoid appearing on a later page. The current prepared-download response instead triggers the success card immediately in the browser; failures still notify.
 
 ## Features completed — 30 June 2026
 

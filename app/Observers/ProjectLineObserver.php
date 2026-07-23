@@ -46,7 +46,14 @@ class ProjectLineObserver
         $changes = [];
         foreach ($trackedFields as $field) {
             if ($line->isDirty($field)) {
-                $changes[$field] = ['old' => $line->getOriginal($field), 'new' => $line->$field];
+                $oldValue = $line->getOriginal($field);
+                $newValue = $line->$field;
+
+                if ($field === 'unit_price' && $this->isEmptyToZeroPriceChange($oldValue, $newValue)) {
+                    continue;
+                }
+
+                $changes[$field] = ['old' => $oldValue, 'new' => $newValue];
             }
         }
 
@@ -122,5 +129,12 @@ class ProjectLineObserver
             $project->updateQuietly(['last_edited_at' => now(), 'last_edited_by' => auth()->id()]);
             $project->syncStatusFromActiveRevision();
         }
+    }
+
+    private function isEmptyToZeroPriceChange(mixed $oldValue, mixed $newValue): bool
+    {
+        return ($oldValue === null || $oldValue === '')
+            && is_numeric($newValue)
+            && (float) $newValue === 0.0;
     }
 }

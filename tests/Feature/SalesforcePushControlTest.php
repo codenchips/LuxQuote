@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\SalesforcePushControl;
 use App\Services\SalesforceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -136,6 +137,7 @@ class SalesforcePushControlTest extends TestCase
             ->call('approveRevision')
             ->assertNotified('Salesforce value update skipped');
 
-        Http::assertNothingSent();
+        Http::assertNotSent(fn (Request $request): bool => $request->method() === 'PATCH'
+            && str_contains($request->url(), '/sobjects/Opportunity/'));
     }
 }

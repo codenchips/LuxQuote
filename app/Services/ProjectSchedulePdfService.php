@@ -23,6 +23,16 @@ class ProjectSchedulePdfService
         return $this->documentFilename('Lighting Quote', $project, $revision);
     }
 
+    public function salesforceScheduleFilename(Project $project, ProjectRevision $revision): string
+    {
+        return $this->stableDocumentFilename('Lighting Schedule', $project, $revision);
+    }
+
+    public function salesforceQuoteFilename(Project $project, ProjectRevision $revision): string
+    {
+        return $this->stableDocumentFilename('Lighting Quote', $project, $revision);
+    }
+
     public function content(Project $project, ProjectRevision $revision): string
     {
         return $this->contentFromBuilder($this->builder($project, $revision));
@@ -105,6 +115,17 @@ class ProjectSchedulePdfService
             $project->reference_number ?? 'proj-'.$project->id,
             $revision->label(),
             now()->format('Ymd-His'),
+        ])
+            ->map(fn (string $part): string => $this->filenamePart($part))
+            ->implode('-').'.pdf';
+    }
+
+    private function stableDocumentFilename(string $title, Project $project, ProjectRevision $revision): string
+    {
+        return collect([
+            $title,
+            $project->reference_number ?? 'proj-'.$project->id,
+            $revision->label(),
         ])
             ->map(fn (string $part): string => $this->filenamePart($part))
             ->implode('-').'.pdf';

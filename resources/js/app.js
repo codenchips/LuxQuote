@@ -54,6 +54,7 @@ document.addEventListener('click', async (event) => {
         modal.update(100, 'PDF ready.');
         await sleep(300);
         modal.close();
+        showPdfNotification(preparedPdf.notification);
     } catch (error) {
         modal.fail(error instanceof Error ? error.message : 'The PDF could not be generated.');
     } finally {
@@ -61,6 +62,25 @@ document.addEventListener('click', async (event) => {
         clearInterval(progressPoll);
     }
 });
+
+function showPdfNotification(notification) {
+    if (!notification?.title || typeof window.FilamentNotification !== 'function') {
+        return;
+    }
+
+    const card = new window.FilamentNotification()
+        .title(notification.title);
+
+    if (notification.body) {
+        card.body(notification.body);
+    }
+
+    if (['success', 'warning', 'danger', 'info'].includes(notification.status)) {
+        card[notification.status]();
+    }
+
+    card.send();
+}
 
 function createPdfGenerationModal() {
     const wrapper = document.createElement('div');

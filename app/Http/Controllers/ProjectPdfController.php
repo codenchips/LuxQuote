@@ -43,6 +43,7 @@ class ProjectPdfController extends Controller
             pdfContent: fn (): string => $pdf->contentFromBuilder($builder),
             filename: $filename,
         );
+        $salesforceNotification = null;
 
         try {
             $filename = $legalPdf['filename'];
@@ -62,11 +63,11 @@ class ProjectPdfController extends Controller
                 $pdfContent = app(ProjectDatasheetPdfService::class)->content($datasheetPdf['path']);
             }
 
-            if ($this->shouldUploadPdfToSalesforce($request, $project)) {
-                $this->uploadPdfToSalesforce(
+            if ($this->shouldUploadSchedulePdfToSalesforce($project)) {
+                $salesforceNotification = $this->uploadPdfToSalesforce(
                     project: $project,
                     revision: $revision,
-                    filename: $filename,
+                    filename: $pdf->salesforceScheduleFilename($project, $revision),
                     pdfContent: $pdfContent,
                     documentLabel: 'Lighting Schedule',
                     documentType: 'schedule',
@@ -93,10 +94,10 @@ class ProjectPdfController extends Controller
             ]);
 
             if ($datasheetPdf !== null) {
-                return $this->respondWithPdf($request, $datasheetPdf);
+                return $this->respondWithPdf($request, $datasheetPdf, $salesforceNotification);
             }
 
-            return $this->respondWithPdf($request, $legalPdf);
+            return $this->respondWithPdf($request, $legalPdf, $salesforceNotification);
         } catch (Throwable $exception) {
             app(ProjectLegalPdfService::class)->delete($legalPdf['path']);
 
@@ -130,6 +131,7 @@ class ProjectPdfController extends Controller
             pdfContent: fn (): string => $pdf->contentFromBuilder($builder),
             filename: $filename,
         );
+        $salesforceNotification = null;
 
         try {
             $filename = $legalPdf['filename'];
@@ -150,10 +152,10 @@ class ProjectPdfController extends Controller
             }
 
             if ($this->shouldUploadPdfToSalesforce($request, $project)) {
-                $this->uploadPdfToSalesforce(
+                $salesforceNotification = $this->uploadPdfToSalesforce(
                     project: $project,
                     revision: $revision,
-                    filename: $filename,
+                    filename: $pdf->salesforceQuoteFilename($project, $revision),
                     pdfContent: $pdfContent,
                     documentLabel: 'Lighting Quote',
                     documentType: 'quote',
@@ -182,10 +184,10 @@ class ProjectPdfController extends Controller
             $project->markQuoted($revision);
 
             if ($datasheetPdf !== null) {
-                return $this->respondWithPdf($request, $datasheetPdf);
+                return $this->respondWithPdf($request, $datasheetPdf, $salesforceNotification);
             }
 
-            return $this->respondWithPdf($request, $legalPdf);
+            return $this->respondWithPdf($request, $legalPdf, $salesforceNotification);
         } catch (Throwable $exception) {
             app(ProjectLegalPdfService::class)->delete($legalPdf['path']);
 
@@ -325,6 +327,9 @@ class ProjectPdfController extends Controller
             ->findOrFail($revisionId);
     }
 
+    /**
+     * @return array{title: string, body: string, status: string}|null
+     */
     private function uploadPdfToSalesforce(
         Project $project,
         ProjectRevision $revision,
@@ -333,12 +338,8 @@ class ProjectPdfController extends Controller
         string $documentLabel,
         string $documentType,
         string $fingerprintHash,
-    ): void {
+    ): ?array {
         $tracker = app(SalesforcePdfUploadTracker::class);
-
-        if ($tracker->isCurrent($project, $revision, $documentType, $fingerprintHash)) {
-            return;
-        }
 
         try {
             $result = app(SalesforceService::class)->uploadPdf(
@@ -368,7 +369,7 @@ class ProjectPdfController extends Controller
                 ->danger()
                 ->send();
 
-            return;
+            return null;
         }
 
         $salesforceUrl = $result['url'] ?? null;
@@ -396,6 +397,11 @@ class ProjectPdfController extends Controller
             ],
         ]);
 
+        return [
+            'title' => $documentLabel.' uploaded to Salesforce',
+            'body' => $filename.' is now available on the Opportunity.',
+            'status' => 'success',
+        ];
     }
 
     /**
@@ -442,11 +448,18 @@ class ProjectPdfController extends Controller
 
     /**
      * @param  array{path: string, filename: string}  $pdf
+     * @param  array{title: string, body: string, status: string}|null  $notification
      */
-    private function respondWithPdf(Request $request, array $pdf): Response
+    private function respondWithPdf(Request $request, array $pdf, ?array $notification = null): Response
     {
         if ($request->boolean('pdf_delivery_link')) {
-            return response()->json(app(PdfDownloadUrlService::class)->register($pdf, $request->user()->id));
+            $download = app(PdfDownloadUrlService::class)->register($pdf, $request->user()->id);
+
+            if ($notification !== null) {
+                $download['notification'] = $notification;
+            }
+
+            return response()->json($download);
         }
 
         return $this->downloadMergedPdf($pdf);
@@ -456,6 +469,12 @@ class ProjectPdfController extends Controller
     {
         return $request->boolean('salesforce_upload')
             && app(SalesforcePushControl::class)->enabled()
+            && ($project->salesforce_project || filled($project->salesforce_id));
+    }
+
+    private function shouldUploadSchedulePdfToSalesforce(Project $project): bool
+    {
+        return app(SalesforcePushControl::class)->enabled()
             && ($project->salesforce_project || filled($project->salesforce_id));
     }
 

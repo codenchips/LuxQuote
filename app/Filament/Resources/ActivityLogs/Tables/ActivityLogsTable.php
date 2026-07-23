@@ -221,14 +221,19 @@ class ActivityLogsTable
                             foreach ($changes as $field => $change) {
                                 $label = $fieldNames[$field] ?? (string) str($field)->headline();
 
+                                if ($field === 'unit_price' && self::isEmptyToZeroPriceChange($change)) {
+                                    continue;
+                                }
+
                                 if (in_array($field, ['notes', 'validation_note'], true)) {
                                     $parts[] = self::formatSensitiveTextChange($label, $change);
 
                                     continue;
                                 }
 
-                                $old = e(self::formatChangedValue($change['old'] ?? null));
-                                $new = e(self::formatChangedValue($change['new'] ?? null));
+                                $humanizeValue = in_array($field, ['status', 'type'], true);
+                                $old = e(self::formatChangedValue($change['old'] ?? null, $humanizeValue));
+                                $new = e(self::formatChangedValue($change['new'] ?? null, $humanizeValue));
                                 $parts[] = "Changed <strong>{$label}</strong> from <strong>{$old}</strong> to <strong>{$new}</strong>";
                             }
 
@@ -399,7 +404,7 @@ class ActivityLogsTable
         return html_entity_decode(trim(strip_tags($html)), ENT_QUOTES | ENT_HTML5, 'UTF-8');
     }
 
-    private static function formatChangedValue(mixed $value): string
+    private static function formatChangedValue(mixed $value, bool $humanize = false): string
     {
         if ($value === null || $value === '') {
             return 'empty';
@@ -411,9 +416,11 @@ class ActivityLogsTable
             return $value;
         }
 
-        return (string) str($value)
-            ->replace('_', ' ')
-            ->headline();
+        if (! $humanize) {
+            return $value;
+        }
+
+        return (string) str($value)->replace('_', ' ')->headline();
     }
 
     /**
@@ -459,12 +466,26 @@ class ActivityLogsTable
                 continue;
             }
 
-            $old = e(self::formatChangedValue($change['old'] ?? null));
-            $new = e(self::formatChangedValue($change['new'] ?? null));
+            $humanizeValue = in_array($key, ['cover_direction', 'status', 'visibility'], true);
+            $old = e(self::formatChangedValue($change['old'] ?? null, $humanizeValue));
+            $new = e(self::formatChangedValue($change['new'] ?? null, $humanizeValue));
             $parts[] = "Changed <strong>{$label}</strong> from <strong>{$old}</strong> to <strong>{$new}</strong>";
         }
 
         return implode('; ', $parts);
+    }
+
+    /**
+     * @param  array<string, mixed>  $change
+     */
+    private static function isEmptyToZeroPriceChange(array $change): bool
+    {
+        $oldValue = $change['old'] ?? null;
+        $newValue = $change['new'] ?? null;
+
+        return ($oldValue === null || $oldValue === '')
+            && is_numeric($newValue)
+            && (float) $newValue === 0.0;
     }
 
     /**

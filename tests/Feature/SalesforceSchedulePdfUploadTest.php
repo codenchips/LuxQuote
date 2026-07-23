@@ -281,14 +281,18 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             'project' => $project,
             'revision' => $project->active_revision_id,
             'salesforce_upload' => true,
+            'pdf_delivery_link' => true,
         ]));
 
         $response
             ->assertOk()
-            ->assertDownload('lighting-schedule-SCH-001-P0-20260612-103000.pdf')
+            ->assertJsonPath('filename', 'lighting-schedule-SCH-001-P0-20260612-103000.pdf')
+            ->assertJsonPath('notification.title', 'Lighting Schedule uploaded to Salesforce')
+            ->assertJsonPath('notification.body', 'Lighting-Schedule-SCH-001-P0.pdf is now available on the Opportunity.')
+            ->assertJsonPath('notification.status', 'success')
             ->assertSessionMissing('filament.notifications');
 
-        $this->assertContentVersionUploadWasSent('lighting-schedule-SCH-001-P0-20260612-103000.pdf');
+        $this->assertContentVersionUploadWasSent('Lighting-Schedule-SCH-001-P0.pdf');
         $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,
             'action_type' => 'salesforce_pdf.uploaded',
@@ -330,14 +334,18 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             'project' => $project,
             'revision' => $project->active_revision_id,
             'salesforce_upload' => true,
+            'pdf_delivery_link' => true,
         ]));
 
         $response
             ->assertOk()
-            ->assertDownload('lighting-quote-QT-001-P0-20260612-103000.pdf')
+            ->assertJsonPath('filename', 'lighting-quote-QT-001-P0-20260612-103000.pdf')
+            ->assertJsonPath('notification.title', 'Lighting Quote uploaded to Salesforce')
+            ->assertJsonPath('notification.body', 'Lighting-Quote-QT-001-P0.pdf is now available on the Opportunity.')
+            ->assertJsonPath('notification.status', 'success')
             ->assertSessionMissing('filament.notifications');
 
-        $this->assertContentVersionUploadWasSent('lighting-quote-QT-001-P0-20260612-103000.pdf');
+        $this->assertContentVersionUploadWasSent('Lighting-Quote-QT-001-P0.pdf');
         $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,
             'action_type' => 'quote_pdf.generated',
@@ -350,7 +358,89 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         ]);
     }
 
-    public function test_same_generated_schedule_pdf_is_not_uploaded_to_salesforce_twice(): void
+    public function test_user_without_quote_permissions_cannot_generate_or_upload_quote_pdf(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $project = Project::factory()
+            ->for($user)
+            ->create([
+                'salesforce_project' => true,
+                'salesforce_id' => '006000000000001AAA',
+            ]);
+
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $user->id,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        Http::fake();
+
+        $this->get(route('projects.pdf.quote', [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+            'salesforce_upload' => true,
+        ]))->assertForbidden();
+
+        $this->assertContentVersionUploadWasNotSent();
+    }
+
+    public function test_same_generated_quote_pdf_is_uploaded_as_a_new_salesforce_version_each_time(): void
+    {
+        config(['services.salesforce.url' => 'https://example.my.salesforce.com']);
+
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()
+            ->for($admin)
+            ->create([
+                'reference_number' => 'QT-VERSION',
+                'salesforce_project' => true,
+                'salesforce_id' => '006000000000001AAA',
+            ]);
+
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        $this->instance(ProjectSchedulePdfService::class, $this->fakePdfService(
+            scheduleFilename: 'lighting-schedule-QT-VERSION-P0-20260612-103000.pdf',
+            quoteFilename: 'lighting-quote-QT-VERSION-P0-20260612-103000.pdf',
+            responseBody: 'fake quote pdf',
+        ));
+
+        $this->fakeSuccessfulSalesforcePdfUpload('069000000000001AAA');
+
+        $routeParameters = [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+            'salesforce_upload' => true,
+        ];
+
+        $this->get(route('projects.pdf.quote', $routeParameters))->assertOk();
+        $this->get(route('projects.pdf.quote', $routeParameters))->assertOk();
+
+        $this->assertContentVersionUploadWasSent('Lighting-Quote-QT-VERSION-P0.pdf', 2);
+        $this->assertDatabaseCount('salesforce_pdf_uploads', 1);
+        $this->assertSame(2, ActivityLog::where('project_id', $project->id)
+            ->where('action_type', 'salesforce_pdf.uploaded')
+            ->count());
+        $this->assertDatabaseHas('salesforce_pdf_uploads', [
+            'project_id' => $project->id,
+            'project_revision_id' => $project->active_revision_id,
+            'document_type' => 'quote',
+            'filename' => 'Lighting-Quote-QT-VERSION-P0.pdf',
+        ]);
+    }
+
+    public function test_same_generated_schedule_pdf_is_uploaded_as_a_new_salesforce_version_each_time(): void
     {
         config(['services.salesforce.url' => 'https://example.my.salesforce.com']);
 
@@ -382,7 +472,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             responseBody: 'fake schedule pdf',
         ));
 
-        $this->fakeSuccessfulSalesforcePdfUpload();
+        $this->fakeSuccessfulSalesforcePdfUpload('069000000000001AAA');
 
         $routeParameters = [
             'project' => $project,
@@ -393,9 +483,9 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         $this->get(route('projects.pdf.schedule', $routeParameters))->assertOk();
         $this->get(route('projects.pdf.schedule', $routeParameters))->assertOk();
 
-        $this->assertContentVersionUploadWasSent('lighting-schedule-SCH-SKIP-P0-20260612-103000.pdf');
+        $this->assertContentVersionUploadWasSent('Lighting-Schedule-SCH-SKIP-P0.pdf', 2);
         $this->assertDatabaseCount('salesforce_pdf_uploads', 1);
-        $this->assertSame(1, ActivityLog::where('project_id', $project->id)
+        $this->assertSame(2, ActivityLog::where('project_id', $project->id)
             ->where('action_type', 'salesforce_pdf.uploaded')
             ->count());
         $this->assertDatabaseHas('salesforce_pdf_uploads', [
@@ -441,7 +531,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             responseBody: 'fake schedule pdf',
         ));
 
-        $this->fakeSuccessfulSalesforcePdfUpload();
+        $this->fakeSuccessfulSalesforcePdfUpload('069000000000001AAA');
 
         $routeParameters = [
             'project' => $project,
@@ -455,13 +545,13 @@ class SalesforceSchedulePdfUploadTest extends TestCase
 
         $this->get(route('projects.pdf.schedule', $routeParameters))->assertOk();
 
-        $this->assertContentVersionUploadWasSent('lighting-schedule-SCH-CHANGE-P0-20260612-103000.pdf', 2);
+        $this->assertContentVersionUploadWasSent('Lighting-Schedule-SCH-CHANGE-P0.pdf', 2);
         $this->assertDatabaseCount('salesforce_pdf_uploads', 1);
         $this->assertDatabaseHas('salesforce_pdf_uploads', [
             'project_id' => $project->id,
             'project_revision_id' => $project->active_revision_id,
             'document_type' => 'schedule',
-            'filename' => 'lighting-schedule-SCH-CHANGE-P0-20260612-103000.pdf',
+            'filename' => 'Lighting-Schedule-SCH-CHANGE-P0.pdf',
         ]);
     }
 
@@ -496,12 +586,15 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             'project' => $project,
             'revision' => $project->active_revision_id,
             'salesforce_upload' => true,
+            'pdf_delivery_link' => true,
         ]));
 
         $response
             ->assertOk()
-            ->assertDownload('lighting-schedule-SCH-FAIL-P0-20260612-103000.pdf')
+            ->assertJsonPath('filename', 'lighting-schedule-SCH-FAIL-P0-20260612-103000.pdf')
             ->assertSessionHas('filament.notifications');
+
+        $this->assertNull($response->json('notification'));
 
         $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,
@@ -510,7 +603,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         ]);
     }
 
-    public function test_viewing_generated_schedule_pdf_does_not_upload_to_salesforce_without_explicit_flag(): void
+    public function test_viewing_generated_schedule_pdf_uploads_to_salesforce_without_explicit_flag(): void
     {
         config(['services.salesforce.url' => 'https://example.my.salesforce.com']);
 
@@ -543,12 +636,12 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             ->assertDownload('lighting-schedule-SCH-VIEW-P0-20260612-103000.pdf')
             ->assertSessionMissing('filament.notifications');
 
-        $this->assertDatabaseMissing('activity_logs', [
+        $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,
             'action_type' => 'salesforce_pdf.uploaded',
         ]);
 
-        $this->assertContentVersionUploadWasNotSent();
+        $this->assertContentVersionUploadWasSent('Lighting-Schedule-SCH-VIEW-P0.pdf');
     }
 
     public function test_viewing_generated_quote_pdf_does_not_upload_to_salesforce_without_explicit_flag(): void
@@ -618,6 +711,16 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             'Lighting-Quote-REF-123-P0-20260612-103045.pdf',
             $service->quoteFilename($project, $project->activeRevision),
         );
+
+        $this->assertSame(
+            'Lighting-Schedule-REF-123-P0.pdf',
+            $service->salesforceScheduleFilename($project, $project->activeRevision),
+        );
+
+        $this->assertSame(
+            'Lighting-Quote-REF-123-P0.pdf',
+            $service->salesforceQuoteFilename($project, $project->activeRevision),
+        );
     }
 
     private function assertContentVersionUploadWasSent(string $filename, int $expectedCount = 1): void
@@ -628,8 +731,10 @@ class SalesforceSchedulePdfUploadTest extends TestCase
                 && str_contains($request->url(), '/services/data/v65.0/sobjects/ContentVersion'));
 
         $this->assertCount($expectedCount, $requests);
-        $this->assertTrue($requests->first()->isMultipart());
-        $this->assertTrue($requests->first()->hasFile('VersionData', filename: $filename));
+        $requests->each(function (Request $request) use ($filename): void {
+            $this->assertTrue($request->isMultipart());
+            $this->assertTrue($request->hasFile('VersionData', filename: $filename));
+        });
     }
 
     private function assertContentVersionUploadWasNotSent(): void
@@ -642,9 +747,9 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         $this->assertCount(0, $requests);
     }
 
-    private function fakeSuccessfulSalesforcePdfUpload(): void
+    private function fakeSuccessfulSalesforcePdfUpload(?string $existingContentDocumentId = null): void
     {
-        Http::fake(function (Request $request) {
+        Http::fake(function (Request $request) use ($existingContentDocumentId) {
             if (str_contains($request->url(), '/services/oauth2/token')) {
                 return Http::response([
                     'access_token' => 'test-token',
@@ -656,7 +761,9 @@ class SalesforceSchedulePdfUploadTest extends TestCase
                 $query = (string) ($request->data()['q'] ?? '');
 
                 if (str_contains($query, 'FROM ContentDocumentLink')) {
-                    return Http::response(['records' => []]);
+                    return Http::response(['records' => $existingContentDocumentId === null ? [] : [
+                        ['ContentDocumentId' => $existingContentDocumentId],
+                    ]]);
                 }
 
                 if (str_contains($query, 'FROM ContentVersion')) {
@@ -732,6 +839,24 @@ PDF;
             public function quoteFilename(Project $project, $revision): string
             {
                 return $this->quoteFilename;
+            }
+
+            public function salesforceScheduleFilename(Project $project, $revision): string
+            {
+                $reference = $project->reference_number ?? 'proj-'.$project->id;
+
+                return collect(['Lighting Schedule', $reference, $revision->label()])
+                    ->map(fn (string $part): string => trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-'))
+                    ->implode('-').'.pdf';
+            }
+
+            public function salesforceQuoteFilename(Project $project, $revision): string
+            {
+                $reference = $project->reference_number ?? 'proj-'.$project->id;
+
+                return collect(['Lighting Quote', $reference, $revision->label()])
+                    ->map(fn (string $part): string => trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-'))
+                    ->implode('-').'.pdf';
             }
 
             public function builder(Project $project, $revision): object
