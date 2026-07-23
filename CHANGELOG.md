@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-beta.12 - 2026-07-23
+
+Version: `0.1.0-beta.11` -> `0.1.0-beta.12`
+
+Changes included:
+
+- `84f8791` Deployment runner fixes
+- `fd10271` Salesforce Uploads Schedules and quotes as single filename by Rev - leave versioning to Saflesfoce ContentVersion
+
 ## 0.1.0-beta.11 - 2026-07-22
 
 Version: `0.1.0-beta.10` -> `0.1.0-beta.11`
