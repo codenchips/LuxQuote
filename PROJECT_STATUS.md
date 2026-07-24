@@ -1,6 +1,14 @@
 # Company App — Project Status
 
-_Last updated: 23 July 2026_
+_Last updated: 24 July 2026_
+
+---
+
+## Archived Project Restore — 24 July 2026
+
+- **Contextual project menu**: Normal project rows retain the existing **Archive** and administrator-only **Delete permanently** options. Archived project rows replace those options with a single **Restore** action in the same context-menu position.
+- **Simple restore state**: Restoring an archived project sets its status directly to **In Progress**; the previous pre-archive status is deliberately not retained.
+- **Existing permission reused**: Restore uses `projects.update-details`, matching Archive. The action is hidden without that permission and repeats the authorization and archived-state checks server-side before changing the project.
 
 ---
 

@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ViewErrorBag;
 use Livewire\Livewire;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Process\Process;
 use Tests\TestCase;
 use Throwable;
@@ -642,6 +643,62 @@ class AdminProjectResourceTest extends TestCase
             ->filterTable('status', [ProjectStatus::Archived])
             ->assertCanSeeTableRecords([$archivedProject])
             ->assertCanNotSeeTableRecords([$draftProject]);
+    }
+
+    public function test_archived_project_context_menu_restores_project_to_in_progress(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $activeProject = Project::factory()->for($admin)->create([
+            'status' => ProjectStatus::InProgress,
+        ]);
+        $archivedProject = Project::factory()->for($admin)->create([
+            'status' => ProjectStatus::Archived,
+        ]);
+
+        Livewire::test(ListProjects::class)
+            ->filterTable('status', [ProjectStatus::Archived])
+            ->assertTableActionVisible('restore', $archivedProject)
+            ->assertTableActionHidden('archive', $archivedProject)
+            ->assertTableActionHidden('delete', $archivedProject)
+            ->callTableAction('restore', $archivedProject);
+
+        $this->assertSame(ProjectStatus::InProgress, $archivedProject->fresh()->status);
+
+        Livewire::test(ListProjects::class)
+            ->resetTableFilters()
+            ->assertTableActionHidden('restore', $activeProject)
+            ->assertTableActionVisible('archive', $activeProject)
+            ->assertTableActionVisible('delete', $activeProject);
+    }
+
+    public function test_user_without_project_detail_permission_cannot_restore_archived_project(): void
+    {
+        $technicalUser = User::factory()->technical()->create();
+        $this->actingAs($technicalUser);
+
+        $project = Project::factory()->for($technicalUser)->create([
+            'status' => ProjectStatus::Archived,
+        ]);
+
+        $component = Livewire::test(ListProjects::class)
+            ->filterTable('status', [ProjectStatus::Archived])
+            ->assertCanSeeTableRecords([$project])
+            ->assertTableActionHidden('restore', $project);
+
+        $restoreAction = $component->instance()->getTable()->getAction('restore');
+        $this->assertNotNull($restoreAction);
+        $restoreAction->record($project);
+
+        try {
+            $restoreAction->call();
+            $this->fail('The restore action should reject users without project detail permission.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+
+        $this->assertSame(ProjectStatus::Archived, $project->fresh()->status);
     }
 
     public function test_project_list_can_filter_by_owner_user_group(): void
