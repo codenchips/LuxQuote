@@ -169,6 +169,34 @@ docker compose exec -T -u sail laravel.test php artisan salesforce:interrogate -
 
 Only generate a new key/certificate pair when the original private key is permanently lost or the Salesforce Connected App certificate is deliberately being rotated. A Docker image rebuild, container recreation, DNS failure, or missing Docker firewall chain does not require a new certificate.
 
+### Salesforce object inspection commands
+
+These commands are useful when checking live Salesforce field visibility with the app's configured Salesforce user. Run them on the VPS from:
+
+```bash
+cd /home/tamliteco/luxquote.app
+```
+
+The local development equivalents use the same command body but replace `docker compose exec -T laravel.test php artisan` with `vendor/bin/sail artisan`.
+
+Get a single Opportunity by Id, including all fields the integration user can read:
+
+```bash
+docker compose exec -T laravel.test php artisan tinker --execute '$sf = app(\App\Services\SalesforceService::class); $m = new ReflectionMethod($sf, "authenticate"); $auth = $m->invoke($sf); $id = "006YOUR_OPPORTUNITY_ID_HERE"; $describe = \Illuminate\Support\Facades\Http::withToken($auth["token"])->acceptJson()->get($auth["instanceUrl"]."/services/data/v65.0/sobjects/Opportunity/describe")->json(); $fields = collect($describe["fields"] ?? [])->pluck("name")->all(); $query = "SELECT ".implode(", ", $fields)." FROM Opportunity WHERE Id = '\''".$id."'\'' LIMIT 1"; echo json_encode(\Illuminate\Support\Facades\Http::withToken($auth["token"])->acceptJson()->get($auth["instanceUrl"]."/services/data/v65.0/query/", ["q" => $query])->json(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL;'
+```
+
+Get Tender records for an Opportunity. The Tender custom object links to Opportunity through `Tenders__c.Project__c`:
+
+```bash
+docker compose exec -T laravel.test php artisan tinker --execute '$sf = app(\App\Services\SalesforceService::class); $m = new ReflectionMethod($sf, "authenticate"); $auth = $m->invoke($sf); $opportunityId = "006YOUR_OPPORTUNITY_ID_HERE"; $describe = \Illuminate\Support\Facades\Http::withToken($auth["token"])->acceptJson()->get($auth["instanceUrl"]."/services/data/v65.0/sobjects/Tenders__c/describe")->json(); $fields = collect($describe["fields"] ?? [])->pluck("name")->all(); $query = "SELECT ".implode(", ", $fields)." FROM Tenders__c WHERE Project__c = '\''".$opportunityId."'\''"; echo json_encode(\Illuminate\Support\Facades\Http::withToken($auth["token"])->acceptJson()->get($auth["instanceUrl"]."/services/data/v65.0/query/", ["q" => $query])->json(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL;'
+```
+
+Get an Account by Id from a Tender's `Account__c` value. Account IDs normally start with `001`; do not use the Tender record Id, which starts with a custom-object prefix such as `a0G`:
+
+```bash
+docker compose exec -T laravel.test php artisan tinker --execute '$sf = app(\App\Services\SalesforceService::class); $m = new ReflectionMethod($sf, "authenticate"); $auth = $m->invoke($sf); $accountId = "001YOUR_ACCOUNT_ID_HERE"; $describe = \Illuminate\Support\Facades\Http::withToken($auth["token"])->acceptJson()->get($auth["instanceUrl"]."/services/data/v65.0/sobjects/Account/describe")->json(); $fields = collect($describe["fields"] ?? [])->pluck("name")->all(); $query = "SELECT ".implode(", ", $fields)." FROM Account WHERE Id = '\''".$accountId."'\'' LIMIT 1"; echo json_encode(\Illuminate\Support\Facades\Http::withToken($auth["token"])->acceptJson()->get($auth["instanceUrl"]."/services/data/v65.0/query/", ["q" => $query])->json(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL;'
+```
+
 ## Emergency Stack Recovery
 
 If production is returning HTTP 500 because the Docker stack or MySQL container is wedged, use the checked-in emergency recovery script from the production app directory:

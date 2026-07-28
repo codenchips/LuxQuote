@@ -1,6 +1,13 @@
 # Company App — Project Status
 
-_Last updated: 24 July 2026_
+_Last updated: 28 July 2026_
+
+---
+
+## Salesforce Tender Diagnostics — 28 July 2026
+
+- **Tender object visibility confirmed**: The Salesforce integration user can see/query the custom `Tenders__c` object in production. The object exposes `Project__c` as the lookup back to `Opportunity` and `Account__c` as the linked Account lookup.
+- **Useful CLI diagnostics documented**: `DEPLOYMENT.md` now includes copy/paste commands for fetching a single Opportunity by Id, fetching all Tenders for an Opportunity, and fetching an Account by the `Account__c` value from Tender data. The VPS commands use Docker Compose; local sandbox checks use the same bodies via Sail.
 
 ---
 
