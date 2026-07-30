@@ -72,9 +72,6 @@ class ProjectLine extends Model
             && blank($this->ref)
             && blank($this->description)
             && $this->isNullOrZero($this->unit_price)
-            && $this->isNullOrZero($this->cover_1)
-            && $this->isNullOrZero($this->cover_2)
-            && $this->isNullOrZero($this->cover_3)
             && blank($this->notes)
             && blank($this->status)
             && ! $this->approved
