@@ -802,6 +802,216 @@
     </div>
     @endif
 
+    {{-- Tenders Modal --}}
+    @if($tendersModalOpen)
+    <div
+        x-data
+        x-on:keydown.escape.window="$wire.closeTendersModal()"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Tenders"
+        class="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+    >
+        <div
+            class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            wire:click="closeTendersModal"
+        ></div>
+
+        <div class="relative z-10 w-full max-w-xl flex flex-col bg-white dark:bg-gray-900 rounded-xl shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700" style="max-height: 80vh">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                <div>
+                    <h2 class="text-base font-semibold text-gray-900 dark:text-white">Tenders</h2>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Contractors tendering for this project.</p>
+                </div>
+                <button
+                    wire:click="closeTendersModal"
+                    class="rounded-lg p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                    <x-heroicon-o-x-mark class="w-5 h-5" />
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800">
+                @forelse($this->projectTenders as $tender)
+                <div class="flex items-center gap-4 px-6 py-4">
+                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                        <x-heroicon-o-building-office-2 class="h-5 w-5" />
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ $tender->account_name }}</div>
+                        <div class="mt-0.5 truncate text-xs font-mono text-gray-500 dark:text-gray-400">{{ $tender->salesforce_account_id }}</div>
+                    </div>
+                    @if($this->canManageProjectTenders())
+                    <button
+                        wire:click="removeTender({{ $tender->id }})"
+                        wire:confirm="Remove this tender from the project?"
+                        class="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 transition-colors"
+                        title="Remove tender"
+                    >
+                        <x-heroicon-o-trash class="h-5 w-5" />
+                    </button>
+                    @endif
+                </div>
+                @empty
+                <div class="flex flex-col items-center justify-center px-6 py-16 text-center">
+                    <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
+                        <x-heroicon-o-briefcase class="h-6 w-6" />
+                    </div>
+                    <p class="mt-3 text-sm font-medium text-gray-900 dark:text-white">No tenders added yet</p>
+                    <p class="mt-1 max-w-sm text-sm text-gray-500 dark:text-gray-400">Add Salesforce Accounts for contractors tendering on this project.</p>
+                </div>
+                @endforelse
+            </div>
+
+            <div class="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-b-xl shrink-0">
+                <span class="text-sm text-gray-500 dark:text-gray-400">
+                    {{ $this->projectTenders->count() }} {{ Str::plural('tender', $this->projectTenders->count()) }}
+                </span>
+                <div class="flex items-center gap-3">
+                    <button
+                        wire:click="closeTendersModal"
+                        class="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    >
+                        Close
+                    </button>
+                    @if($this->canManageProjectTenders())
+                    <button
+                        wire:click="openTenderAccountPicker"
+                        class="fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+                    >
+                        Add tender
+                    </button>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
+    {{-- Tender Account Picker Modal --}}
+    @if($tenderAccountPickerOpen)
+    <div
+        x-data
+        x-on:keydown.escape.window="$wire.closeTenderAccountPicker()"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add Tender"
+        class="fixed inset-0 z-[10000] flex items-center justify-center p-4"
+    >
+        <div
+            class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            wire:click="closeTenderAccountPicker"
+        ></div>
+
+        <div class="relative z-10 w-full max-w-3xl flex flex-col bg-white dark:bg-gray-900 rounded-xl shadow-2xl ring-1 ring-gray-200 dark:ring-gray-700" style="max-height: 85vh">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                <h2 class="text-base font-semibold text-gray-900 dark:text-white">Add Tender</h2>
+                <button
+                    wire:click="closeTenderAccountPicker"
+                    class="rounded-lg p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                    <x-heroicon-o-x-mark class="w-5 h-5" />
+                </button>
+            </div>
+
+            <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                <div class="relative">
+                    <x-heroicon-o-magnifying-glass class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    <input
+                        wire:model.live.debounce.300ms="tenderAccountSearch"
+                        type="search"
+                        placeholder="Search Salesforce Accounts..."
+                        class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 pl-9 pr-3 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    />
+                </div>
+            </div>
+
+            <div class="grid gap-3 px-6 py-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/40 border-b border-gray-100 dark:border-gray-800 shrink-0"
+                style="grid-template-columns: 32px 1fr 190px 70px">
+                <div></div>
+                <div>Account</div>
+                <div>Salesforce ID</div>
+                <div class="text-center">Status</div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800">
+                @forelse($this->tenderAccountSearchResults as $account)
+                @php
+                    $isSelected = isset($tenderAccountSelections[$account['id']]);
+                    $alreadyAdded = $this->projectTenders->contains('salesforce_account_id', $account['id']);
+                @endphp
+                <div
+                    wire:key="tender-account-{{ $account['id'] }}"
+                    @unless($alreadyAdded)
+                    x-on:click="$wire.toggleTenderAccountSelection(@js($account['id']))"
+                    @endunless
+                    class="grid items-center gap-3 px-6 py-3 select-none transition-colors
+                        {{ $alreadyAdded
+                            ? 'cursor-not-allowed opacity-60'
+                            : ($isSelected
+                                ? 'cursor-pointer bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 dark:hover:bg-primary-900/30'
+                                : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50') }}"
+                    style="grid-template-columns: 32px 1fr 190px 70px"
+                >
+                    <div class="flex items-center justify-center pointer-events-none">
+                        <div class="w-4 h-4 rounded border-2 flex items-center justify-center transition-colors
+                            {{ $isSelected
+                                ? 'bg-primary-600 border-primary-600'
+                                : 'border-gray-400 dark:border-gray-500 bg-white dark:bg-gray-800' }}">
+                            @if($isSelected)
+                            <x-heroicon-s-check class="w-2.5 h-2.5 text-white" />
+                            @endif
+                        </div>
+                    </div>
+                    <div class="min-w-0 text-sm font-medium text-gray-900 dark:text-white truncate">{{ $account['name'] }}</div>
+                    <div class="text-xs font-mono text-gray-600 dark:text-gray-400 truncate">{{ $account['id'] }}</div>
+                    <div class="text-center">
+                        @if($alreadyAdded)
+                        <span class="lux-compact-badge bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/30 dark:text-emerald-400">Added</span>
+                        @else
+                        <span class="text-gray-300 dark:text-gray-600 text-sm">—</span>
+                        @endif
+                    </div>
+                </div>
+                @empty
+                <div class="flex flex-col items-center justify-center py-16 text-sm text-gray-400 dark:text-gray-500">
+                    <x-heroicon-o-magnifying-glass class="w-8 h-8 mb-2 text-gray-300 dark:text-gray-600" />
+                    No Salesforce Accounts found{{ $tenderAccountSearch ? ' for your search' : '' }}.
+                </div>
+                @endforelse
+            </div>
+
+            <div class="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 rounded-b-xl shrink-0">
+                <span class="text-sm text-gray-500 dark:text-gray-400">
+                    @if(count($tenderAccountSelections) > 0)
+                    <span class="font-medium text-primary-600 dark:text-primary-400">{{ count($tenderAccountSelections) }} {{ Str::plural('account', count($tenderAccountSelections)) }} selected</span>
+                    @else
+                    Click a row to select Accounts
+                    @endif
+                </span>
+                <div class="flex items-center gap-3">
+                    <button
+                        wire:click="closeTenderAccountPicker"
+                        class="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        wire:click="addSelectedTenders"
+                        @disabled(count($tenderAccountSelections) === 0)
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                            {{ count($tenderAccountSelections) > 0
+                                ? 'fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action'
+                                : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed' }}"
+                    >
+                        Add {{ count($tenderAccountSelections) > 0 ? count($tenderAccountSelections).' '.Str::plural('Tender', count($tenderAccountSelections)) : 'Tenders' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
     {{-- Revisions Modal --}}
     @if($revisionsModalOpen)
     <div

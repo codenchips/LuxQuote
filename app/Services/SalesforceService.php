@@ -436,6 +436,39 @@ class SalesforceService
     }
 
     /**
+     * Search Account records for project tender selection.
+     *
+     * @return array<int, array{id: string, name: string}>
+     */
+    public function searchAccounts(string $query = '', int $limit = 25): array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return [];
+        }
+
+        $limit = max(1, min(50, $limit));
+        $where = filled($query)
+            ? " WHERE Name LIKE '%".$this->soqlEscape($query)."%'"
+            : '';
+
+        $result = $this->soqlQuery(
+            $auth,
+            "SELECT Id, Name FROM Account{$where} ORDER BY Name ASC LIMIT {$limit}",
+        );
+
+        return collect($result['records'] ?? [])
+            ->map(fn (array $record): array => [
+                'id' => (string) ($record['Id'] ?? ''),
+                'name' => (string) ($record['Name'] ?? ''),
+            ])
+            ->filter(fn (array $record): bool => filled($record['id']) && filled($record['name']))
+            ->values()
+            ->all();
+    }
+
+    /**
      * Fetch a single Opportunity by Salesforce ID.
      *
      * @return array<string, mixed>|null

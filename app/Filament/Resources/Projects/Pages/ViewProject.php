@@ -14,6 +14,7 @@ use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectPresence;
 use App\Models\ProjectRevision;
+use App\Models\ProjectTender;
 use App\Services\SalesforcePushControl;
 use App\Services\SalesforceService;
 use Filament\Actions\Action;
@@ -60,6 +61,17 @@ class ViewProject extends ViewRecord
     public ?int $viewingRevisionId = null;
 
     public bool $revisionsModalOpen = false;
+
+    // ── Tender state ─────────────────────────────────────────────────────────
+
+    public bool $tendersModalOpen = false;
+
+    public bool $tenderAccountPickerOpen = false;
+
+    public string $tenderAccountSearch = '';
+
+    /** @var array<string, array{name: string}> */
+    public array $tenderAccountSelections = [];
 
     // ── Product picker state ─────────────────────────────────────────────────
 
@@ -192,6 +204,12 @@ class ViewProject extends ViewRecord
                     $record->update($data);
                 })
                 ->after(fn () => $this->afterProjectDetailsSaved()),
+
+            Action::make('manageTenders')
+                ->label('Tenders')
+                ->icon('heroicon-o-briefcase')
+                ->color('gray')
+                ->action(fn () => $this->openTendersModal()),
 
             Action::make('manageRevisions')
                 ->label('Revisions')
@@ -551,6 +569,143 @@ class ViewProject extends ViewRecord
                     'validated_by' => null,
                 ]);
         });
+    }
+
+    // ── Tender management ────────────────────────────────────────────────────
+
+    public function openTendersModal(): void
+    {
+        $this->tendersModalOpen = true;
+    }
+
+    public function closeTendersModal(): void
+    {
+        $this->tendersModalOpen = false;
+        $this->closeTenderAccountPicker();
+    }
+
+    public function openTenderAccountPicker(): void
+    {
+        abort_unless($this->canManageProjectTenders(), 403);
+
+        $this->tenderAccountPickerOpen = true;
+        $this->tenderAccountSearch = '';
+        $this->tenderAccountSelections = [];
+        unset($this->tenderAccountSearchResults);
+    }
+
+    public function closeTenderAccountPicker(): void
+    {
+        $this->tenderAccountPickerOpen = false;
+        $this->tenderAccountSearch = '';
+        $this->tenderAccountSelections = [];
+        unset($this->tenderAccountSearchResults);
+    }
+
+    public function updatedTenderAccountSearch(): void
+    {
+        unset($this->tenderAccountSearchResults);
+    }
+
+    public function toggleTenderAccountSelection(string $accountId): void
+    {
+        if ($this->record->tenders()->where('salesforce_account_id', $accountId)->exists()) {
+            return;
+        }
+
+        if (isset($this->tenderAccountSelections[$accountId])) {
+            unset($this->tenderAccountSelections[$accountId]);
+
+            return;
+        }
+
+        $account = collect($this->tenderAccountSearchResults)->firstWhere('id', $accountId);
+
+        if (! is_array($account)) {
+            return;
+        }
+
+        $this->tenderAccountSelections[$accountId] = [
+            'name' => (string) $account['name'],
+        ];
+    }
+
+    public function addSelectedTenders(): void
+    {
+        abort_unless($this->canManageProjectTenders(), 403);
+
+        if ($this->tenderAccountSelections === []) {
+            return;
+        }
+
+        foreach ($this->tenderAccountSelections as $accountId => $account) {
+            ProjectTender::query()->updateOrCreate(
+                [
+                    'project_id' => $this->record->id,
+                    'salesforce_account_id' => $accountId,
+                ],
+                [
+                    'account_name' => $account['name'],
+                    'account_payload' => [
+                        'Id' => $accountId,
+                        'Name' => $account['name'],
+                    ],
+                    'created_by_id' => auth()->id(),
+                ],
+            );
+        }
+
+        $count = count($this->tenderAccountSelections);
+        $this->closeTenderAccountPicker();
+        unset($this->projectTenders);
+
+        Notification::make()
+            ->title($count.' '.Str::plural('tender', $count).' added')
+            ->success()
+            ->send();
+    }
+
+    public function removeTender(int $tenderId): void
+    {
+        abort_unless($this->canManageProjectTenders(), 403);
+
+        ProjectTender::query()
+            ->where('project_id', $this->record->id)
+            ->findOrFail($tenderId)
+            ->delete();
+
+        unset($this->projectTenders);
+    }
+
+    #[Computed]
+    public function projectTenders(): Collection
+    {
+        return $this->record
+            ->tenders()
+            ->with('creator')
+            ->get();
+    }
+
+    #[Computed]
+    public function tenderAccountSearchResults(): array
+    {
+        if (! $this->tenderAccountPickerOpen) {
+            return [];
+        }
+
+        try {
+            return app(SalesforceService::class)->searchAccounts($this->tenderAccountSearch, 25);
+        } catch (Throwable $throwable) {
+            report($throwable);
+
+            Notification::make()
+                ->title('Salesforce Account search failed')
+                ->body('The Account list could not be loaded from Salesforce.')
+                ->danger()
+                ->send();
+
+            return [];
+        }
     }
 
     // ── Line management ───────────────────────────────────────────────────────
@@ -1505,6 +1660,11 @@ class ViewProject extends ViewRecord
     public function canEditProjectDetails(): bool
     {
         return auth()->user()?->can('projects.update-details') ?? false;
+    }
+
+    public function canManageProjectTenders(): bool
+    {
+        return $this->canEditProjectDetails();
     }
 
     public function canCreateRevisions(): bool

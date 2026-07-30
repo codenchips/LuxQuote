@@ -187,6 +187,12 @@ Project visibility supports:
 - `Private` — only the project owner and admins may see it.
 - `Team` — the project owner, admins, and members of the selected team may see it.
 
+## Project Tenders
+
+Project Tenders are local links between a Project and Salesforce contractor Accounts that may tender for the project. The project page **Tenders** modal is visible from the project page, while adding or removing tender Accounts uses the existing `projects.update-details` permission and repeats that guard server-side.
+
+The first implementation stores Salesforce Account ID and Account name locally in `project_tenders`. It only reads Salesforce `Account` records; it does not create, update, or delete Salesforce `Tender__c` records yet.
+
 ## Adding New Functionality
 
 When adding any new user-facing page, action, export, mutation, button, table column, form field, or route, review permissions as part of the feature work.

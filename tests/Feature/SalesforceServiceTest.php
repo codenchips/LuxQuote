@@ -77,6 +77,47 @@ class SalesforceServiceTest extends TestCase
             && str_contains((string) ($request->data()['q'] ?? ''), 'IsWon = false'));
     }
 
+    public function test_search_accounts_returns_minimal_account_results(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response([
+                    'records' => [
+                        [
+                            'Id' => '001000000000001AAA',
+                            'Name' => 'Example Contractor',
+                        ],
+                    ],
+                ]);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $accounts = app(SalesforceService::class)->searchAccounts('Contractor');
+
+        $this->assertSame([
+            [
+                'id' => '001000000000001AAA',
+                'name' => 'Example Contractor',
+            ],
+        ], $accounts);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
+            && str_contains($request->url(), '/services/data/v65.0/query/')
+            && $request->hasHeader('Authorization', 'Bearer live-test-token')
+            && str_contains((string) ($request->data()['q'] ?? ''), 'SELECT Id, Name FROM Account')
+            && str_contains((string) ($request->data()['q'] ?? ''), "Name LIKE '%Contractor%'"));
+    }
+
     public function test_jwt_bearer_authenticates_and_returns_options(): void
     {
         $this->travelTo('2026-07-02 10:00:00');

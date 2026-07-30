@@ -134,6 +134,11 @@ class Project extends Model
         return $this->hasMany(DocumentPack::class)->orderBy('name');
     }
 
+    public function tenders(): HasMany
+    {
+        return $this->hasMany(ProjectTender::class)->orderBy('account_name');
+    }
+
     /** @deprecated Use areas through a specific revision instead */
     public function areas(): HasMany
     {

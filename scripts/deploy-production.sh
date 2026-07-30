@@ -6,7 +6,7 @@ APP_DIR="${APP_DIR:-/home/tamliteco/luxquote.app}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-production}"
 PUBLIC_URL="${PUBLIC_URL:-https://quote.tamlite.co.uk}"
 BACKUP_DIR="${BACKUP_DIR:-$APP_DIR/backups}"
-PROTECTED_DATA_TABLES="${PROTECTED_DATA_TABLES:-users products teams projects project_revisions project_areas project_lines document_packs document_pack_items team_user activity_logs salesforce_pdf_uploads}"
+PROTECTED_DATA_TABLES="${PROTECTED_DATA_TABLES:-users products teams projects project_revisions project_areas project_lines project_tenders document_packs document_pack_items team_user activity_logs salesforce_pdf_uploads}"
 RESTORE_ON_CATASTROPHIC_DATA_LOSS="${RESTORE_ON_CATASTROPHIC_DATA_LOSS:-true}"
 
 timestamp() {

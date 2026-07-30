@@ -1,12 +1,21 @@
 # Company App — Project Status
 
-_Last updated: 28 July 2026_
+_Last updated: 30 July 2026_
+
+---
+
+## Project Tenders — 30 July 2026
+
+- **Project Tender UI started**: Project pages now include a **Tenders** button between **Details** and **Revisions**. It opens a modal listing contractor Accounts linked to the project as tenders.
+- **Salesforce Account picker added**: Users with `projects.update-details` can add tenders by searching readable Salesforce `Account` records and selecting one or more contractors from a checkbox list. This first slice stores the Salesforce Account ID and name locally; it does not yet create or update Salesforce Tender records.
+- **Tender storage added**: `project_tenders` stores the project, Salesforce Account ID, Account name, optional future Salesforce Tender ID, raw Account payload, creator, and timestamps. The deploy data-loss guard now treats `project_tenders` as protected business data.
+- **Salesforce Tender naming corrected**: Sandbox and production now use the singular custom object API name `Tender__c`; diagnostics and notes should no longer refer to `Tenders__c`.
 
 ---
 
 ## Salesforce Tender Diagnostics — 28 July 2026
 
-- **Tender object visibility confirmed**: The Salesforce integration user can see/query the custom `Tenders__c` object in production. The object exposes `Project__c` as the lookup back to `Opportunity` and `Account__c` as the linked Account lookup.
+- **Tender object visibility confirmed**: The Salesforce integration user can see/query the custom `Tender__c` object in production and sandbox. The object exposes `Project__c` as the lookup back to `Opportunity` and `Account__c` as the linked Account lookup.
 - **Useful CLI diagnostics documented**: `DEPLOYMENT.md` now includes copy/paste commands for fetching a single Opportunity by Id, fetching all Tenders for an Opportunity, and fetching an Account by the `Account__c` value from Tender data. The VPS commands use Docker Compose; local sandbox checks use the same bodies via Sail.
 
 ---
@@ -206,6 +215,12 @@ project_revisions
 project_presences
   project_id (FK), user_id (FK), last_seen_at
   (no timestamps — composite PK implied by upsert)
+
+project_tenders
+  id, project_id (FK), salesforce_account_id, account_name
+  salesforce_tender_id (nullable), account_payload (nullable JSON)
+  created_by_id (nullable FK → users), timestamps
+  unique(project_id, salesforce_account_id)
 
 project_areas
   id, project_id (FK), project_revision_id (FK → project_revisions), name, sort_order
