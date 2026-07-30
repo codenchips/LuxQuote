@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Project;
 use App\Models\ProjectArea;
+use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -51,6 +52,22 @@ class ProjectSchedulePdfService
             ])
             ->orderBy('sort_order')
             ->get();
+
+        if ($documentType === 'quote') {
+            $areas = $areas
+                ->map(function (ProjectArea $area): ProjectArea {
+                    $area->setRelation(
+                        'lines',
+                        $area->lines
+                            ->reject(fn (ProjectLine $line): bool => $line->isNoOffer())
+                            ->values(),
+                    );
+
+                    return $area;
+                })
+                ->filter(fn (ProjectArea $area): bool => $area->lines->isNotEmpty())
+                ->values();
+        }
 
         $generatedAt = now()->format('M d Y H:i');
         $salesEngineer = $this->salesEngineerForProject($project);

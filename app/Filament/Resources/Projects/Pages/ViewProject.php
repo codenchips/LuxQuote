@@ -1007,17 +1007,13 @@ class ViewProject extends ViewRecord
                     $product = $productsBySku->get($sku);
                     $maxSort++;
 
-                    $area->lines()->create([
-                        'product_id' => $product?->id,
-                        'code' => $product?->sku ?? $this->normaliseSku($row['sku']),
-                        'description' => $product?->displayDescription() ?? '',
-                        'qty' => $row['qty'],
-                        'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
-                        'unit_price' => $row['unit_price'] ?? $product?->price,
-                        ...$this->defaultLineCoverAttributes(),
-                        'status' => self::LineStatusPriced,
-                        'sort_order' => $maxSort,
-                    ]);
+                    $area->lines()->create($this->lineCreateDataFromSku(
+                        sku: $row['sku'],
+                        qty: $row['qty'],
+                        product: $product,
+                        unitPrice: $row['unit_price'],
+                        sortOrder: $maxSort,
+                    ));
                 }
             });
         } catch (Throwable $exception) {
@@ -1037,6 +1033,52 @@ class ViewProject extends ViewRecord
                 ->warning()
                 ->send();
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function lineCreateDataFromSku(
+        string $sku,
+        int $qty,
+        ?Product $product,
+        ?string $unitPrice,
+        int $sortOrder,
+        ?string $ref = null,
+        ?string $description = null,
+    ): array {
+        if (ProjectLine::isNoOfferCode($sku)) {
+            return [
+                'product_id' => null,
+                'code' => ProjectLine::NoOfferCode,
+                'ref' => $ref,
+                'description' => ProjectLine::NoOfferDescription,
+                'qty' => 0,
+                'type' => ProjectLineType::Custom->value,
+                'unit_price' => 0,
+                ...$this->defaultLineCoverAttributes(),
+                'status' => self::LineStatusPriced,
+                'approved' => true,
+                'approved_at' => now(),
+                'approved_by' => null,
+                'validation_flagged' => false,
+                'validation_note' => null,
+                'sort_order' => $sortOrder,
+            ];
+        }
+
+        return [
+            'product_id' => $product?->id,
+            'code' => $product?->sku ?? $this->normaliseSku($sku),
+            'ref' => $ref,
+            'description' => $description ?? $product?->displayDescription() ?? '',
+            'qty' => $qty,
+            'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
+            'unit_price' => $unitPrice ?? $product?->price,
+            ...$this->defaultLineCoverAttributes(),
+            'status' => self::LineStatusPriced,
+            'sort_order' => $sortOrder,
+        ];
     }
 
     private function addTechnicalPastedProducts(): void
@@ -1077,18 +1119,15 @@ class ViewProject extends ViewRecord
                         /** @var Product|null $product */
                         $product = $productsBySku->get($this->normaliseSku($lineData['sku']));
 
-                        $area->lines()->create([
-                            'product_id' => $product?->id,
-                            'code' => $product?->sku ?? $this->normaliseSku($lineData['sku']),
-                            'ref' => $lineData['ref'],
-                            'description' => $this->technicalLineDescription($lineData, $product),
-                            'qty' => $lineData['qty'],
-                            'type' => $product ? ProjectLineType::Standard->value : ProjectLineType::Custom->value,
-                            'unit_price' => $product?->price,
-                            ...$this->defaultLineCoverAttributes(),
-                            'status' => self::LineStatusPriced,
-                            'sort_order' => $lineIndex,
-                        ]);
+                        $area->lines()->create($this->lineCreateDataFromSku(
+                            sku: $lineData['sku'],
+                            qty: $lineData['qty'],
+                            product: $product,
+                            unitPrice: null,
+                            sortOrder: $lineIndex,
+                            ref: $lineData['ref'],
+                            description: $this->technicalLineDescription($lineData, $product),
+                        ));
                     }
                 }
             });
@@ -1128,11 +1167,36 @@ class ViewProject extends ViewRecord
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    private function noOfferLineUpdateData(): array
+    {
+        return [
+            'product_id' => null,
+            'code' => ProjectLine::NoOfferCode,
+            'description' => ProjectLine::NoOfferDescription,
+            'qty' => 0,
+            'type' => ProjectLineType::Custom->value,
+            'unit_price' => 0,
+            'status' => self::LineStatusPriced,
+            'approved' => true,
+            'approved_at' => now(),
+            'approved_by' => null,
+            'validation_flagged' => false,
+            'validation_note' => null,
+        ];
+    }
+
+    /**
      * @param  array{qty: int, sku: string, unit_price: ?string}  $row
      * @return array<string, mixed>
      */
     private function pastedLineUpdateData(array $row, ?Product $product): array
     {
+        if (ProjectLine::isNoOfferCode($row['sku'])) {
+            return $this->noOfferLineUpdateData();
+        }
+
         $data = [
             'product_id' => $product?->id,
             'code' => $product?->sku ?? $this->normaliseSku($row['sku']),
@@ -1156,6 +1220,10 @@ class ViewProject extends ViewRecord
 
     private function normaliseSku(string $sku): string
     {
+        if (ProjectLine::isNoOfferCode($sku)) {
+            return ProjectLine::NoOfferCode;
+        }
+
         return strtoupper(trim($sku));
     }
 
@@ -1482,7 +1550,48 @@ class ViewProject extends ViewRecord
         $line = $this->findLineInViewingRevision($lineId);
 
         if ($field === 'code') {
-            $line->update($this->lineCodeUpdateData((string) $value));
+            $code = $this->normaliseSku((string) $value);
+
+            if ($code === $this->normaliseSku((string) $line->code)) {
+                return;
+            }
+
+            $data = $this->lineCodeUpdateData((string) $value);
+
+            if (! $this->lineDataWouldChange($line, $data)) {
+                return;
+            }
+
+            $line->update($data);
+
+            return;
+        }
+
+        if ($field === 'qty' && $line->isNoOffer()) {
+            if ((int) $line->qty === 0 && $line->approved && ! $line->validation_flagged && blank($line->validation_note)) {
+                return;
+            }
+
+            $line->update([
+                'qty' => 0,
+                'approved' => true,
+                'approved_at' => now(),
+                'approved_by' => null,
+                'validation_flagged' => false,
+                'validation_note' => null,
+            ]);
+
+            return;
+        }
+
+        if ($line->isNoOffer() && $field !== 'ref') {
+            $data = $this->noOfferLineUpdateData();
+
+            if (! $this->lineDataWouldChange($line, $data)) {
+                return;
+            }
+
+            $line->update($data);
 
             return;
         }
@@ -1491,6 +1600,10 @@ class ViewProject extends ViewRecord
             $value = ($value !== '' && $value !== null)
                 ? strtoupper(substr((string) $value, 0, 6))
                 : null;
+
+            if ($this->lineFieldValueMatches($line, 'ref', $value)) {
+                return;
+            }
 
             $line->update([
                 'ref' => $value,
@@ -1504,8 +1617,14 @@ class ViewProject extends ViewRecord
             return;
         }
 
+        $value = $this->normaliseLineFieldValue($field, $value);
+
+        if ($this->lineFieldValueMatches($line, $field, $value)) {
+            return;
+        }
+
         $line->update([
-            $field => $this->normaliseLineFieldValue($field, $value),
+            $field => $value,
             'approved' => false,
             'approved_at' => null,
             'approved_by' => null,
@@ -1520,11 +1639,57 @@ class ViewProject extends ViewRecord
     }
 
     /**
+     * @param  array<string, mixed>  $data
+     */
+    private function lineDataWouldChange(ProjectLine $line, array $data): bool
+    {
+        return collect($data)
+            ->except(['approved', 'approved_at', 'approved_by', 'validation_flagged', 'validation_note'])
+            ->contains(fn (mixed $value, string $field): bool => ! $this->lineFieldValueMatches($line, $field, $value));
+    }
+
+    private function lineFieldValueMatches(ProjectLine $line, string $field, mixed $value): bool
+    {
+        $current = $line->getAttribute($field);
+
+        if ($current instanceof \BackedEnum) {
+            $current = $current->value;
+        }
+
+        if ($field === 'description') {
+            $current = $line->getRawOriginal('description');
+        }
+
+        if (in_array($field, ['unit_price', 'cover_1', 'cover_2', 'cover_3'], true)) {
+            return $this->normaliseComparableNumber($current) === $this->normaliseComparableNumber($value);
+        }
+
+        if ($field === 'qty') {
+            return (int) $current === (int) $value;
+        }
+
+        return (string) ($current ?? '') === (string) ($value ?? '');
+    }
+
+    private function normaliseComparableNumber(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return number_format((float) $value, 2, '.', '');
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function lineCodeUpdateData(string $value): array
     {
         $code = $this->normaliseSku($value);
+
+        if (ProjectLine::isNoOfferCode($code)) {
+            return $this->noOfferLineUpdateData();
+        }
 
         $data = [
             'product_id' => null,

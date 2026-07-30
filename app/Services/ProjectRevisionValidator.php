@@ -200,7 +200,7 @@ class ProjectRevisionValidator
     private function manualFlaggedIssues(ProjectArea $area, Collection $coveredLineIds): array
     {
         return $area->lines
-            ->filter(fn (ProjectLine $line): bool => $line->validation_flagged && ! $coveredLineIds->contains($line->id))
+            ->filter(fn (ProjectLine $line): bool => $line->validation_flagged && ! $line->isNoOffer() && ! $coveredLineIds->contains($line->id))
             ->map(fn (ProjectLine $line): array => $this->issue(
                 key: "manual-flag-{$line->id}",
                 type: 'manual_flag',
@@ -231,7 +231,7 @@ class ProjectRevisionValidator
     private function duplicateSkuIssues(ProjectArea $area): array
     {
         return $area->lines
-            ->filter(fn (ProjectLine $line): bool => filled($line->code))
+            ->filter(fn (ProjectLine $line): bool => filled($line->code) && ! $line->isNoOffer())
             ->groupBy(fn (ProjectLine $line): string => $this->normaliseSku($line->code))
             ->filter(fn (Collection $lines): bool => $lines->count() > 1)
             ->map(function (Collection $lines, string $normalisedSku) use ($area): array {
@@ -270,7 +270,7 @@ class ProjectRevisionValidator
     private function priceReviewIssues(ProjectArea $area, Collection $productsBySku): array
     {
         return $area->lines
-            ->filter(fn (ProjectLine $line): bool => filled($line->code))
+            ->filter(fn (ProjectLine $line): bool => filled($line->code) && ! $line->isNoOffer())
             ->map(function (ProjectLine $line) use ($area, $productsBySku): ?array {
                 /** @var Product|null $product */
                 $product = $productsBySku->get($this->normaliseSku($line->code));
@@ -321,7 +321,7 @@ class ProjectRevisionValidator
     private function coverMismatchIssues(ProjectArea $area, array $projectCoverDefaults, Collection $productsBySku, Project $project): array
     {
         return $area->lines
-            ->filter(fn (ProjectLine $line): bool => $this->lineCoverValues($line, $projectCoverDefaults) !== $projectCoverDefaults)
+            ->filter(fn (ProjectLine $line): bool => ! $line->isNoOffer() && $this->lineCoverValues($line, $projectCoverDefaults) !== $projectCoverDefaults)
             ->map(function (ProjectLine $line) use ($area, $productsBySku, $projectCoverDefaults, $project): array {
                 /** @var Product|null $product */
                 $product = filled($line->code)

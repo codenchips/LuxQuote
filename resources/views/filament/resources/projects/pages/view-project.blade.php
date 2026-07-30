@@ -14,7 +14,39 @@
         default => '20px 150px 65px 1fr 60px 76px 1fr 48px',
     };
 @endphp
-<div x-data="{ confirmDeleteLineId: null, confirmDeleteTenderId: null, confirmDeleteTenderName: '' }" wire:poll.30s="heartbeat">
+<div
+    x-data="{
+        confirmDeleteLineId: null,
+        confirmDeleteTenderId: null,
+        confirmDeleteTenderName: '',
+        focusAdjacentLineField(field, direction, event) {
+            if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+                return;
+            }
+
+            const column = field.dataset.lineColumn;
+
+            if (! column) {
+                return;
+            }
+
+            const fields = Array.from(document.querySelectorAll('[data-line-column]'))
+                .filter((candidate) => candidate.dataset.lineColumn === column)
+                .filter((candidate) => ! candidate.disabled && candidate.offsetParent !== null);
+            const index = fields.indexOf(field);
+            const target = fields[index + direction];
+
+            if (! target) {
+                return;
+            }
+
+            event.preventDefault();
+            target.focus();
+            target.select?.();
+        },
+    }"
+    wire:poll.30s="heartbeat"
+>
 
     {{-- Concurrent editors banner --}}
     @if($this->concurrentEditors->isNotEmpty())
@@ -115,9 +147,19 @@
                             $areaTotal = $area->lines->sum(
                                 fn ($line) => $line->totalLineTotalForProject($this->record)
                             );
+                            $areaNetTotal = $projectHasCover
+                                ? $area->lines->sum(fn ($line) => $line->netLineTotalForProject($this->record))
+                                : null;
                         @endphp
-                        <span class="text-sm font-medium text-gray-900 dark:text-white mr-4">
-                            £{{ number_format($areaTotal, 2) }}
+                        @if($projectHasCover)
+                        <span class="text-sm text-gray-500 dark:text-gray-400 mr-2">
+                            Net:
+                            <span class="font-medium text-gray-900 dark:text-white">£{{ number_format($areaNetTotal, 2) }}</span>
+                        </span>
+                        @endif
+                        <span class="text-sm text-gray-500 dark:text-gray-400 mr-4">
+                            Price:
+                            <span class="font-medium text-gray-900 dark:text-white">£{{ number_format($areaTotal, 2) }}</span>
                         </span>
                     @endif
                 @endif
@@ -203,6 +245,7 @@
 
                 {{-- Sortable lines --}}
                 <div
+                    data-area-lines="{{ $area->id }}"
                     x-sort="(id, pos) => $wire.sortLine(parseInt(id), pos, {{ $area->id }})"
                     x-sort:config="{ group: 'projectLines', animation: 150, disabled: {{ (! $canEditLines || $revisionLocked) ? 'true' : 'false' }} }"
                     class="divide-y divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800"
@@ -228,8 +271,13 @@
 
                         {{-- Code --}}
                         <input
+                            data-line-code-input
+                            data-line-column="code"
+                            wire:key="line-{{ $line->id }}-code-{{ $line->code }}"
                             value="{{ $line->code }}"
                             @disabled(! $canEditLines || $this->isViewingRevisionValidated)
+                            x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
+                            x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'code', $el.value)"
                             placeholder="–"
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm font-mono hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white {{ match($line->type) {
@@ -241,10 +289,13 @@
 
                         {{-- Ref --}}
                         <input
+                            data-line-column="ref"
                             value="{{ $line->ref }}"
                             @disabled(! $canEditLines || $this->isViewingRevisionValidated)
                             maxlength="6"
                             placeholder="–"
+                            x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
+                            x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'ref', $el.value.toUpperCase().slice(0, 6))"
                             x-on:input="$el.value = $el.value.toUpperCase().slice(0, 6)"
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm font-mono uppercase hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
@@ -252,8 +303,11 @@
 
                         {{-- Description --}}
                         <input
+                            data-line-column="description"
                             value="{{ $line->description }}"
                             @disabled(! $canEditLines || $this->isViewingRevisionValidated)
+                            x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
+                            x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'description', $el.value)"
                             placeholder="Description..."
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
@@ -261,11 +315,14 @@
 
                         {{-- Qty --}}
                         <input
+                            data-line-column="qty"
                             type="number"
                             value="{{ $line->qty }}"
                             @disabled(! $canEditLines || $this->isViewingRevisionValidated)
-                            min="1"
-                            x-on:blur="$wire.updateLineField({{ $line->id }}, 'qty', parseInt($el.value) || 1)"
+                            min="{{ $line->isNoOffer() ? 0 : 1 }}"
+                            x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
+                            x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                            x-on:blur="$wire.updateLineField({{ $line->id }}, 'qty', parseInt($el.value) || {{ $line->isNoOffer() ? 0 : 1 }})"
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
                         />
 
@@ -282,11 +339,18 @@
                             @if($projectHasCover)
                                 @if($this->record->cover_direction === 'added')
                                     <input
+                                        data-line-column="unit_price"
                                         type="number"
                                         step="0.01"
                                         value="{{ $line->unit_price }}"
                                         @disabled(! $canEditPrices || $this->isViewingRevisionValidated)
-                                        x-on:blur="$wire.updateLineField({{ $line->id }}, 'unit_price', $el.value)"
+                                        x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
+                                        x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                                        x-on:blur="
+                                            const value = $el.value === '' ? '' : Math.max(0, Number.parseFloat($el.value) || 0).toFixed(2);
+                                            $el.value = value;
+                                            $wire.updateLineField({{ $line->id }}, 'unit_price', value);
+                                        "
                                         placeholder="0.00"
                                         class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
                                     />
@@ -298,22 +362,36 @@
                                         {{ $line->netUnitPriceForProject($this->record) !== null ? number_format((float) $line->netUnitPriceForProject($this->record), 2) : '—' }}
                                     </div>
                                     <input
+                                        data-line-column="unit_price"
                                         type="number"
                                         step="0.01"
                                         value="{{ $line->unit_price }}"
                                         @disabled(! $canEditPrices || $this->isViewingRevisionValidated)
-                                        x-on:blur="$wire.updateLineField({{ $line->id }}, 'unit_price', $el.value)"
+                                        x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
+                                        x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                                        x-on:blur="
+                                            const value = $el.value === '' ? '' : Math.max(0, Number.parseFloat($el.value) || 0).toFixed(2);
+                                            $el.value = value;
+                                            $wire.updateLineField({{ $line->id }}, 'unit_price', value);
+                                        "
                                         placeholder="0.00"
                                         class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
                                     />
                                 @endif
                             @else
                                 <input
+                                    data-line-column="unit_price"
                                     type="number"
                                     step="0.01"
                                     value="{{ $line->unit_price }}"
                                     @disabled(! $canEditPrices || $this->isViewingRevisionValidated)
-                                    x-on:blur="$wire.updateLineField({{ $line->id }}, 'unit_price', $el.value)"
+                                    x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
+                                    x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                                    x-on:blur="
+                                        const value = $el.value === '' ? '' : Math.max(0, Number.parseFloat($el.value) || 0).toFixed(2);
+                                        $el.value = value;
+                                        $wire.updateLineField({{ $line->id }}, 'unit_price', value);
+                                    "
                                     placeholder="0.00"
                                     class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
                                 />
@@ -326,12 +404,15 @@
                                     <label class="relative block">
                                         <span class="sr-only">{{ $coverLabel }}</span>
                                         <input
+                                            data-line-column="{{ $coverField }}"
                                             type="number"
                                             step="0.01"
                                             min="0"
                                             max="999.99"
                                             value="{{ $line->{$coverField} !== null ? number_format((float) $line->{$coverField}, 2, '.', '') : '' }}"
                                             @disabled(! $canEditCover || $revisionLocked)
+                                            x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
+                                            x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                                             x-on:blur="
                                                 const value = $el.value === '' ? '' : Number.parseFloat($el.value).toFixed(2);
                                                 $el.value = value;
@@ -347,8 +428,11 @@
                         @else
                             {{-- Notes --}}
                             <input
+                                data-line-column="notes"
                                 value="{{ $line->notes }}"
                                 @disabled(! $canEditLines || $revisionLocked)
+                                x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
+                                x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                                 x-on:blur="$wire.updateLineField({{ $line->id }}, 'notes', $el.value)"
                                 placeholder=""
                                 class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-500 dark:text-gray-400"
@@ -361,7 +445,7 @@
                                 @php
                                     $displayStatus = $line->validation_flagged
                                         ? 'Flagged'
-                                        : ($line->approved ? 'Approved' : 'Pending');
+                                        : ($line->approved || $line->isNoOffer() ? 'Approved' : 'Pending');
                                 @endphp
                                 <span class="inline-flex items-center justify-center rounded px-2 py-0.5 text-xs font-semibold {{ match($displayStatus) {
                                     'Approved' => 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-400',
@@ -385,7 +469,22 @@
                                 <x-heroicon-o-document-duplicate class="w-4 h-4" />
                             </button>
                             <button
-                                @click.stop="{{ $revisionLocked ? '$wire.notifyApprovedRevisionLocked()' : 'confirmDeleteLineId = '.$line->id }}"
+                                @click.stop="{{ $revisionLocked ? '$wire.notifyApprovedRevisionLocked()' : ($line->isBlankOrDefault() ? '$wire.deleteLine('.$line->id.')' : 'confirmDeleteLineId = '.$line->id) }}"
+                                @if($loop->last && $canEditLines && ! $revisionLocked)
+                                    x-on:keydown.tab="
+                                        if (! $event.shiftKey) {
+                                            $event.preventDefault();
+                                            $wire.addBlankLine({{ $area->id }}).then(() => {
+                                                requestAnimationFrame(() => {
+                                                    requestAnimationFrame(() => {
+                                                        const inputs = document.querySelectorAll('[data-area-lines=&quot;{{ $area->id }}&quot;] [data-line-code-input]');
+                                                        inputs[inputs.length - 1]?.focus();
+                                                    });
+                                                });
+                                            });
+                                        }
+                                    "
+                                @endif
                                 @disabled(! $canEditLines)
                                 title="Delete row"
                                 class="rounded p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700"

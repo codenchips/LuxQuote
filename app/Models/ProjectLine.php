@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\ProjectLineType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,6 +13,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ProjectLine extends Model
 {
     use HasFactory;
+
+    public const NoOfferCode = 'NO OFFER';
+
+    public const NoOfferDescription = 'No equivalent Tamlite offering available.';
 
     protected $attributes = [
         'approved' => false,
@@ -47,6 +52,48 @@ class ProjectLine extends Model
     public function approver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public static function isNoOfferCode(?string $code): bool
+    {
+        $normalisedCode = preg_replace('/\s+/', '', mb_strtoupper(trim((string) $code)));
+
+        return $normalisedCode === 'NOOFFER';
+    }
+
+    public function isNoOffer(): bool
+    {
+        return self::isNoOfferCode($this->code);
+    }
+
+    public function isBlankOrDefault(): bool
+    {
+        return blank($this->code)
+            && blank($this->ref)
+            && blank($this->description)
+            && $this->isNullOrZero($this->unit_price)
+            && $this->isNullOrZero($this->cover_1)
+            && $this->isNullOrZero($this->cover_2)
+            && $this->isNullOrZero($this->cover_3)
+            && blank($this->notes)
+            && blank($this->status)
+            && ! $this->approved
+            && ! $this->validation_flagged;
+    }
+
+    private function isNullOrZero(mixed $value): bool
+    {
+        return $value === null || $value === '' || (float) $value === 0.0;
+    }
+
+    /**
+     * @return Attribute<string, string>
+     */
+    protected function description(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value): string => $this->isNoOffer() ? self::NoOfferDescription : (string) $value,
+        );
     }
 
     public function netUnitPriceForProject(Project $project): ?float

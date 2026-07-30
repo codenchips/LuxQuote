@@ -11,6 +11,7 @@ _Last updated: 30 July 2026_
 - **Tender storage added**: `project_tenders` stores the project, Salesforce Account ID, Account name, optional future Salesforce Tender ID, raw Account payload, creator, and timestamps. The deploy data-loss guard now treats `project_tenders` as protected business data.
 - **Salesforce Tender naming corrected**: Sandbox and production now use the singular custom object API name `Tender__c`; diagnostics and notes should no longer refer to `Tenders__c`.
 - **Salesforce object sampler documented**: `salesforce:sample-object {object} {limit=1}` can inspect sample `Account`, `User`, `Opportunity`, or custom object records with every readable field, reporting rejected fields under `skipped_fields`.
+- **Parked TODO**: Create tenders quotes output & cover sheet.
 
 ---
 
