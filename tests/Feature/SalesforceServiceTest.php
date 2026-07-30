@@ -94,6 +94,8 @@ class SalesforceServiceTest extends TestCase
                         [
                             'Id' => '001000000000001AAA',
                             'Name' => 'Example Contractor',
+                            'BillingCity' => 'Birmingham',
+                            'CEF_Region__c' => 'Midlands',
                         ],
                     ],
                 ]);
@@ -108,14 +110,18 @@ class SalesforceServiceTest extends TestCase
             [
                 'id' => '001000000000001AAA',
                 'name' => 'Example Contractor',
+                'billing_city' => 'Birmingham',
+                'cef_region' => 'Midlands',
             ],
         ], $accounts);
 
         Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
             && str_contains($request->url(), '/services/data/v65.0/query/')
             && $request->hasHeader('Authorization', 'Bearer live-test-token')
-            && str_contains((string) ($request->data()['q'] ?? ''), 'SELECT Id, Name FROM Account')
-            && str_contains((string) ($request->data()['q'] ?? ''), "Name LIKE '%Contractor%'"));
+            && str_contains((string) ($request->data()['q'] ?? ''), 'SELECT Id, Name, BillingCity, CEF_Region__c FROM Account')
+            && str_contains((string) ($request->data()['q'] ?? ''), "Type = 'Contractor'")
+            && str_contains((string) ($request->data()['q'] ?? ''), "Name LIKE '%Contractor%'")
+            && str_contains((string) ($request->data()['q'] ?? ''), 'OFFSET 0'));
     }
 
     public function test_jwt_bearer_authenticates_and_returns_options(): void

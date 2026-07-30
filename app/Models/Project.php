@@ -136,7 +136,9 @@ class Project extends Model
 
     public function tenders(): HasMany
     {
-        return $this->hasMany(ProjectTender::class)->orderBy('account_name');
+        return $this->hasMany(ProjectTender::class)
+            ->orderByDesc('is_primary')
+            ->orderBy('account_name');
     }
 
     /** @deprecated Use areas through a specific revision instead */

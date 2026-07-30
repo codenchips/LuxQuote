@@ -179,6 +179,32 @@ cd /home/tamliteco/luxquote.app
 
 The local development equivalents use the same command body but replace `docker compose exec -T laravel.test php artisan` with `vendor/bin/sail artisan`.
 
+For quick object inspection, use the generic sampler command. It describes the requested Salesforce object, samples records, and returns every readable field value it can fetch. The second argument is optional and defaults to `1`; it is capped at `25`.
+
+```bash
+docker compose exec -T laravel.test php artisan salesforce:sample-object Account
+docker compose exec -T laravel.test php artisan salesforce:sample-object User
+docker compose exec -T laravel.test php artisan salesforce:sample-object Opportunity 3
+```
+
+Default output is JSON. Use `--format=table` for easier manual inspection, or `--format=ndjson` for line-oriented output:
+
+```bash
+docker compose exec -T laravel.test php artisan salesforce:sample-object Account 1 --format=table
+docker compose exec -T laravel.test php artisan salesforce:sample-object User 1 --format=table
+docker compose exec -T laravel.test php artisan salesforce:sample-object Opportunity 1 --format=table
+```
+
+Local development uses Sail:
+
+```bash
+vendor/bin/sail artisan salesforce:sample-object Account 1 --format=table
+vendor/bin/sail artisan salesforce:sample-object User 1 --format=table
+vendor/bin/sail artisan salesforce:sample-object Opportunity 1 --format=table
+```
+
+If Salesforce rejects individual fields, the command reports them in `skipped_fields` instead of failing the whole sample.
+
 Get a single Opportunity by Id, including all fields the integration user can read:
 
 ```bash

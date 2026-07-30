@@ -438,9 +438,9 @@ class SalesforceService
     /**
      * Search Account records for project tender selection.
      *
-     * @return array<int, array{id: string, name: string}>
+     * @return array<int, array{id: string, name: string, billing_city: string|null, cef_region: string|null}>
      */
-    public function searchAccounts(string $query = '', int $limit = 25): array
+    public function searchAccounts(string $query = '', int $limit = 25, int $offset = 0): array
     {
         $auth = $this->authenticate();
 
@@ -449,19 +449,26 @@ class SalesforceService
         }
 
         $limit = max(1, min(50, $limit));
-        $where = filled($query)
-            ? " WHERE Name LIKE '%".$this->soqlEscape($query)."%'"
-            : '';
+        $offset = max(0, $offset);
+        $filters = ["Type = 'Contractor'"];
+
+        if (filled($query)) {
+            $filters[] = "Name LIKE '%".$this->soqlEscape($query)."%'";
+        }
+
+        $where = ' WHERE '.implode(' AND ', $filters);
 
         $result = $this->soqlQuery(
             $auth,
-            "SELECT Id, Name FROM Account{$where} ORDER BY Name ASC LIMIT {$limit}",
+            "SELECT Id, Name, BillingCity, CEF_Region__c FROM Account{$where} ORDER BY Name ASC LIMIT {$limit} OFFSET {$offset}",
         );
 
         return collect($result['records'] ?? [])
             ->map(fn (array $record): array => [
                 'id' => (string) ($record['Id'] ?? ''),
                 'name' => (string) ($record['Name'] ?? ''),
+                'billing_city' => filled($record['BillingCity'] ?? null) ? (string) $record['BillingCity'] : null,
+                'cef_region' => filled($record['CEF_Region__c'] ?? null) ? (string) $record['CEF_Region__c'] : null,
             ])
             ->filter(fn (array $record): bool => filled($record['id']) && filled($record['name']))
             ->values()
@@ -818,42 +825,64 @@ class SalesforceService
      */
     public function fetchAllOpportunityFields(int $limit = 25): array
     {
+        return $this->fetchObjectSampleFields('Opportunity', $limit);
+    }
+
+    /**
+     * Describe a Salesforce object and fetch sample records with every readable field.
+     *
+     * @return array{success: bool, object: string, records?: array<int, array<string, mixed>>, skipped_fields?: array<int, string>, status?: int, errors?: mixed}
+     */
+    public function fetchObjectSampleFields(string $object, int $limit = 1): array
+    {
+        $object = trim($object);
+
+        if (! preg_match('/^[A-Za-z][A-Za-z0-9_]*(__c)?$/', $object)) {
+            return [
+                'success' => false,
+                'object' => $object,
+                'status' => 0,
+                'errors' => ['Invalid Salesforce object API name'],
+            ];
+        }
+
         $auth = $this->authenticate();
 
         if ($auth === null) {
-            return ['success' => false, 'status' => 0, 'errors' => ['Authentication failed']];
+            return ['success' => false, 'object' => $object, 'status' => 0, 'errors' => ['Authentication failed']];
         }
 
-        $describe = Http::withToken($auth['token'])
-            ->acceptJson()
-            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Opportunity/describe');
-        //  ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/ContentVersion/describe');
+        $fieldNames = $this->describeFieldNames($auth, $object);
 
-        if ($describe->failed()) {
-            Log::error('Salesforce describe failed', ['status' => $describe->status()]);
-
-            return ['success' => false, 'status' => $describe->status(), 'errors' => $describe->json()];
+        if ($fieldNames === null) {
+            return ['success' => false, 'object' => $object, 'status' => 0, 'errors' => ['Describe failed']];
         }
 
-        $fieldNames = array_column($describe->json()['fields'] ?? [], 'name');
-
-        // var_dump($fieldNames); // Debug output to verify field retrieval
-
-        if (empty($fieldNames)) {
-            return ['success' => false, 'status' => 0, 'errors' => ['No fields returned from describe']];
+        if ($fieldNames === []) {
+            return ['success' => false, 'object' => $object, 'status' => 0, 'errors' => ['No fields returned from describe']];
         }
 
-        $result = $this->soqlQuery(
-            $auth,
-            'SELECT '.implode(', ', $fieldNames)." FROM Opportunity LIMIT {$limit}",
-            // 'SELECT '.implode(', ', $fieldNames)." FROM ContentVersion LIMIT {$limit}",
-        );
+        $recordIds = $this->fetchSampleRecordIds($auth, $object, max(1, min(25, $limit)));
 
-        if ($result === null) {
-            return ['success' => false, 'status' => 0, 'errors' => ['Query failed']];
+        if ($recordIds === []) {
+            return ['success' => true, 'object' => $object, 'records' => [], 'skipped_fields' => []];
         }
 
-        return ['success' => true, 'records' => $result['records'] ?? []];
+        $recordsById = collect($recordIds)
+            ->mapWithKeys(fn (string $recordId): array => [$recordId => ['Id' => $recordId]])
+            ->all();
+        $skippedFields = [];
+
+        foreach (array_chunk($fieldNames, 75) as $fieldChunk) {
+            $this->fetchObjectFieldChunk($auth, $object, $recordIds, $fieldChunk, $recordsById, $skippedFields);
+        }
+
+        return [
+            'success' => true,
+            'object' => $object,
+            'records' => array_values($recordsById),
+            'skipped_fields' => array_values(array_unique($skippedFields)),
+        ];
     }
 
     /**
@@ -1138,5 +1167,101 @@ class SalesforceService
         );
 
         return $result['records'] ?? null;
+    }
+
+    /**
+     * @param  array{token: string, instanceUrl: string}  $auth
+     * @return array<int, string>|null
+     */
+    private function describeFieldNames(array $auth, string $object): ?array
+    {
+        $describe = Http::withToken($auth['token'])
+            ->acceptJson()
+            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION."/sobjects/{$object}/describe");
+
+        if ($describe->failed()) {
+            Log::error('Salesforce object describe failed', [
+                'object' => $object,
+                'status' => $describe->status(),
+                'body' => $describe->body(),
+            ]);
+
+            return null;
+        }
+
+        return collect($describe->json()['fields'] ?? [])
+            ->pluck('name')
+            ->filter(fn (mixed $field): bool => is_string($field) && filled($field))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array{token: string, instanceUrl: string}  $auth
+     * @return array<int, string>
+     */
+    private function fetchSampleRecordIds(array $auth, string $object, int $limit): array
+    {
+        $result = $this->soqlQuery($auth, "SELECT Id FROM {$object} ORDER BY CreatedDate DESC LIMIT {$limit}")
+            ?? $this->soqlQuery($auth, "SELECT Id FROM {$object} LIMIT {$limit}");
+
+        return collect($result['records'] ?? [])
+            ->pluck('Id')
+            ->filter(fn (mixed $id): bool => is_string($id) && filled($id))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array{token: string, instanceUrl: string}  $auth
+     * @param  array<int, string>  $recordIds
+     * @param  array<int, string>  $fieldNames
+     * @param  array<string, array<string, mixed>>  $recordsById
+     * @param  array<int, string>  $skippedFields
+     */
+    private function fetchObjectFieldChunk(
+        array $auth,
+        string $object,
+        array $recordIds,
+        array $fieldNames,
+        array &$recordsById,
+        array &$skippedFields,
+    ): void {
+        if ($fieldNames === []) {
+            return;
+        }
+
+        $idList = collect($recordIds)
+            ->map(fn (string $id): string => "'{$this->soqlEscape($id)}'")
+            ->implode(', ');
+
+        $selectedFields = collect(['Id', ...$fieldNames])->unique()->values()->all();
+        $result = $this->soqlQuery(
+            $auth,
+            'SELECT '.implode(', ', $selectedFields)." FROM {$object} WHERE Id IN ({$idList})",
+        );
+
+        if ($result !== null) {
+            foreach ($result['records'] ?? [] as $record) {
+                $recordId = (string) ($record['Id'] ?? '');
+
+                if (filled($recordId)) {
+                    $recordsById[$recordId] = array_replace($recordsById[$recordId] ?? ['Id' => $recordId], $record);
+                }
+            }
+
+            return;
+        }
+
+        if (count($fieldNames) === 1) {
+            $skippedFields[] = $fieldNames[0];
+
+            return;
+        }
+
+        foreach (array_chunk($fieldNames, max(1, intdiv(count($fieldNames), 2))) as $smallerChunk) {
+            $this->fetchObjectFieldChunk($auth, $object, $recordIds, $smallerChunk, $recordsById, $skippedFields);
+        }
     }
 }

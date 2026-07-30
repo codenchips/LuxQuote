@@ -50,6 +50,8 @@ class ViewProject extends ViewRecord
 
     private const VisibleTabDelimiter = '→';
 
+    private const TenderAccountPageSize = 12;
+
     protected static string $resource = ProjectResource::class;
 
     protected string $view = 'filament.resources.projects.pages.view-project';
@@ -70,7 +72,9 @@ class ViewProject extends ViewRecord
 
     public string $tenderAccountSearch = '';
 
-    /** @var array<string, array{name: string}> */
+    public int $tenderAccountPage = 1;
+
+    /** @var array<string, array{name: string, billing_city: string|null, cef_region: string|null}> */
     public array $tenderAccountSelections = [];
 
     // ── Product picker state ─────────────────────────────────────────────────
@@ -590,6 +594,7 @@ class ViewProject extends ViewRecord
 
         $this->tenderAccountPickerOpen = true;
         $this->tenderAccountSearch = '';
+        $this->tenderAccountPage = 1;
         $this->tenderAccountSelections = [];
         unset($this->tenderAccountSearchResults);
     }
@@ -598,12 +603,30 @@ class ViewProject extends ViewRecord
     {
         $this->tenderAccountPickerOpen = false;
         $this->tenderAccountSearch = '';
+        $this->tenderAccountPage = 1;
         $this->tenderAccountSelections = [];
         unset($this->tenderAccountSearchResults);
     }
 
     public function updatedTenderAccountSearch(): void
     {
+        $this->tenderAccountPage = 1;
+        unset($this->tenderAccountSearchResults);
+    }
+
+    public function previousTenderAccountPage(): void
+    {
+        $this->tenderAccountPage = max(1, $this->tenderAccountPage - 1);
+        unset($this->tenderAccountSearchResults);
+    }
+
+    public function nextTenderAccountPage(): void
+    {
+        if (! $this->tenderAccountSearchHasMoreResults()) {
+            return;
+        }
+
+        $this->tenderAccountPage++;
         unset($this->tenderAccountSearchResults);
     }
 
@@ -627,6 +650,8 @@ class ViewProject extends ViewRecord
 
         $this->tenderAccountSelections[$accountId] = [
             'name' => (string) $account['name'],
+            'billing_city' => filled($account['billing_city'] ?? null) ? (string) $account['billing_city'] : null,
+            'cef_region' => filled($account['cef_region'] ?? null) ? (string) $account['cef_region'] : null,
         ];
     }
 
@@ -638,7 +663,11 @@ class ViewProject extends ViewRecord
             return;
         }
 
+        $projectHasPrimaryTender = $this->record->tenders()->where('is_primary', true)->exists();
+
         foreach ($this->tenderAccountSelections as $accountId => $account) {
+            $isPrimary = ! $projectHasPrimaryTender;
+
             ProjectTender::query()->updateOrCreate(
                 [
                     'project_id' => $this->record->id,
@@ -646,13 +675,20 @@ class ViewProject extends ViewRecord
                 ],
                 [
                     'account_name' => $account['name'],
+                    'billing_city' => $account['billing_city'],
+                    'cef_region' => $account['cef_region'],
+                    'is_primary' => $isPrimary,
                     'account_payload' => [
                         'Id' => $accountId,
                         'Name' => $account['name'],
+                        'BillingCity' => $account['billing_city'],
+                        'CEF_Region__c' => $account['cef_region'],
                     ],
                     'created_by_id' => auth()->id(),
                 ],
             );
+
+            $projectHasPrimaryTender = true;
         }
 
         $count = count($this->tenderAccountSelections);
@@ -669,10 +705,35 @@ class ViewProject extends ViewRecord
     {
         abort_unless($this->canManageProjectTenders(), 403);
 
-        ProjectTender::query()
+        $tender = ProjectTender::query()
             ->where('project_id', $this->record->id)
-            ->findOrFail($tenderId)
-            ->delete();
+            ->findOrFail($tenderId);
+
+        $wasPrimary = $tender->is_primary;
+        $tender->delete();
+
+        if ($wasPrimary) {
+            $this->ensureProjectHasPrimaryTender();
+        }
+
+        unset($this->projectTenders);
+    }
+
+    public function makeTenderPrimary(int $tenderId): void
+    {
+        abort_unless($this->canManageProjectTenders(), 403);
+
+        $tender = ProjectTender::query()
+            ->where('project_id', $this->record->id)
+            ->findOrFail($tenderId);
+
+        DB::transaction(function () use ($tender): void {
+            ProjectTender::query()
+                ->where('project_id', $this->record->id)
+                ->update(['is_primary' => false]);
+
+            $tender->update(['is_primary' => true]);
+        });
 
         unset($this->projectTenders);
     }
@@ -686,6 +747,21 @@ class ViewProject extends ViewRecord
             ->get();
     }
 
+    private function ensureProjectHasPrimaryTender(): void
+    {
+        $hasPrimary = $this->record->tenders()->where('is_primary', true)->exists();
+
+        if ($hasPrimary) {
+            return;
+        }
+
+        $firstTender = $this->record->tenders()->orderBy('id')->first();
+
+        if ($firstTender) {
+            $firstTender->update(['is_primary' => true]);
+        }
+    }
+
     #[Computed]
     public function tenderAccountSearchResults(): array
     {
@@ -694,7 +770,11 @@ class ViewProject extends ViewRecord
         }
 
         try {
-            return app(SalesforceService::class)->searchAccounts($this->tenderAccountSearch, 25);
+            return app(SalesforceService::class)->searchAccounts(
+                $this->tenderAccountSearch,
+                self::TenderAccountPageSize + 1,
+                ($this->tenderAccountPage - 1) * self::TenderAccountPageSize,
+            );
         } catch (Throwable $throwable) {
             report($throwable);
 
@@ -706,6 +786,19 @@ class ViewProject extends ViewRecord
 
             return [];
         }
+    }
+
+    /**
+     * @return array<int, array{id: string, name: string, billing_city: string|null, cef_region: string|null}>
+     */
+    public function visibleTenderAccountSearchResults(): array
+    {
+        return array_slice($this->tenderAccountSearchResults, 0, self::TenderAccountPageSize);
+    }
+
+    public function tenderAccountSearchHasMoreResults(): bool
+    {
+        return count($this->tenderAccountSearchResults) > self::TenderAccountPageSize;
     }
 
     // ── Line management ───────────────────────────────────────────────────────

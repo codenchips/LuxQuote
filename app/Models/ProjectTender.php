@@ -10,6 +10,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'project_id',
     'salesforce_account_id',
     'account_name',
+    'billing_city',
+    'cef_region',
+    'is_primary',
     'salesforce_tender_id',
     'account_payload',
     'created_by_id',
@@ -20,6 +23,7 @@ class ProjectTender extends Model
     {
         return [
             'account_payload' => 'array',
+            'is_primary' => 'boolean',
         ];
     }
 
