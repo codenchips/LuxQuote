@@ -2,6 +2,9 @@
 
 use App\Http\Controllers\DocumentPackController;
 use App\Http\Controllers\ProjectPdfController;
+use App\Models\Project;
+use App\Models\ProjectLock;
+use App\Models\ProjectPresence;
 use Illuminate\Support\Facades\Route;
 use Spatie\LaravelPdf\Facades\Pdf;
 
@@ -40,6 +43,18 @@ Route::middleware('auth')->group(function (): void {
 
     Route::get('/projects/{project}/document-packs/{documentPack}/items/{documentPackItem}/file', [DocumentPackController::class, 'uploadedItem'])
         ->name('projects.document-packs.items.file');
+
+    Route::post('/projects/{project}/lock/release', function (Project $project): void {
+        ProjectLock::query()
+            ->where('project_id', $project->id)
+            ->where('user_id', auth()->id())
+            ->delete();
+
+        ProjectPresence::query()
+            ->where('project_id', $project->id)
+            ->where('user_id', auth()->id())
+            ->delete();
+    })->name('projects.lock.release');
 });
 
 Route::get('/test-pdf', function () {

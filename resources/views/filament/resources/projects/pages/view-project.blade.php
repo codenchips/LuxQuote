@@ -6,6 +6,9 @@
     $canEditCover = $this->canEditCover();
     $canCreateRevisions = $this->canCreateRevisions();
     $revisionLocked = $this->isViewingRevisionValidated;
+    $projectLockedByAnother = $this->projectLockedByAnother();
+    $projectEditLocked = $this->projectEditLocked();
+    $projectLockOwnerName = $this->projectLockOwnerName();
     $projectHasCover = $this->projectHasCover();
     $showLineCovers = $canViewPrices && $projectHasCover && $this->showLineCovers;
     $lineGridColumns = match (true) {
@@ -19,6 +22,36 @@
         confirmDeleteLineId: null,
         confirmDeleteTenderId: null,
         confirmDeleteTenderName: '',
+        lastProjectLockActivityAt: 0,
+        releaseProjectLockUrl: @js(route('projects.lock.release', ['project' => $this->record])),
+        csrfToken: @js(csrf_token()),
+        touchProjectLockActivity() {
+            const now = Date.now();
+
+            if (now - this.lastProjectLockActivityAt < 30000) {
+                return;
+            }
+
+            this.lastProjectLockActivityAt = now;
+            $wire.touchProjectLockActivity();
+        },
+        releaseProjectLock() {
+            const payload = new FormData();
+            payload.append('_token', this.csrfToken);
+
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon(this.releaseProjectLockUrl, payload);
+
+                return;
+            }
+
+            fetch(this.releaseProjectLockUrl, {
+                method: 'POST',
+                body: payload,
+                credentials: 'same-origin',
+                keepalive: true,
+            });
+        },
         focusAdjacentLineField(field, direction, event) {
             if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
                 return;
@@ -45,11 +78,35 @@
             target.select?.();
         },
     }"
+    x-init="
+        touchProjectLockActivity();
+        ['click', 'keydown', 'input', 'pointermove'].forEach((eventName) => {
+            window.addEventListener(eventName, () => touchProjectLockActivity(), { passive: true });
+        });
+        window.addEventListener('pagehide', () => releaseProjectLock());
+    "
     wire:poll.30s="heartbeat"
 >
 
+    @if($projectLockedByAnother)
+    <div class="mb-4 flex items-center gap-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+        <x-heroicon-o-lock-closed class="w-4 h-4 shrink-0" />
+        <span>
+            <strong>{{ $projectLockOwnerName ?? 'Another user' }}</strong> is editing this project. It is read-only until they leave or are inactive for {{ $this->projectLockInactivityMinutes() }} minutes.
+        </span>
+        <button
+            wire:click="refreshProjectLock"
+            title="Refresh lock status"
+            class="ml-auto flex shrink-0 items-center gap-1 rounded-md bg-red-100 px-3 py-1 text-xs font-medium transition-colors hover:bg-red-200 dark:bg-red-800/40 dark:hover:bg-red-800/60"
+        >
+            <x-heroicon-o-arrow-path class="w-3.5 h-3.5" wire:loading.class="animate-spin" wire:target="refreshProjectLock" />
+            Refresh
+        </button>
+    </div>
+    @endif
+
     {{-- Concurrent editors banner --}}
-    @if($this->concurrentEditors->isNotEmpty())
+    @if(! $projectLockedByAnother && $this->concurrentEditors->isNotEmpty())
     @php
         $editorNames = $this->concurrentEditors->map(fn($u) => $u->name ?? $u->email);
         $count = $editorNames->count();
@@ -65,7 +122,7 @@
     @endphp
     <div class="mb-4 flex items-center gap-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-4 py-3 text-sm text-blue-800 dark:text-blue-300">
         <x-heroicon-o-users class="w-4 h-4 shrink-0" />
-        <span>{!! $nameString !!} {{ $count === 1 ? 'is' : 'are' }} also viewing this project right now.</span>
+        <span>{!! $nameString !!} {{ $count === 1 ? 'is' : 'are' }} also viewing this project right now. They cannot make changes while you have the edit lock.</span>
         <button
             wire:click="heartbeat"
             title="Refresh — updates may take up to a minute to appear"
@@ -84,7 +141,7 @@
         <x-heroicon-o-exclamation-triangle class="w-4 h-4 shrink-0" />
         <span>You are viewing a historical revision. Changes made here will not affect the active revision.</span>
         <button
-            wire:click="setActiveRevision({{ $activeRevisionId }})"
+            wire:click="{{ $projectEditLocked ? 'notifyProjectEditLocked' : 'setActiveRevision('.$activeRevisionId.')' }}"
             class="ml-auto shrink-0 rounded-md bg-amber-100 dark:bg-amber-800/40 px-3 py-1 text-xs font-medium hover:bg-amber-200 dark:hover:bg-amber-800/60 transition-colors"
         >Switch to active</button>
     </div>
@@ -168,24 +225,24 @@
                 <div class="flex items-center gap-1" @click.stop>
 
                     <button
-                        wire:click="{{ $revisionLocked ? 'notifyApprovedRevisionLocked' : 'addProduct('.$area->id.')' }}"
-                        @disabled(! $canEditLines)
+                        wire:click="{{ $projectEditLocked ? 'notifyProjectEditLocked' : ($revisionLocked ? 'notifyApprovedRevisionLocked' : 'addProduct('.$area->id.')') }}"
+                        @disabled(! $canEditLines || $projectEditLocked)
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
                     >
                         <x-heroicon-o-plus class="w-3 h-3" /> Product 
                     </button>
 
                     <button
-                        wire:click="{{ $revisionLocked ? 'notifyApprovedRevisionLocked' : 'openPasteProductsModal('.$area->id.')' }}"
-                        @disabled(! $canEditLines)
+                        wire:click="{{ $projectEditLocked ? 'notifyProjectEditLocked' : ($revisionLocked ? 'notifyApprovedRevisionLocked' : 'openPasteProductsModal('.$area->id.')') }}"
+                        @disabled(! $canEditLines || $projectEditLocked)
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
                     >
                         <x-heroicon-o-plus class="w-3 h-3" /> Paste
                     </button>
 
                     <button
-                        wire:click="{{ $revisionLocked ? 'notifyApprovedRevisionLocked' : 'addBlankLine('.$area->id.')' }}"
-                        @disabled(! $canEditLines)
+                        wire:click="{{ $projectEditLocked ? 'notifyProjectEditLocked' : ($revisionLocked ? 'notifyApprovedRevisionLocked' : 'addBlankLine('.$area->id.')') }}"
+                        @disabled(! $canEditLines || $projectEditLocked)
                         class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
                     >
                         <x-heroicon-o-plus class="w-3 h-3" /> Blank 
@@ -247,7 +304,7 @@
                 <div
                     data-area-lines="{{ $area->id }}"
                     x-sort="(id, pos) => $wire.sortLine(parseInt(id), pos, {{ $area->id }})"
-                    x-sort:config="{ group: 'projectLines', animation: 150, disabled: {{ (! $canEditLines || $revisionLocked) ? 'true' : 'false' }} }"
+                    x-sort:config="{ group: 'projectLines', animation: 150, disabled: {{ (! $canEditLines || $revisionLocked || $projectEditLocked) ? 'true' : 'false' }} }"
                     class="divide-y divide-gray-100 dark:divide-gray-800 border-t border-gray-100 dark:border-gray-800"
                 >
                     @foreach($area->lines as $line)
@@ -275,7 +332,7 @@
                             data-line-column="code"
                             wire:key="line-{{ $line->id }}-code-{{ $line->code }}"
                             value="{{ $line->code }}"
-                            @disabled(! $canEditLines || $this->isViewingRevisionValidated)
+                            @disabled(! $canEditLines || $this->isViewingRevisionValidated || $projectEditLocked)
                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'code', $el.value)"
@@ -291,7 +348,7 @@
                         <input
                             data-line-column="ref"
                             value="{{ $line->ref }}"
-                            @disabled(! $canEditLines || $this->isViewingRevisionValidated)
+                            @disabled(! $canEditLines || $this->isViewingRevisionValidated || $projectEditLocked)
                             maxlength="6"
                             placeholder="–"
                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
@@ -305,7 +362,7 @@
                         <input
                             data-line-column="description"
                             value="{{ $line->description }}"
-                            @disabled(! $canEditLines || $this->isViewingRevisionValidated)
+                            @disabled(! $canEditLines || $this->isViewingRevisionValidated || $projectEditLocked)
                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'description', $el.value)"
@@ -318,7 +375,7 @@
                             data-line-column="qty"
                             type="number"
                             value="{{ $line->qty }}"
-                            @disabled(! $canEditLines || $this->isViewingRevisionValidated)
+                            @disabled(! $canEditLines || $this->isViewingRevisionValidated || $projectEditLocked)
                             min="{{ $line->isNoOffer() ? 0 : 1 }}"
                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
@@ -343,7 +400,7 @@
                                         type="number"
                                         step="0.01"
                                         value="{{ $line->unit_price }}"
-                                        @disabled(! $canEditPrices || $this->isViewingRevisionValidated)
+                                        @disabled(! $canEditPrices || $this->isViewingRevisionValidated || $projectEditLocked)
                                         x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                         x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                                         x-on:blur="
@@ -366,7 +423,7 @@
                                         type="number"
                                         step="0.01"
                                         value="{{ $line->unit_price }}"
-                                        @disabled(! $canEditPrices || $this->isViewingRevisionValidated)
+                                        @disabled(! $canEditPrices || $this->isViewingRevisionValidated || $projectEditLocked)
                                         x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                         x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                                         x-on:blur="
@@ -384,7 +441,7 @@
                                     type="number"
                                     step="0.01"
                                     value="{{ $line->unit_price }}"
-                                    @disabled(! $canEditPrices || $this->isViewingRevisionValidated)
+                                    @disabled(! $canEditPrices || $this->isViewingRevisionValidated || $projectEditLocked)
                                     x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                     x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                                     x-on:blur="
@@ -410,7 +467,7 @@
                                             min="0"
                                             max="999.99"
                                             value="{{ $line->{$coverField} !== null ? number_format((float) $line->{$coverField}, 2, '.', '') : '' }}"
-                                            @disabled(! $canEditCover || $revisionLocked)
+                                            @disabled(! $canEditCover || $revisionLocked || $projectEditLocked)
                                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                                             x-on:blur="
@@ -430,7 +487,7 @@
                             <input
                                 data-line-column="notes"
                                 value="{{ $line->notes }}"
-                                @disabled(! $canEditLines || $revisionLocked)
+                                @disabled(! $canEditLines || $revisionLocked || $projectEditLocked)
                                 x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                 x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                                 x-on:blur="$wire.updateLineField({{ $line->id }}, 'notes', $el.value)"
@@ -461,16 +518,16 @@
                         {{-- Row actions --}}
                         <div class="flex items-center justify-end gap-0.5">
                             <button
-                                wire:click="{{ $revisionLocked ? 'notifyApprovedRevisionLocked' : 'duplicateLine('.$line->id.')' }}"
-                                @disabled(! $canEditLines)
+                                wire:click="{{ $projectEditLocked ? 'notifyProjectEditLocked' : ($revisionLocked ? 'notifyApprovedRevisionLocked' : 'duplicateLine('.$line->id.')') }}"
+                                @disabled(! $canEditLines || $projectEditLocked)
                                 title="Duplicate row"
                                 class="rounded p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                             >
                                 <x-heroicon-o-document-duplicate class="w-4 h-4" />
                             </button>
                             <button
-                                @click.stop="{{ $revisionLocked ? '$wire.notifyApprovedRevisionLocked()' : ($line->isBlankOrDefault() ? '$wire.deleteLine('.$line->id.')' : 'confirmDeleteLineId = '.$line->id) }}"
-                                @if($loop->last && $canEditLines && ! $revisionLocked)
+                                @click.stop="{{ $projectEditLocked ? '$wire.notifyProjectEditLocked()' : ($revisionLocked ? '$wire.notifyApprovedRevisionLocked()' : ($line->isBlankOrDefault() ? '$wire.deleteLine('.$line->id.')' : 'confirmDeleteLineId = '.$line->id)) }}"
+                                @if($loop->last && $canEditLines && ! $revisionLocked && ! $projectEditLocked)
                                     x-on:keydown.tab="
                                         if (! $event.shiftKey) {
                                             $event.preventDefault();
@@ -485,7 +542,7 @@
                                         }
                                     "
                                 @endif
-                                @disabled(! $canEditLines)
+                                @disabled(! $canEditLines || $projectEditLocked)
                                 title="Delete row"
                                 class="rounded p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700"
                             >
@@ -497,7 +554,7 @@
 
                     @if($area->lines->isEmpty())
                     <div class="px-8 py-6 text-center text-sm text-gray-400 dark:text-gray-500">
-                        @if($canEditLines && ! $revisionLocked)
+                        @if($canEditLines && ! $revisionLocked && ! $projectEditLocked)
                             No items in this area. Add a
                             <button
                                 wire:click="addBlankLine({{ $area->id }})"
@@ -951,10 +1008,10 @@
                     @if($this->canManageProjectTenders())
                     <div class="flex shrink-0 items-center gap-1.5">
                         <button
-                            wire:click="makeTenderPrimary({{ $tender->id }})"
-                            @disabled($tender->is_primary)
+                            wire:click="{{ $projectEditLocked ? 'notifyProjectEditLocked' : 'makeTenderPrimary('.$tender->id.')' }}"
+                            @disabled($tender->is_primary || $projectEditLocked)
                             class="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors
-                                {{ $tender->is_primary
+                                {{ $tender->is_primary || $projectEditLocked
                                     ? 'cursor-not-allowed text-gray-300 dark:text-gray-600'
                                     : 'text-gray-600 hover:bg-primary-50 hover:text-primary-700 dark:text-gray-400 dark:hover:bg-primary-950/30 dark:hover:text-primary-300' }}"
                             title="{{ $tender->is_primary ? 'Primary tender' : 'Make primary' }}"
@@ -962,8 +1019,13 @@
                             Make Primary
                         </button>
                         <button
-                            @click="confirmDeleteTenderId = {{ $tender->id }}; confirmDeleteTenderName = @js($tender->account_name)"
-                            class="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 transition-colors"
+                            @if($projectEditLocked)
+                                @click="$wire.notifyProjectEditLocked()"
+                            @else
+                                @click="confirmDeleteTenderId = {{ $tender->id }}; confirmDeleteTenderName = @js($tender->account_name)"
+                            @endif
+                            @disabled($projectEditLocked)
+                            class="rounded-lg p-1.5 text-gray-400 transition-colors {{ $projectEditLocked ? 'cursor-not-allowed opacity-50' : 'hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400' }}"
                             title="Remove tender"
                         >
                             <x-heroicon-o-trash class="h-5 w-5" />
@@ -995,8 +1057,9 @@
                     </button>
                     @if($this->canManageProjectTenders())
                     <button
-                        wire:click="openTenderAccountPicker"
-                        class="fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+                        wire:click="{{ $projectEditLocked ? 'notifyProjectEditLocked' : 'openTenderAccountPicker' }}"
+                        @disabled($projectEditLocked)
+                        class="fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         Add tender
                     </button>
@@ -1043,6 +1106,7 @@
                 </button>
                 <button
                     @click="$wire.removeTender(confirmDeleteTenderId); confirmDeleteTenderId = null"
+                    @disabled($projectEditLocked)
                     class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors"
                 >
                     Remove
@@ -1244,8 +1308,9 @@
                     <div class="flex items-center gap-2 shrink-0">
                         @if(!$isViewing && $canCreateRevisions)
                         <button
-                            wire:click="setActiveRevision({{ $revision->id }})"
-                            class="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                            wire:click="{{ $projectEditLocked ? 'notifyProjectEditLocked' : 'setActiveRevision('.$revision->id.')' }}"
+                            @disabled($projectEditLocked)
+                            class="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
                         >
                             View{{ !$isActive ? ' and Set Active' : '' }}
                         </button>
@@ -1259,9 +1324,10 @@
             @if($canCreateRevisions)
                 <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 shrink-0">
                     <button
-                        wire:click="createNewRevision"
+                        wire:click="{{ $projectEditLocked ? 'notifyProjectEditLocked' : 'createNewRevision' }}"
                         wire:loading.attr="disabled"
-                        class="w-full flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                        @disabled($projectEditLocked)
+                        class="w-full flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
                     >
                         <x-heroicon-o-plus class="w-4 h-4" />
                         <span wire:loading.remove wire:target="createNewRevision">Create New Revision</span>
@@ -1316,6 +1382,38 @@
             </div>
         </div>
     </div>
+
+    @if($this->projectLockAutoReleased)
+    <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Project lock released"
+        class="fixed inset-0 z-[10002] flex items-center justify-center p-4"
+    >
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+        <div class="relative z-10 w-full max-w-md rounded-xl bg-white p-6 shadow-2xl ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
+            <div class="flex items-start gap-4">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                    <x-heroicon-o-clock class="h-5 w-5" />
+                </div>
+                <div>
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">Project lock released</h3>
+                    <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                        Your edit lock was released after {{ $this->projectLockInactivityMinutes() }} minutes of inactivity. This project is now read-only in this tab.
+                    </p>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end">
+                <a
+                    href="{{ \App\Filament\Resources\Projects\ProjectResource::getUrl('index') }}"
+                    class="fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action rounded-lg px-4 py-2 text-sm font-medium"
+                >
+                    Back to projects
+                </a>
+            </div>
+        </div>
+    </div>
+    @endif
 
 </div>
 </x-filament-panels::page>

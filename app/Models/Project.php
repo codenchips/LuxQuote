@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'user_id',
@@ -139,6 +140,11 @@ class Project extends Model
         return $this->hasMany(ProjectTender::class)
             ->orderByDesc('is_primary')
             ->orderBy('account_name');
+    }
+
+    public function lock(): HasOne
+    {
+        return $this->hasOne(ProjectLock::class);
     }
 
     /** @deprecated Use areas through a specific revision instead */

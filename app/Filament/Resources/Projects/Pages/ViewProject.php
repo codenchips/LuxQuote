@@ -12,6 +12,7 @@ use App\Models\Product;
 use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
+use App\Models\ProjectLock;
 use App\Models\ProjectPresence;
 use App\Models\ProjectRevision;
 use App\Models\ProjectTender;
@@ -51,6 +52,8 @@ class ViewProject extends ViewRecord
     private const VisibleTabDelimiter = '→';
 
     private const TenderAccountPageSize = 12;
+
+    private const ProjectLockInactivityMinutes = 15;
 
     protected static string $resource = ProjectResource::class;
 
@@ -110,6 +113,8 @@ class ViewProject extends ViewRecord
 
     public bool $showLineCovers = false;
 
+    public bool $projectLockAutoReleased = false;
+
     private bool $projectValueChangedDuringDetailsSave = false;
 
     public function mount(int|string $record): void
@@ -124,6 +129,8 @@ class ViewProject extends ViewRecord
 
     public function heartbeat(): void
     {
+        $this->syncProjectLock();
+
         ProjectPresence::upsert(
             [[
                 'project_id' => $this->record->id,
@@ -136,6 +143,126 @@ class ViewProject extends ViewRecord
 
         // Purge stale presences globally (older than 90 seconds)
         ProjectPresence::where('last_seen_at', '<', now()->subSeconds(90))->delete();
+    }
+
+    public function touchProjectLockActivity(): void
+    {
+        if ($this->projectLockAutoReleased) {
+            return;
+        }
+
+        $this->syncProjectLock(updateActivity: true);
+    }
+
+    public function refreshProjectLock(): void
+    {
+        if (! $this->projectLockAutoReleased) {
+            $this->syncProjectLock();
+        }
+    }
+
+    public function releaseProjectLock(): void
+    {
+        ProjectLock::query()
+            ->where('project_id', $this->record->id)
+            ->where('user_id', auth()->id())
+            ->delete();
+
+        ProjectPresence::query()
+            ->where('project_id', $this->record->id)
+            ->where('user_id', auth()->id())
+            ->delete();
+    }
+
+    private function syncProjectLock(bool $updateActivity = false): void
+    {
+        $userId = auth()->id();
+
+        if ($userId === null) {
+            return;
+        }
+
+        DB::transaction(function () use ($updateActivity, $userId): void {
+            Project::query()
+                ->whereKey($this->record->id)
+                ->lockForUpdate()
+                ->first();
+
+            $lock = ProjectLock::query()
+                ->where('project_id', $this->record->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($lock !== null && $this->projectLockIsExpired($lock)) {
+                if ((int) $lock->user_id === (int) $userId) {
+                    $this->projectLockAutoReleased = true;
+                }
+
+                $lock->delete();
+                $lock = null;
+            }
+
+            if ($lock === null) {
+                if ($this->projectLockAutoReleased) {
+                    return;
+                }
+
+                ProjectLock::create([
+                    'project_id' => $this->record->id,
+                    'user_id' => $userId,
+                    'locked_at' => now(),
+                    'last_activity_at' => now(),
+                ]);
+
+                return;
+            }
+
+            if ((int) $lock->user_id === (int) $userId && $updateActivity) {
+                $lock->update(['last_activity_at' => now()]);
+            }
+        });
+    }
+
+    private function projectLockIsExpired(ProjectLock $lock): bool
+    {
+        return $lock->last_activity_at?->lt(now()->subMinutes(self::ProjectLockInactivityMinutes)) ?? true;
+    }
+
+    private function activeProjectLock(): ?ProjectLock
+    {
+        return ProjectLock::query()
+            ->where('project_id', $this->record->id)
+            ->where('last_activity_at', '>=', now()->subMinutes(self::ProjectLockInactivityMinutes))
+            ->with('user:id,name,email')
+            ->first();
+    }
+
+    public function projectLockedByAnother(): bool
+    {
+        $lock = $this->activeProjectLock();
+
+        return $lock !== null && (int) $lock->user_id !== (int) auth()->id();
+    }
+
+    public function projectEditLocked(): bool
+    {
+        return $this->projectLockAutoReleased || $this->projectLockedByAnother();
+    }
+
+    public function projectLockOwnerName(): ?string
+    {
+        $lock = $this->activeProjectLock();
+
+        if ($lock === null || (int) $lock->user_id === (int) auth()->id()) {
+            return null;
+        }
+
+        return $lock->user?->name ?? $lock->user?->email;
+    }
+
+    public function projectLockInactivityMinutes(): int
+    {
+        return self::ProjectLockInactivityMinutes;
     }
 
     #[Computed]
@@ -189,17 +316,22 @@ class ViewProject extends ViewRecord
         return [
             EditAction::make('editProject')
                 ->record($this->record)
-                ->form(fn (Schema $schema): Schema => ProjectForm::configure($schema))
+                ->form(fn (Schema $schema): Schema => ProjectForm::configure($schema, $this->projectEditLocked()))
                 ->slideOver()
                 ->label('Details')
                 ->icon('heroicon-o-pencil')
                 ->color('gray')
-                ->tooltip(fn (): string => $this->isViewingRevisionValidated ? 'View project details' : 'Edit project details')
+                ->tooltip(fn (): string => match (true) {
+                    $this->projectEditLocked() => 'View project details',
+                    $this->isViewingRevisionValidated => 'View project details',
+                    default => 'Edit project details',
+                })
                 ->visible(fn (): bool => $this->canEditProjectDetails())
-                ->modalSubmitAction(fn (Action $action): Action|false => $this->isViewingRevisionValidated ? false : $action)
-                ->modalCancelActionLabel(fn (): string => $this->isViewingRevisionValidated ? 'Close' : 'Cancel')
+                ->modalSubmitAction(fn (Action $action): Action|false => ($this->isViewingRevisionValidated || $this->projectEditLocked()) ? false : $action)
+                ->modalCancelActionLabel(fn (): string => ($this->isViewingRevisionValidated || $this->projectEditLocked()) ? 'Close' : 'Cancel')
                 ->using(function (Project $record, array $data): void {
                     abort_if(ProjectForm::projectDetailsAreReadOnly($record), 403, 'Approved revisions are locked against editing.');
+                    abort_if($this->projectEditLocked(), 403, 'This project is currently locked for editing.');
 
                     $data = ProjectForm::normaliseVisibilityData($data, $record);
                     $this->projectValueChangedDuringDetailsSave = array_key_exists('value', $data)
@@ -225,7 +357,7 @@ class ViewProject extends ViewRecord
                 ->label('Areas')
                 ->icon(Heroicon::OutlinedMapPin)
                 ->color('gray')
-                ->visible(fn (): bool => $this->canEditLines() && ! $this->isViewingRevisionValidated)
+                ->visible(fn (): bool => $this->canEditLines() && ! $this->isViewingRevisionValidated && ! $this->projectEditLocked())
                 ->modalHeading('Manage Areas')
                 ->modalDescription('Define the rooms, floors, and areas for this project.')
                 ->modalContent(fn (): View => view(
@@ -235,21 +367,6 @@ class ViewProject extends ViewRecord
                 ->modalSubmitAction(false)
                 ->modalCancelActionLabel('Close'),
 
-            Action::make('downloadSchedule')
-                ->label('Schedule PDF')
-                ->icon('heroicon-o-document-arrow-down')
-                ->color('primary')
-                ->visible(fn (): bool => $this->canProduceUnpricedSchedule())
-                ->url(fn (): string => route('projects.pdf.schedule', [
-                    'project' => $this->record,
-                    'revision' => $this->viewingRevisionId,
-                ]))
-                ->extraAttributes([
-                    'data-pdf-generation' => true,
-                    'data-pdf-title' => 'Generating schedule PDF',
-                    'data-pdf-message' => 'Your schedule PDF is being generated. This can take a while.',
-                ])
-                ->openUrlInNewTab(),
         ];
     }
 
@@ -396,6 +513,10 @@ class ViewProject extends ViewRecord
 
     public function setActiveRevision(int $revisionId): void
     {
+        if (! $this->ensureProjectEditLockAvailable()) {
+            return;
+        }
+
         abort_unless($this->canCreateRevisions(), 403);
 
         $revision = ProjectRevision::where('project_id', $this->record->id)
@@ -415,6 +536,10 @@ class ViewProject extends ViewRecord
 
     public function createNewRevision(): void
     {
+        if (! $this->ensureProjectEditLockAvailable()) {
+            return;
+        }
+
         abort_unless($this->canCreateRevisions(), 403);
 
         $sourceRevision = ProjectRevision::where('project_id', $this->record->id)
@@ -592,6 +717,10 @@ class ViewProject extends ViewRecord
     {
         abort_unless($this->canManageProjectTenders(), 403);
 
+        if (! $this->ensureProjectEditLockAvailable()) {
+            return;
+        }
+
         $this->tenderAccountPickerOpen = true;
         $this->tenderAccountSearch = '';
         $this->tenderAccountPage = 1;
@@ -663,6 +792,10 @@ class ViewProject extends ViewRecord
     {
         abort_unless($this->canManageProjectTenders(), 403);
 
+        if (! $this->ensureProjectEditLockAvailable()) {
+            return;
+        }
+
         if ($this->tenderAccountSelections === []) {
             return;
         }
@@ -713,6 +846,10 @@ class ViewProject extends ViewRecord
     {
         abort_unless($this->canManageProjectTenders(), 403);
 
+        if (! $this->ensureProjectEditLockAvailable()) {
+            return;
+        }
+
         $tender = ProjectTender::query()
             ->where('project_id', $this->record->id)
             ->findOrFail($tenderId);
@@ -730,6 +867,10 @@ class ViewProject extends ViewRecord
     public function makeTenderPrimary(int $tenderId): void
     {
         abort_unless($this->canManageProjectTenders(), 403);
+
+        if (! $this->ensureProjectEditLockAvailable()) {
+            return;
+        }
 
         $tender = ProjectTender::query()
             ->where('project_id', $this->record->id)
@@ -813,7 +954,9 @@ class ViewProject extends ViewRecord
 
     public function openProductPicker(int $areaId): void
     {
-        abort_unless($this->canEditLines(), 403);
+        if (! $this->ensureViewingRevisionIsEditable()) {
+            return;
+        }
 
         $this->productPickerAreaId = $areaId;
         $this->productSearch = '';
@@ -1155,6 +1298,17 @@ class ViewProject extends ViewRecord
         Notification::make()
             ->title('Revision locked')
             ->body(self::ApprovedRevisionLockedMessage)
+            ->warning()
+            ->send();
+    }
+
+    public function notifyProjectEditLocked(): void
+    {
+        Notification::make()
+            ->title('Project locked')
+            ->body($this->projectLockAutoReleased
+                ? 'Your edit lock expired due to inactivity. Return to the project list and reopen the project to continue.'
+                : 'Another user is editing this project. You can view it, but changes are disabled until the lock is released.')
             ->warning()
             ->send();
     }
@@ -1858,6 +2012,10 @@ class ViewProject extends ViewRecord
     {
         abort_unless($this->canEditLines(), 403);
 
+        if (! $this->ensureProjectEditLockAvailable()) {
+            return false;
+        }
+
         if ($this->viewingRevisionIsApproved()) {
             unset($this->isViewingRevisionValidated);
             $this->notifyApprovedRevisionLocked();
@@ -1872,6 +2030,10 @@ class ViewProject extends ViewRecord
     {
         abort_unless($this->canEditCover(), 403);
 
+        if (! $this->ensureProjectEditLockAvailable()) {
+            return false;
+        }
+
         if (! $this->projectHasCover()) {
             return false;
         }
@@ -1884,6 +2046,17 @@ class ViewProject extends ViewRecord
         }
 
         return true;
+    }
+
+    private function ensureProjectEditLockAvailable(): bool
+    {
+        if (! $this->projectEditLocked()) {
+            return true;
+        }
+
+        $this->notifyProjectEditLocked();
+
+        return false;
     }
 
     private function viewingRevisionIsApproved(): bool

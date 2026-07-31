@@ -25,7 +25,7 @@ use Illuminate\Support\Str;
 
 class ProjectForm
 {
-    public static function configure(Schema $schema): Schema
+    public static function configure(Schema $schema, bool $forceReadOnly = false): Schema
     {
         return $schema
             ->columns(2)
@@ -52,7 +52,7 @@ class ProjectForm
                         'unique' => 'A project with this project name already exists.',
                     ])
                     ->hidden(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true && $record === null)
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record))
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly))
                     ->columnSpanFull(),
 
                 Select::make('salesforce_id')
@@ -179,37 +179,37 @@ class ProjectForm
                         && $record === null
                         && blank($get('salesforce_id')))
                     ->dehydratedWhenHidden()
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 TextInput::make('customer_name')
                     ->label('Customer Name')
                     ->placeholder('Customer')
                     ->live()
                     ->required()
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 TextInput::make('site_location')
                     ->label('Site Location')
                     ->placeholder('Location')
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 TextInput::make('owner_email')
                     ->label('Project Owner (email)')
                     ->placeholder('owner@company.com')
                     ->email()
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 TextInput::make('created_by_email')
                     ->label('Created By (email)')
                     ->placeholder('creator@company.com')
                     ->email()
                     ->default(fn (): ?string => auth()->user()?->email)
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 DatePicker::make('date')
                     ->label('Date')
                     ->default(now())
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 Hidden::make('visibility')
                     ->default(ProjectVisibility::Open->value),
@@ -231,7 +231,7 @@ class ProjectForm
                     ->searchable()
                     ->dehydrated(false)
                     ->required()
-                    ->disabled(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record))
+                    ->disabled(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record, $forceReadOnly))
                     ->columnSpanFull(),
 
                 TextInput::make('value')
@@ -240,12 +240,12 @@ class ProjectForm
                     ->numeric()
                     ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
                     ->prefix('£')
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 TextInput::make('branch_name')
                     ->label('Branch Name')
                     ->placeholder('e.g. Birmingham Central')
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record)),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 Toggle::make('has_cover')
                     ->label('Has Cover')
@@ -272,7 +272,7 @@ class ProjectForm
                         }
                     })
                     ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
-                    ->disabled(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record)),
+                    ->disabled(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 ToggleButtons::make('cover_direction')
                     ->label('Cover Direction')
@@ -284,7 +284,7 @@ class ProjectForm
                     ->default('deducted')
                     ->grouped()
                     ->visible(fn (Get $get): bool => (auth()->user()?->can('pricing.view') ?? false) && (bool) $get('has_cover'))
-                    ->disabled(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record)),
+                    ->disabled(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 Grid::make(3)
                     ->schema([
@@ -299,27 +299,31 @@ class ProjectForm
                     ->label('Quote Notes (shown on quote document)')
                     ->placeholder('Notes visible on the quote PDF...')
                     ->rows(3)
-                    ->readOnly(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record))
+                    ->readOnly(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record, $forceReadOnly))
                     ->columnSpanFull(),
 
                 Textarea::make('internal_notes')
                     ->label('Internal Notes (not shown on documents)')
                     ->placeholder('Internal team notes...')
                     ->rows(3)
-                    ->readOnly(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record))
+                    ->readOnly(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record, $forceReadOnly))
                     ->columnSpanFull(),
 
                 Textarea::make('general_notes')
                     ->label('General Notes')
                     ->placeholder('Project notes...')
                     ->rows(3)
-                    ->readOnly(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record))
+                    ->readOnly(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record, $forceReadOnly))
                     ->columnSpanFull(),
             ]);
     }
 
-    public static function projectDetailsAreReadOnly(?Project $record): bool
+    public static function projectDetailsAreReadOnly(?Project $record, bool $forceReadOnly = false): bool
     {
+        if ($forceReadOnly) {
+            return true;
+        }
+
         if ($record === null) {
             return false;
         }
