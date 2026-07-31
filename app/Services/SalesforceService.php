@@ -438,7 +438,7 @@ class SalesforceService
     /**
      * Search Account records for project tender selection.
      *
-     * @return array<int, array{id: string, name: string, billing_city: string|null, cef_region: string|null}>
+     * @return array<int, array{id: string, name: string, billing_street: string|null, billing_city: string|null, billing_state: string|null, billing_postal_code: string|null, phone: string|null, cef_region: string|null}>
      */
     public function searchAccounts(string $query = '', int $limit = 25, int $offset = 0): array
     {
@@ -460,14 +460,18 @@ class SalesforceService
 
         $result = $this->soqlQuery(
             $auth,
-            "SELECT Id, Name, BillingCity, CEF_Region__c FROM Account{$where} ORDER BY Name ASC LIMIT {$limit} OFFSET {$offset}",
+            "SELECT Id, Name, BillingStreet, BillingCity, BillingState, BillingPostalCode, Phone, CEF_Region__c FROM Account{$where} ORDER BY Name ASC LIMIT {$limit} OFFSET {$offset}",
         );
 
         return collect($result['records'] ?? [])
             ->map(fn (array $record): array => [
                 'id' => (string) ($record['Id'] ?? ''),
                 'name' => (string) ($record['Name'] ?? ''),
+                'billing_street' => filled($record['BillingStreet'] ?? null) ? (string) $record['BillingStreet'] : null,
                 'billing_city' => filled($record['BillingCity'] ?? null) ? (string) $record['BillingCity'] : null,
+                'billing_state' => filled($record['BillingState'] ?? null) ? (string) $record['BillingState'] : null,
+                'billing_postal_code' => filled($record['BillingPostalCode'] ?? null) ? (string) $record['BillingPostalCode'] : null,
+                'phone' => filled($record['Phone'] ?? null) ? (string) $record['Phone'] : null,
                 'cef_region' => filled($record['CEF_Region__c'] ?? null) ? (string) $record['CEF_Region__c'] : null,
             ])
             ->filter(fn (array $record): bool => filled($record['id']) && filled($record['name']))
@@ -947,6 +951,20 @@ class SalesforceService
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    public function fetchAccountById(string $accountId): ?array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return null;
+        }
+
+        return $this->fetchAllAccountFieldsUsingAuth($auth, $accountId);
+    }
+
+    /**
      * Fetch all available fields for the Owner and Created By users linked to an Opportunity.
      *
      * @return array{success: bool, opportunityId: string, records?: array<int, array<string, mixed>>, status?: int, errors?: mixed}
@@ -1022,9 +1040,9 @@ class SalesforceService
     }
 
     /**
-     * Fetch the name and email of the User referenced by Opportunity.OwnerId.
+     * Fetch the details of the User referenced by Opportunity.OwnerId.
      *
-     * @return array{id: string, name: string|null, email: string|null}|null
+     * @return array{id: string, name: string|null, first_name: string|null, last_name: string|null, email: string|null, title: string|null, mobile_phone: string|null}|null
      */
     public function getOpportunityOwner(string $opportunityId): ?array
     {
@@ -1048,8 +1066,16 @@ class SalesforceService
         $escapedOwnerId = $this->soqlEscape((string) $ownerId);
         $userResult = $this->soqlQuery(
             $auth,
-            "SELECT Id, Name, Email FROM User WHERE Id = '{$escapedOwnerId}' LIMIT 1",
+            "SELECT Id, Name, FirstName, LastName, Email, Title, MobilePhone FROM User WHERE Id = '{$escapedOwnerId}' LIMIT 1",
         );
+
+        if ($userResult === null) {
+            $userResult = $this->soqlQuery(
+                $auth,
+                "SELECT Id, Name, Email FROM User WHERE Id = '{$escapedOwnerId}' LIMIT 1",
+            );
+        }
+
         $user = ($userResult['records'] ?? [])[0] ?? null;
 
         if ($user === null) {
@@ -1059,9 +1085,13 @@ class SalesforceService
         return [
             'id' => (string) ($user['Id'] ?? $ownerId),
             'name' => filled($user['Name'] ?? null) ? (string) $user['Name'] : null,
+            'first_name' => filled($user['FirstName'] ?? null) ? (string) $user['FirstName'] : null,
+            'last_name' => filled($user['LastName'] ?? null) ? (string) $user['LastName'] : null,
             'email' => filled($user['Email'] ?? null)
                 ? str_replace('.invalid', '', (string) $user['Email'])
                 : null,
+            'title' => filled($user['Title'] ?? null) ? (string) $user['Title'] : null,
+            'mobile_phone' => filled($user['MobilePhone'] ?? null) ? (string) $user['MobilePhone'] : null,
         ];
     }
 

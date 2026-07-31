@@ -17,6 +17,44 @@ class ProjectDatasheetPdfService
     /**
      * @return array{path: string, filename: string}
      */
+    public function datasheetsPdf(
+        Project $project,
+        ProjectRevision $revision,
+        string $filename,
+        ?string $progressToken = null,
+        ?int $progressUserId = null,
+        array $areaIds = [],
+    ): array {
+        $workingDirectory = storage_path('app/private/datasheet-merge-temp/'.Str::uuid());
+        $outputDirectory = storage_path('app/private/datasheet-merge-outputs');
+        File::ensureDirectoryExists($workingDirectory);
+        File::ensureDirectoryExists($outputDirectory);
+
+        $datasheetsPath = $workingDirectory.'/datasheets.pdf';
+        $outputPath = $outputDirectory.'/'.Str::uuid().'.pdf';
+
+        try {
+            $projectSlug = $this->projectSlug($project);
+            $this->reportProgress($progressToken, $progressUserId, 5, 'Preparing datasheet PDF...');
+            $datasheetFilename = $this->requestDatasheetGeneration($project, $revision, $projectSlug, $progressToken, $progressUserId, $areaIds);
+            $this->reportProgress($progressToken, $progressUserId, 82, 'Downloading generated datasheets...');
+            $this->downloadDatasheets($datasheetFilename, $datasheetsPath);
+            $this->assertValidPdf($datasheetsPath, 'The datasheets PDF could not be reused.');
+            File::copy($datasheetsPath, $outputPath);
+            $this->reportProgress($progressToken, $progressUserId, 100, 'Datasheets ready.', true);
+
+            return [
+                'path' => $outputPath,
+                'filename' => $this->withDatasheetsFilename($filename),
+            ];
+        } finally {
+            File::deleteDirectory($workingDirectory);
+        }
+    }
+
+    /**
+     * @return array{path: string, filename: string}
+     */
     public function appendDatasheets(
         Project $project,
         ProjectRevision $revision,
@@ -24,6 +62,7 @@ class ProjectDatasheetPdfService
         string $filename,
         ?string $progressToken = null,
         ?int $progressUserId = null,
+        array $areaIds = [],
     ): array {
         $workingDirectory = storage_path('app/private/datasheet-merge-temp/'.Str::uuid());
         $outputDirectory = storage_path('app/private/datasheet-merge-outputs');
@@ -37,11 +76,42 @@ class ProjectDatasheetPdfService
         try {
             File::put($documentPath, $documentContent);
 
-            $projectSlug = $this->projectSlug($project);
-            $this->reportProgress($progressToken, $progressUserId, 5, 'Preparing schedule PDF...');
-            $datasheetFilename = $this->requestDatasheetGeneration($project, $revision, $projectSlug, $progressToken, $progressUserId);
-            $this->reportProgress($progressToken, $progressUserId, 82, 'Downloading generated datasheets...');
-            $this->downloadDatasheets($datasheetFilename, $datasheetsPath);
+            $datasheetsPdf = $this->datasheetsPdf($project, $revision, 'datasheets.pdf', $progressToken, $progressUserId, $areaIds);
+            File::copy($datasheetsPdf['path'], $datasheetsPath);
+            File::delete($datasheetsPdf['path']);
+
+            return $this->appendExistingDatasheets(
+                documentContent: $documentContent,
+                filename: $filename,
+                datasheetsPath: $datasheetsPath,
+                progressToken: $progressToken,
+                progressUserId: $progressUserId,
+            );
+        } finally {
+            File::deleteDirectory($workingDirectory);
+        }
+    }
+
+    /**
+     * @return array{path: string, filename: string}
+     */
+    public function appendExistingDatasheets(
+        string $documentContent,
+        string $filename,
+        string $datasheetsPath,
+        ?string $progressToken = null,
+        ?int $progressUserId = null,
+    ): array {
+        $workingDirectory = storage_path('app/private/datasheet-merge-temp/'.Str::uuid());
+        $outputDirectory = storage_path('app/private/datasheet-merge-outputs');
+        File::ensureDirectoryExists($workingDirectory);
+        File::ensureDirectoryExists($outputDirectory);
+
+        $documentPath = $workingDirectory.'/document.pdf';
+        $mergedPath = $outputDirectory.'/'.Str::uuid().'.pdf';
+
+        try {
+            File::put($documentPath, $documentContent);
             $this->reportProgress($progressToken, $progressUserId, 90, 'Merging datasheets into your PDF...');
             $this->assertValidPdf($documentPath, 'The generated document PDF could not be merged.');
             $this->assertValidPdf($datasheetsPath, 'The datasheets PDF could not be merged.');
@@ -68,12 +138,13 @@ class ProjectDatasheetPdfService
         string $projectSlug,
         ?string $progressToken,
         ?int $progressUserId,
+        array $areaIds = [],
     ): string {
         $response = Http::asForm()
             ->acceptJson()
             ->timeout((int) config('services.datasheets.timeout', 60))
             ->withOptions(['stream' => true])
-            ->post((string) config('services.datasheets.endpoint'), $this->formPayload($project, $revision, $projectSlug));
+            ->post((string) config('services.datasheets.endpoint'), $this->formPayload($project, $revision, $projectSlug, $areaIds));
 
         if (! $response->successful()) {
             throw new RuntimeException('The datasheet PDF could not be generated.');
@@ -209,11 +280,11 @@ class ProjectDatasheetPdfService
     /**
      * @return array<string, mixed>
      */
-    private function formPayload(Project $project, ProjectRevision $revision, string $projectSlug): array
+    private function formPayload(Project $project, ProjectRevision $revision, string $projectSlug, array $areaIds = []): array
     {
         return [
             ...$this->payload($project, $revision, $projectSlug),
-            'skus' => json_encode($this->skuPayload($revision), JSON_THROW_ON_ERROR),
+            'skus' => json_encode($this->skuPayload($revision, $areaIds), JSON_THROW_ON_ERROR),
         ];
     }
 
@@ -241,10 +312,17 @@ class ProjectDatasheetPdfService
     /**
      * @return array<int, array{qty: int, sku: string, ref: string, note: string|null, brand: string}>
      */
-    private function skuPayload(ProjectRevision $revision): array
+    private function skuPayload(ProjectRevision $revision, array $areaIds = []): array
     {
-        return $revision->areas()
+        $areas = $revision->areas()
             ->with(['lines' => fn ($query) => $query->orderBy('sort_order')->with('product')])
+            ->orderBy('sort_order');
+
+        if ($areaIds !== []) {
+            $areas->whereIn('id', $areaIds);
+        }
+
+        return $areas
             ->get()
             ->flatMap->lines
             ->filter(fn (ProjectLine $line): bool => filled($line->code))

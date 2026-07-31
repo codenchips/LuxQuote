@@ -831,17 +831,17 @@ PDF;
                 private readonly string $responseBody,
             ) {}
 
-            public function filename(Project $project, $revision): string
+            public function filename(Project $project, $revision, array $areaIds = []): string
             {
                 return $this->scheduleFilename;
             }
 
-            public function quoteFilename(Project $project, $revision): string
+            public function quoteFilename(Project $project, $revision, mixed $tender = null, array $areaIds = []): string
             {
                 return $this->quoteFilename;
             }
 
-            public function salesforceScheduleFilename(Project $project, $revision): string
+            public function salesforceScheduleFilename(Project $project, $revision, array $areaIds = []): string
             {
                 $reference = $project->reference_number ?? 'proj-'.$project->id;
 
@@ -850,16 +850,17 @@ PDF;
                     ->implode('-').'.pdf';
             }
 
-            public function salesforceQuoteFilename(Project $project, $revision): string
+            public function salesforceQuoteFilename(Project $project, $revision, mixed $tender = null, array $areaIds = []): string
             {
                 $reference = $project->reference_number ?? 'proj-'.$project->id;
 
-                return collect(['Lighting Quote', $reference, $revision->label()])
+                return collect(['Lighting Quote', $reference, $revision->label(), $tender?->account_name])
+                    ->filter(fn (?string $part): bool => filled($part))
                     ->map(fn (string $part): string => trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-'))
                     ->implode('-').'.pdf';
             }
 
-            public function builder(Project $project, $revision): object
+            public function builder(Project $project, $revision, string $documentType = 'schedule', array $areaIds = []): object
             {
                 return $this->fakeBuilder();
             }
@@ -867,6 +868,11 @@ PDF;
             public function quoteBuilder(Project $project, $revision): object
             {
                 return $this->fakeBuilder();
+            }
+
+            public function quoteContent(Project $project, $revision, mixed $tender = null, bool $includeCover = true, array $areaIds = []): string
+            {
+                return SalesforceSchedulePdfUploadTest::pdfFixtureContent();
             }
 
             public function contentFromBuilder(object $builder): string

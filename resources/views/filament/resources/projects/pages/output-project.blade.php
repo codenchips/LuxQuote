@@ -16,11 +16,27 @@
         $canRequestQuoteApproval = $this->canRequestQuoteApproval();
         $canViewValidation = $this->canViewValidation();
         $canManageDocumentPacks = $this->canManageDocumentPacks();
+        $canViewOutputHistory = $this->canViewOutputHistory();
         $includeQuoteDatasheets = $this->includeQuoteDatasheets;
         $includeScheduleDatasheets = $this->includeScheduleDatasheets;
+        $quoteTenderOptions = $canProduceQuote ? $this->quoteTenderOptions() : [];
+        $hasQuoteTenders = count($quoteTenderOptions) > 0;
+        $outputAreaOptions = ($canProduceQuote || $canProduceUnpricedSchedule) ? $this->outputAreaOptions() : [];
+        $schedulePdfUrl = $canProduceUnpricedSchedule ? $this->getSchedulePdfUrl() : null;
+        $quotePdfUrl = $canProduceQuote ? $this->getQuotePdfUrl() : null;
+        $preparedQuoteUrl = $canProduceQuote ? $this->getPreparedQuoteUrl() : null;
+        $preparedQuoteDatasheetsUrl = $canProduceQuote ? $this->getPreparedQuoteDatasheetsUrl() : null;
+        $preparedQuoteZipUrl = $canProduceQuote ? $this->getPreparedQuoteZipUrl() : null;
         $documentPackDownloadUrl = $this->getDocumentPackDownloadUrl();
         $documentPackGenerationBlockReason = $this->documentPackGenerationBlockReason();
         $selectedGenerationRevision = $this->selectedGenerationRevision();
+        $outputHistoryRows = $canViewOutputHistory ? $this->outputHistoryRows() : [];
+        $outputHistoryTotalRows = $canViewOutputHistory ? $this->outputHistoryTotalRows() : 0;
+        $outputHistoryTotalPages = $canViewOutputHistory ? $this->outputHistoryTotalPages() : 1;
+        $outputHistoryCurrentPage = $canViewOutputHistory ? $this->outputHistoryCurrentPage() : 1;
+        $outputHistoryFirstRow = $outputHistoryTotalRows > 0 ? (($outputHistoryCurrentPage - 1) * $this->outputHistoryPerPage) + 1 : 0;
+        $outputHistoryLastRow = min($outputHistoryTotalRows, $outputHistoryCurrentPage * $this->outputHistoryPerPage);
+        $outputHistorySearch = $this->outputHistorySearch;
         $panelClasses = 'rounded-lg border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#171b22]';
         $primaryButtonClasses = 'fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action w-full';
         $secondaryButtonClasses = 'inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-white/70 px-4 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-gray-100 dark:hover:bg-white/[0.06]';
@@ -28,7 +44,21 @@
         $validationUrl = \App\Filament\Resources\Projects\Pages\ValidationProject::getUrl(['record' => $this->record]);
     @endphp
 
-    <div class="space-y-7">
+    <div
+        class="space-y-7"
+        x-data="quoteTenderOutput({
+            tenders: @js($quoteTenderOptions),
+            areas: @js($outputAreaOptions),
+            scheduleUrl: @js($schedulePdfUrl),
+            quoteUrl: @js($quotePdfUrl),
+            prepareUrl: @js($preparedQuoteUrl),
+            prepareDatasheetsUrl: @js($preparedQuoteDatasheetsUrl),
+            zipUrl: @js($preparedQuoteZipUrl),
+            includeDatasheets: @js($includeQuoteDatasheets),
+            includeScheduleDatasheets: @js($includeScheduleDatasheets),
+            csrfToken: @js(csrf_token()),
+        })"
+    >
         <section class="{{ $panelClasses }} p-5">
             <div class="grid gap-5 lg:grid-cols-[1fr_1fr_1fr]">
                 <div class="space-y-3">
@@ -136,6 +166,22 @@
                         ])
                     >
                         Document Packs
+                    </button>
+                @endif
+
+                @if($canViewOutputHistory)
+                    <button
+                        type="button"
+                        role="tab"
+                        wire:click="$set('outputTab', 'history')"
+                        aria-selected="{{ $outputTab === 'history' ? 'true' : 'false' }}"
+                        @class([
+                            'relative -mb-px inline-flex h-11 items-center text-sm font-semibold transition',
+                            'border-b-2 border-orange-500 text-gray-950 dark:border-orange-400 dark:text-white' => $outputTab === 'history',
+                            'border-b-2 border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white' => $outputTab !== 'history',
+                        ])
+                    >
+                        History
                     </button>
                 @endif
             </div>
@@ -534,6 +580,131 @@
             </section>
         @endif
 
+        @if($outputTab === 'history' && $canViewOutputHistory)
+            <section class="{{ $panelClasses }} overflow-hidden">
+                <div class="flex flex-col gap-4 border-b border-gray-200 px-5 py-4 dark:border-white/10 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-950 dark:text-white">Output History</h2>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Previously generated quote and schedule PDFs for this project.</p>
+                    </div>
+
+                    <div class="relative w-full md:w-72">
+                        <x-heroicon-o-magnifying-glass class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <input
+                            wire:model.live.debounce.300ms="outputHistorySearch"
+                            type="search"
+                            placeholder="Search"
+                            class="h-10 w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+                        />
+                    </div>
+                </div>
+
+                <div class="flex items-start gap-2 border-b border-gray-200 bg-amber-50/70 px-5 py-3 text-sm text-amber-900 dark:border-white/10 dark:bg-amber-500/10 dark:text-amber-100">
+                    <x-heroicon-o-exclamation-triangle class="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>Regenerated PDFs use the saved output options, but current project details and line data for that revision. They may not exactly match the original file if the revision has changed since.</span>
+                </div>
+
+                @if($outputHistoryTotalRows === 0)
+                    <div class="px-5 py-10 text-center">
+                        <x-heroicon-o-document-text class="mx-auto h-10 w-10 text-gray-400" />
+                        <p class="mt-3 text-sm font-semibold text-gray-950 dark:text-white">
+                            {{ $outputHistorySearch ? 'No matching PDFs found' : 'No generated PDFs yet' }}
+                        </p>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            {{ $outputHistorySearch ? 'Try a different search term.' : 'Generated quotes and schedules will appear here.' }}
+                        </p>
+                    </div>
+                @else
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-white/10">
+                            <thead class="bg-gray-50 dark:bg-[#111827]">
+                                <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    <th class="px-5 py-3">User</th>
+                                    <th class="px-5 py-3">Rev</th>
+                                    <th class="px-5 py-3">Type</th>
+                                    <th class="px-5 py-3">Scope</th>
+                                    <th class="px-5 py-3">Tender</th>
+                                    <th class="px-5 py-3">Datasheets</th>
+                                    <th class="px-5 py-3">Date & Time</th>
+                                    <th class="px-5 py-3 text-right">Regenerate</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200 dark:divide-white/10">
+                                @foreach($outputHistoryRows as $row)
+                                    <tr class="text-gray-700 dark:text-gray-200">
+                                        <td class="whitespace-nowrap px-5 py-4 font-medium text-gray-950 dark:text-white">{{ $row['user'] }}</td>
+                                        <td class="whitespace-nowrap px-5 py-4">{{ $row['revision'] }}</td>
+                                        <td class="whitespace-nowrap px-5 py-4">
+                                            <span class="inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold {{ $row['type_classes'] }}">
+                                                {{ $row['type'] }}
+                                            </span>
+                                        </td>
+                                        <td class="whitespace-nowrap px-5 py-4">{{ $row['scope'] }}</td>
+                                        <td class="max-w-64 truncate px-5 py-4">{{ $row['tender'] ?? '—' }}</td>
+                                        <td class="whitespace-nowrap px-5 py-4">
+                                            <span @class([
+                                                'inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold',
+                                                'border-sky-500/30 bg-sky-500/15 text-sky-200' => $row['included_datasheets'],
+                                                'border-gray-500/30 bg-gray-500/10 text-gray-300' => ! $row['included_datasheets'],
+                                            ])>
+                                                {{ $row['included_datasheets'] ? 'Yes' : 'No' }}
+                                            </span>
+                                        </td>
+                                        <td class="whitespace-nowrap px-5 py-4">{{ $row['generated_at'] }}</td>
+                                        <td class="whitespace-nowrap px-5 py-4 text-right">
+                                            @if($row['regenerate_url'])
+                                                <a
+                                                    href="{{ $row['regenerate_url'] }}"
+                                                    target="_blank"
+                                                    data-pdf-generation
+                                                    data-pdf-title="Regenerating {{ strtolower($row['type']) }} PDF"
+                                                    data-pdf-message="Your {{ strtolower($row['type']) }} PDF is being regenerated from the saved output options."
+                                                    class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5"
+                                                >
+                                                    <x-heroicon-o-arrow-path class="h-4 w-4" />
+                                                    Regenerate
+                                                </a>
+                                            @else
+                                                <span class="text-xs text-gray-400">No access</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="flex flex-col gap-3 border-t border-gray-200 px-5 py-3 text-sm text-gray-500 dark:border-white/10 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
+                        <span>
+                            Showing {{ $outputHistoryFirstRow }} to {{ $outputHistoryLastRow }} of {{ $outputHistoryTotalRows }} results
+                        </span>
+
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                wire:click="previousOutputHistoryPage"
+                                @disabled($outputHistoryCurrentPage <= 1)
+                                class="inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-semibold transition {{ $outputHistoryCurrentPage <= 1 ? 'cursor-not-allowed border-gray-200 text-gray-300 dark:border-white/10 dark:text-gray-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5' }}"
+                            >
+                                Previous
+                            </button>
+                            <span class="whitespace-nowrap px-1 text-xs font-medium text-gray-400">
+                                Page {{ $outputHistoryCurrentPage }} of {{ $outputHistoryTotalPages }}
+                            </span>
+                            <button
+                                type="button"
+                                wire:click="nextOutputHistoryPage"
+                                @disabled($outputHistoryCurrentPage >= $outputHistoryTotalPages)
+                                class="inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-semibold transition {{ $outputHistoryCurrentPage >= $outputHistoryTotalPages ? 'cursor-not-allowed border-gray-200 text-gray-300 dark:border-white/10 dark:text-gray-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5' }}"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                @endif
+            </section>
+        @endif
+
         @if($outputTab === 'single')
             <section class="space-y-5">
                 <div>
@@ -561,36 +732,54 @@
                             </div>
 
                             <div class="mt-5 rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                                <div class="mb-3 flex min-h-9 items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-300">
+                                    <span x-text="areaSelectionLabel()"></span>
+                                    <button type="button" x-on:click="openAreaDialog()" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">
+                                        Select areas
+                                    </button>
+                                </div>
+
                                 <label class="flex min-h-9 items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-300">
                                     <span class="inline-flex items-center gap-2">
                                         Include datasheets
                                         <x-heroicon-o-information-circle class="h-4 w-4 text-gray-400" />
                                     </span>
-                                    <input type="checkbox" wire:model.live="includeQuoteDatasheets" class="sr-only">
-                                    <span @class([
-                                        'relative inline-flex h-6 w-11 shrink-0 rounded-full transition',
-                                        'bg-orange-500' => $includeQuoteDatasheets,
-                                        'bg-gray-300 dark:bg-white/10' => ! $includeQuoteDatasheets,
-                                    ]) aria-hidden="true">
-                                        <span @class([
-                                            'absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition',
-                                            'translate-x-5' => $includeQuoteDatasheets,
-                                        ])></span>
+                                    <input type="checkbox" x-model="includeDatasheets" class="sr-only">
+                                    <span
+                                        x-bind:class="includeDatasheets ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"
+                                        class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition"
+                                        aria-hidden="true"
+                                    >
+                                        <span
+                                            x-bind:class="includeDatasheets ? 'translate-x-5' : ''"
+                                            class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"
+                                        ></span>
                                     </span>
                                 </label>
 
                                 <div class="mt-4 space-y-3">
                                     @if($validationPassed && $quoteApproved)
-                                        <a
-                                            href="{{ $this->getQuotePdfUrl() }}"
-                                            target="_blank"
-                                            data-pdf-generation
-                                            data-pdf-title="Generating quote PDF"
-                                            data-pdf-message="Your quote PDF is being generated. Including datasheets can take a while."
-                                            class="{{ $primaryButtonClasses }}"
-                                        >
-                                            Generate Quote PDF
-                                        </a>
+                                        @if($hasQuoteTenders)
+                                            <button
+                                                type="button"
+                                                x-on:click="openTenderDialog()"
+                                                class="{{ $primaryButtonClasses }}"
+                                            >
+                                                Generate Quote PDF
+                                            </button>
+                                        @else
+                                            <a
+                                                href="{{ $quotePdfUrl }}"
+                                                x-bind:href="directQuoteUrl()"
+                                                target="_blank"
+                                                data-pdf-generation
+                                                data-pdf-title="Generating quote PDF"
+                                                data-pdf-message="Your quote PDF is being generated. Including datasheets can take a while."
+                                                class="{{ $primaryButtonClasses }}"
+                                            >
+                                                Generate Quote PDF
+                                            </a>
+                                        @endif
                                     @else
                                         <button type="button" disabled class="{{ $disabledOutputButtonClasses }}">
                                             Generate Quote PDF
@@ -628,27 +817,35 @@
                             </div>
 
                             <div class="mt-5 rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                                <div class="mb-3 flex min-h-9 items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-300">
+                                    <span x-text="areaSelectionLabel()"></span>
+                                    <button type="button" x-on:click="openAreaDialog()" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">
+                                        Select areas
+                                    </button>
+                                </div>
+
                                 <label class="flex min-h-9 items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-300">
                                     <span class="inline-flex items-center gap-2">
                                         Include datasheets
                                         <x-heroicon-o-information-circle class="h-4 w-4 text-gray-400" />
                                     </span>
-                                    <input type="checkbox" wire:model.live="includeScheduleDatasheets" class="sr-only">
-                                    <span @class([
-                                        'relative inline-flex h-6 w-11 shrink-0 rounded-full transition',
-                                        'bg-orange-500' => $includeScheduleDatasheets,
-                                        'bg-gray-300 dark:bg-white/10' => ! $includeScheduleDatasheets,
-                                    ]) aria-hidden="true">
-                                        <span @class([
-                                            'absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition',
-                                            'translate-x-5' => $includeScheduleDatasheets,
-                                        ])></span>
+                                    <input type="checkbox" x-model="includeScheduleDatasheets" class="sr-only">
+                                    <span
+                                        x-bind:class="includeScheduleDatasheets ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"
+                                        class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition"
+                                        aria-hidden="true"
+                                    >
+                                        <span
+                                            x-bind:class="includeScheduleDatasheets ? 'translate-x-5' : ''"
+                                            class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"
+                                        ></span>
                                     </span>
                                 </label>
 
                                 <div class="mt-4 space-y-3">
                                     <a
-                                        href="{{ $this->getSchedulePdfUrl() }}"
+                                        href="{{ $schedulePdfUrl }}"
+                                        x-bind:href="directScheduleUrl()"
                                         target="_blank"
                                         data-pdf-generation
                                         data-pdf-title="Generating schedule PDF"
@@ -680,5 +877,501 @@
                 </aside>
             </section>
         @endif
+
+        <div
+            x-cloak
+            x-show="areaOpen"
+            x-transition.opacity
+            class="fixed inset-0 z-[100000] flex items-center justify-center bg-gray-950/75 px-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="area-selection-title"
+        >
+            <div
+                x-on:click.outside="closeAreaDialog()"
+                class="w-full max-w-2xl overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#171b22]"
+            >
+                <div class="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                    <div>
+                        <h2 id="area-selection-title" class="text-lg font-semibold text-gray-950 dark:text-white">Choose areas</h2>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Select the project areas to include in quote and schedule outputs.</p>
+                    </div>
+                    <button type="button" x-on:click="closeAreaDialog()" class="rounded-md p-1 text-gray-400 transition hover:text-gray-700 dark:hover:text-gray-200">
+                        <x-heroicon-o-x-mark class="h-6 w-6" />
+                    </button>
+                </div>
+
+                <div class="max-h-[60vh] overflow-y-auto px-6 py-5">
+                    <div class="mb-4 flex items-center justify-between gap-3">
+                        <p class="text-sm text-gray-600 dark:text-gray-300">
+                            All areas are included by default.
+                        </p>
+                        <div class="flex shrink-0 items-center gap-2">
+                            <button type="button" x-on:click="selectAllAreas()" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">Select all</button>
+                            <button type="button" x-on:click="clearAreaDraft()" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">Clear</button>
+                        </div>
+                    </div>
+
+                    <div class="divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 dark:divide-white/10 dark:border-white/10">
+                        <template x-for="area in areas" :key="area.id">
+                            <label class="grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-4 bg-white px-4 py-3 transition hover:bg-gray-50 dark:bg-white/[0.02] dark:hover:bg-white/[0.05]">
+                                <input
+                                    type="checkbox"
+                                    x-model="areaDraft[area.id]"
+                                    class="h-5 w-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500 dark:border-white/20 dark:bg-white/10"
+                                />
+                                <div class="min-w-0">
+                                    <p class="truncate text-sm font-semibold text-gray-950 dark:text-white" x-text="area.name"></p>
+                                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                                        <span x-text="`${area.items} items`"></span>
+                                        <span class="mx-1">·</span>
+                                        <span x-text="`qty ${area.qty}`"></span>
+                                    </p>
+                                </div>
+                                <div x-show="area.price || area.net" class="text-right text-xs text-gray-500 dark:text-gray-400">
+                                    <template x-if="area.net">
+                                        <p>Net: <span class="font-semibold text-gray-700 dark:text-gray-200" x-text="area.net"></span></p>
+                                    </template>
+                                    <template x-if="area.price">
+                                        <p>Price: <span class="font-semibold text-gray-700 dark:text-gray-200" x-text="area.price"></span></p>
+                                    </template>
+                                </div>
+                            </label>
+                        </template>
+                    </div>
+
+                    <p x-show="areaError" x-text="areaError" class="mt-4 rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-sm text-danger-300"></p>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-6 py-4 dark:border-white/10">
+                    <p class="text-sm text-gray-500 dark:text-gray-400" x-text="areaDraftLabel()"></p>
+                    <div class="flex items-center gap-2">
+                        <button type="button" x-on:click="closeAreaDialog()" class="h-10 rounded-md border border-gray-300 px-4 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">Cancel</button>
+                        <button type="button" x-on:click="confirmAreaSelection()" class="fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action">
+                            Confirm selection
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div
+            x-cloak
+            x-show="open"
+            x-transition.opacity
+            class="fixed inset-0 z-[100000] flex items-center justify-center bg-gray-950/75 px-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="quote-tender-title"
+        >
+            <div
+                x-on:click.outside="! generating && close()"
+                class="w-full max-w-2xl overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#171b22]"
+            >
+                <div class="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4 dark:border-white/10">
+                    <div>
+                        <h2 id="quote-tender-title" class="text-lg font-semibold text-gray-950 dark:text-white">Choose Tenders</h2>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Select the contractors that need their own quote cover sheet.</p>
+                    </div>
+                    <button type="button" x-on:click="! generating && close()" class="rounded-md p-1 text-gray-400 transition hover:text-gray-700 dark:hover:text-gray-200">
+                        <x-heroicon-o-x-mark class="h-6 w-6" />
+                    </button>
+                </div>
+
+                <div class="max-h-[60vh] overflow-y-auto px-6 py-5">
+                    <div class="mb-4 flex items-center justify-between gap-3">
+                        <p class="text-sm text-gray-600 dark:text-gray-300">
+                            Leave all unchecked to generate the quote without a cover sheet.
+                        </p>
+                        <div class="flex shrink-0 items-center gap-2">
+                            <button type="button" x-on:click="selectAll()" x-bind:disabled="generating" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">Select all</button>
+                            <button type="button" x-on:click="clearAll()" x-bind:disabled="generating" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">Clear</button>
+                        </div>
+                    </div>
+
+                    <div class="divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 dark:divide-white/10 dark:border-white/10">
+                        <template x-for="tender in tenders" :key="tender.id">
+                            <div class="grid grid-cols-[auto_1fr_auto] items-center gap-4 bg-white px-4 py-3 dark:bg-white/[0.02]">
+                                <input
+                                    type="checkbox"
+                                    x-model="selected[tender.id]"
+                                    x-bind:disabled="generating"
+                                    class="h-5 w-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500 dark:border-white/20 dark:bg-white/10"
+                                />
+                                <div class="min-w-0">
+                                    <div class="flex min-w-0 items-center gap-2">
+                                        <span class="truncate text-sm font-semibold text-gray-950 dark:text-white" x-text="tender.name"></span>
+                                        <span x-show="tender.is_primary" class="rounded-md border border-orange-400/40 bg-orange-400/15 px-2 py-0.5 text-[11px] font-semibold text-orange-200">Primary</span>
+                                    </div>
+                                    <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400" x-text="tender.city || 'No city recorded'"></p>
+                                </div>
+                                <div class="min-w-32 text-right text-sm">
+                                    <template x-if="results[tender.id]?.url">
+                                        <a x-bind:href="results[tender.id].url" target="_blank" class="font-semibold text-sky-500 hover:text-sky-400">Download PDF</a>
+                                    </template>
+                                    <template x-if="! results[tender.id]?.url">
+                                        <span class="inline-flex justify-end text-gray-400">
+                                            <span x-text="baseStatus(tender.id)"></span><span class="inline-block w-5 text-left" x-text="statusDots(tender.id)"></span>
+                                        </span>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <p x-show="error" x-text="error" class="mt-4 rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-sm text-danger-300"></p>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-6 py-4 dark:border-white/10">
+                    <div class="text-sm text-gray-500 dark:text-gray-400">
+                        <template x-if="zipDownload?.url">
+                            <a x-bind:href="zipDownload.url" class="font-semibold text-sky-500 hover:text-sky-400">Download all as zip</a>
+                        </template>
+                        <template x-if="! zipDownload?.url">
+                            <span>
+                                <span x-text="footerMessage()"></span><span class="inline-block w-5 text-left" x-text="footerDots()"></span>
+                            </span>
+                        </template>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" x-on:click="close()" x-bind:disabled="generating" class="h-10 rounded-md border border-gray-300 px-4 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">Close</button>
+                        <button type="button" x-on:click="generate()" x-bind:disabled="generating" class="fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action disabled:opacity-70">
+                            <span x-show="! generating">Generate</span>
+                            <span x-show="generating">Generating...</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
+
+    @once
+        <script>
+            function quoteTenderOutput(config) {
+                return {
+                    open: false,
+                    areaOpen: false,
+                    generating: false,
+                    tenders: config.tenders || [],
+                    areas: config.areas || [],
+                    selectedAreas: {},
+                    areaDraft: {},
+                    areaError: null,
+                    selected: {},
+                    status: {},
+                    results: {},
+                    zipDownload: null,
+                    error: null,
+                    dotCount: 1,
+                    dotTimer: null,
+                    includeDatasheets: Boolean(config.includeDatasheets),
+                    quoteUrl: config.quoteUrl,
+                    scheduleUrl: config.scheduleUrl,
+                    includeScheduleDatasheets: Boolean(config.includeScheduleDatasheets),
+                    prepareUrl: config.prepareUrl,
+                    prepareDatasheetsUrl: config.prepareDatasheetsUrl,
+                    zipUrl: config.zipUrl,
+                    csrfToken: config.csrfToken,
+                    init() {
+                        this.selectAllAreas();
+                        this.selectedAreas = { ...this.areaDraft };
+                    },
+                    openAreaDialog() {
+                        this.areaError = null;
+                        this.areaDraft = { ...this.selectedAreas };
+                        this.areaOpen = true;
+                    },
+                    closeAreaDialog() {
+                        this.areaOpen = false;
+                    },
+                    selectAllAreas() {
+                        this.areaDraft = {};
+
+                        for (const area of this.areas) {
+                            this.areaDraft[area.id] = true;
+                        }
+                    },
+                    clearAreaDraft() {
+                        this.areaDraft = {};
+
+                        for (const area of this.areas) {
+                            this.areaDraft[area.id] = false;
+                        }
+                    },
+                    confirmAreaSelection() {
+                        if (this.areaDraftSelectedIds().length === 0) {
+                            this.areaError = 'Select at least one area for output.';
+
+                            return;
+                        }
+
+                        this.selectedAreas = { ...this.areaDraft };
+                        this.areaOpen = false;
+                    },
+                    areaDraftSelectedIds() {
+                        return this.areas
+                            .filter((area) => Boolean(this.areaDraft[area.id]))
+                            .map((area) => area.id);
+                    },
+                    selectedAreaIds() {
+                        return this.areas
+                            .filter((area) => Boolean(this.selectedAreas[area.id]))
+                            .map((area) => area.id);
+                    },
+                    outputAreaIds() {
+                        const selected = this.selectedAreaIds();
+
+                        return selected.length === this.areas.length ? [] : selected;
+                    },
+                    areaSelectionLabel() {
+                        const selected = this.selectedAreaIds().length;
+
+                        return selected === this.areas.length
+                            ? 'Include all areas'
+                            : `${selected} ${selected === 1 ? 'area' : 'areas'} selected for output`;
+                    },
+                    areaDraftLabel() {
+                        const selected = this.areaDraftSelectedIds().length;
+
+                        return selected === this.areas.length
+                            ? 'All areas selected.'
+                            : `${selected} ${selected === 1 ? 'area' : 'areas'} selected.`;
+                    },
+                    applyAreaParams(url) {
+                        const areaIds = this.outputAreaIds();
+                        url.searchParams.delete('area_ids');
+                        url.searchParams.delete('area_ids[]');
+
+                        for (const areaId of areaIds) {
+                            url.searchParams.append('area_ids[]', areaId);
+                        }
+                    },
+                    openTenderDialog() {
+                        this.error = null;
+                        this.results = {};
+                        this.status = {};
+                        this.zipDownload = null;
+                        this.selected = {};
+                        this.dotCount = 1;
+
+                        for (const tender of this.tenders) {
+                            this.selected[tender.id] = true;
+                            this.status[tender.id] = 'Ready';
+                        }
+
+                        this.open = true;
+                    },
+                    directQuoteUrl() {
+                        const url = new URL(this.quoteUrl, window.location.origin);
+
+                        if (this.includeDatasheets) {
+                            url.searchParams.set('include_datasheets', '1');
+                        } else {
+                            url.searchParams.delete('include_datasheets');
+                        }
+
+                        this.applyAreaParams(url);
+
+                        return url.toString();
+                    },
+                    directScheduleUrl() {
+                        const url = new URL(this.scheduleUrl, window.location.origin);
+
+                        if (this.includeScheduleDatasheets) {
+                            url.searchParams.set('include_datasheets', '1');
+                        } else {
+                            url.searchParams.delete('include_datasheets');
+                        }
+
+                        this.applyAreaParams(url);
+
+                        return url.toString();
+                    },
+                    close() {
+                        this.open = false;
+                    },
+                    selectAll() {
+                        for (const tender of this.tenders) {
+                            this.selected[tender.id] = true;
+                        }
+                    },
+                    clearAll() {
+                        for (const tender of this.tenders) {
+                            this.selected[tender.id] = false;
+                        }
+                    },
+                    selectedTenders() {
+                        return this.tenders.filter((tender) => Boolean(this.selected[tender.id]));
+                    },
+                    footerMessage() {
+                        const completed = Object.values(this.results).filter((result) => result?.url).length;
+
+                        if (this.generating) {
+                            return `Generated ${completed} of ${this.selectedTenders().length} quote PDFs`;
+                        }
+
+                        return completed > 0 ? `${completed} quote PDFs ready.` : 'No quote PDFs generated yet.';
+                    },
+                    baseStatus(tenderId) {
+                        const text = this.status[tenderId] || 'Ready';
+
+                        return text.replace(/\.+$/, '');
+                    },
+                    statusDots(tenderId) {
+                        const text = this.status[tenderId] || 'Ready';
+
+                        return this.generating && text.endsWith('...') ? '.'.repeat(this.dotCount) : '';
+                    },
+                    footerDots() {
+                        return this.generating ? '.'.repeat(this.dotCount) : '';
+                    },
+                    startDots() {
+                        this.stopDots();
+                        this.dotTimer = window.setInterval(() => {
+                            this.dotCount = this.dotCount >= 3 ? 1 : this.dotCount + 1;
+                        }, 450);
+                    },
+                    stopDots() {
+                        if (this.dotTimer) {
+                            window.clearInterval(this.dotTimer);
+                            this.dotTimer = null;
+                        }
+                    },
+                    async generate() {
+                        this.generating = true;
+                        this.error = null;
+                        this.results = {};
+                        this.zipDownload = null;
+                        this.startDots();
+
+                        const selectedTenders = this.selectedTenders();
+
+                        try {
+                            if (selectedTenders.length === 0) {
+                                const prepared = await this.prepareQuote(null, false);
+                                window.open(prepared.url, '_blank', 'noopener');
+                                this.open = false;
+                                return;
+                            }
+
+                            const tokens = [];
+                            let datasheetToken = null;
+
+                            if (this.includeDatasheets && selectedTenders.length > 1) {
+                                this.status[selectedTenders[0].id] = 'Preparing shared datasheets...';
+                                datasheetToken = (await this.prepareDatasheets()).token || null;
+
+                                for (const tender of selectedTenders) {
+                                    this.status[tender.id] = 'Ready';
+                                }
+                            }
+
+                            for (const tender of selectedTenders) {
+                                this.status[tender.id] = 'Generating...';
+                                const prepared = await this.prepareQuote(tender.id, true, datasheetToken);
+                                this.results[tender.id] = prepared;
+                                this.status[tender.id] = 'Ready';
+
+                                if (prepared.token) {
+                                    tokens.push(prepared.token);
+                                }
+                            }
+
+                            if (tokens.length > 1) {
+                                this.zipDownload = await this.prepareZip(tokens);
+                            }
+                        } catch (error) {
+                            this.error = error instanceof Error ? error.message : 'The tender quote PDFs could not be generated.';
+                        } finally {
+                            this.generating = false;
+                            this.stopDots();
+                        }
+                    },
+                    async prepareQuote(tenderId, includeCover, datasheetToken = null) {
+                        const payload = {
+                            include_cover: includeCover,
+                            include_datasheets: this.includeDatasheets,
+                            salesforce_upload: true,
+                        };
+                        const areaIds = this.outputAreaIds();
+
+                        if (tenderId) {
+                            payload.tender_id = tenderId;
+                        }
+
+                        if (datasheetToken) {
+                            payload.datasheet_token = datasheetToken;
+                        }
+
+                        if (areaIds.length > 0) {
+                            payload.area_ids = areaIds;
+                        }
+
+                        const response = await fetch(this.prepareUrl, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                Accept: 'application/json',
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': this.csrfToken,
+                                'X-Requested-With': 'XMLHttpRequest',
+                            },
+                            body: JSON.stringify(payload),
+                        });
+
+                        if (! response.ok) {
+                            throw new Error(`Quote generation failed with status ${response.status}.`);
+                        }
+
+                        return await response.json();
+                    },
+                    async prepareDatasheets() {
+                        const areaIds = this.outputAreaIds();
+                        const payload = { include_datasheets: true };
+
+                        if (areaIds.length > 0) {
+                            payload.area_ids = areaIds;
+                        }
+
+                        const response = await fetch(this.prepareDatasheetsUrl, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                Accept: 'application/json',
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': this.csrfToken,
+                                'X-Requested-With': 'XMLHttpRequest',
+                            },
+                            body: JSON.stringify(payload),
+                        });
+
+                        if (! response.ok) {
+                            throw new Error(`Datasheet generation failed with status ${response.status}.`);
+                        }
+
+                        return await response.json();
+                    },
+                    async prepareZip(tokens) {
+                        const response = await fetch(this.zipUrl, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                Accept: 'application/json',
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': this.csrfToken,
+                                'X-Requested-With': 'XMLHttpRequest',
+                            },
+                            body: JSON.stringify({ tokens }),
+                        });
+
+                        if (! response.ok) {
+                            throw new Error(`ZIP generation failed with status ${response.status}.`);
+                        }
+
+                        return await response.json();
+                    },
+                };
+            }
+        </script>
+    @endonce
 </x-filament-panels::page>

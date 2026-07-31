@@ -7,7 +7,9 @@ _Last updated: 30 July 2026_
 ## Project Tenders — 30 July 2026
 
 - **Project Tender UI started**: Project pages now include a **Tenders** button between **Details** and **Revisions**. It opens a modal listing contractor Accounts linked to the project as tenders.
-- **Salesforce Account picker added**: Users with `projects.update-details` can add tenders by searching readable Salesforce `Account` records and selecting one or more contractors from a checkbox list. This first slice stores the Salesforce Account ID and name locally; it does not yet create or update Salesforce Tender records.
+- **Salesforce Account picker added**: Users with `projects.manage-tenders` can add tenders by searching readable Salesforce `Account` records and selecting one or more contractors from a checkbox list. This first slice stores the Salesforce Account ID and name locally; it does not yet create or update Salesforce Tender records.
+- **Tender permission split out**: Tender add/remove/primary actions now have their own `projects.manage-tenders` permission instead of borrowing `projects.update-details`. Default groups preserve previous User/Manager access and add Technical access for tender management.
+- **Output History permission added**: The Output page History tab is controlled by `output.history.view`, giving admins a separate checkbox for generated quote/schedule history and regeneration access.
 - **Tender storage added**: `project_tenders` stores the project, Salesforce Account ID, Account name, optional future Salesforce Tender ID, raw Account payload, creator, and timestamps. The deploy data-loss guard now treats `project_tenders` as protected business data.
 - **Salesforce Tender naming corrected**: Sandbox and production now use the singular custom object API name `Tender__c`; diagnostics and notes should no longer refer to `Tenders__c`.
 - **Salesforce object sampler documented**: `salesforce:sample-object {object} {limit=1}` can inspect sample `Account`, `User`, `Opportunity`, or custom object records with every readable field, reporting rejected fields under `skipped_fields`.

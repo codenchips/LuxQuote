@@ -94,7 +94,11 @@ class SalesforceServiceTest extends TestCase
                         [
                             'Id' => '001000000000001AAA',
                             'Name' => 'Example Contractor',
+                            'BillingStreet' => '1 Test Street',
                             'BillingCity' => 'Birmingham',
+                            'BillingState' => 'West Midlands',
+                            'BillingPostalCode' => 'B1 1AA',
+                            'Phone' => '0121 000 0000',
                             'CEF_Region__c' => 'Midlands',
                         ],
                     ],
@@ -110,7 +114,11 @@ class SalesforceServiceTest extends TestCase
             [
                 'id' => '001000000000001AAA',
                 'name' => 'Example Contractor',
+                'billing_street' => '1 Test Street',
                 'billing_city' => 'Birmingham',
+                'billing_state' => 'West Midlands',
+                'billing_postal_code' => 'B1 1AA',
+                'phone' => '0121 000 0000',
                 'cef_region' => 'Midlands',
             ],
         ], $accounts);
@@ -118,7 +126,7 @@ class SalesforceServiceTest extends TestCase
         Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
             && str_contains($request->url(), '/services/data/v65.0/query/')
             && $request->hasHeader('Authorization', 'Bearer live-test-token')
-            && str_contains((string) ($request->data()['q'] ?? ''), 'SELECT Id, Name, BillingCity, CEF_Region__c FROM Account')
+            && str_contains((string) ($request->data()['q'] ?? ''), 'SELECT Id, Name, BillingStreet, BillingCity, BillingState, BillingPostalCode, Phone, CEF_Region__c FROM Account')
             && str_contains((string) ($request->data()['q'] ?? ''), "Type = 'Contractor'")
             && str_contains((string) ($request->data()['q'] ?? ''), "Name LIKE '%Contractor%'")
             && str_contains((string) ($request->data()['q'] ?? ''), 'OFFSET 0'));
@@ -547,7 +555,11 @@ class SalesforceServiceTest extends TestCase
                         'records' => [[
                             'Id' => '005000000000001AAA',
                             'Name' => 'Jamie Engineer',
+                            'FirstName' => 'Jamie',
+                            'LastName' => 'Engineer',
                             'Email' => 'jamie.engineer@example.com.invalid',
+                            'Title' => 'Senior Project Engineer',
+                            'MobilePhone' => '07961 805168',
                         ]],
                     ]);
                 }
@@ -561,11 +573,15 @@ class SalesforceServiceTest extends TestCase
         $this->assertSame([
             'id' => '005000000000001AAA',
             'name' => 'Jamie Engineer',
+            'first_name' => 'Jamie',
+            'last_name' => 'Engineer',
             'email' => 'jamie.engineer@example.com',
+            'title' => 'Senior Project Engineer',
+            'mobile_phone' => '07961 805168',
         ], $owner);
 
         Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), 'SELECT Id, OwnerId FROM Opportunity'));
-        Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), "SELECT Id, Name, Email FROM User WHERE Id = '005000000000001AAA'"));
+        Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), "SELECT Id, Name, FirstName, LastName, Email, Title, MobilePhone FROM User WHERE Id = '005000000000001AAA'"));
     }
 
     public function test_opportunity_owner_lookup_returns_null_when_user_fields_are_not_permitted(): void

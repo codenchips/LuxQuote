@@ -74,7 +74,7 @@ class ViewProject extends ViewRecord
 
     public int $tenderAccountPage = 1;
 
-    /** @var array<string, array{name: string, billing_city: string|null, cef_region: string|null}> */
+    /** @var array<string, array{name: string, billing_street: string|null, billing_city: string|null, billing_state: string|null, billing_postal_code: string|null, phone: string|null, cef_region: string|null}> */
     public array $tenderAccountSelections = [];
 
     // ── Product picker state ─────────────────────────────────────────────────
@@ -650,7 +650,11 @@ class ViewProject extends ViewRecord
 
         $this->tenderAccountSelections[$accountId] = [
             'name' => (string) $account['name'],
+            'billing_street' => filled($account['billing_street'] ?? null) ? (string) $account['billing_street'] : null,
             'billing_city' => filled($account['billing_city'] ?? null) ? (string) $account['billing_city'] : null,
+            'billing_state' => filled($account['billing_state'] ?? null) ? (string) $account['billing_state'] : null,
+            'billing_postal_code' => filled($account['billing_postal_code'] ?? null) ? (string) $account['billing_postal_code'] : null,
+            'phone' => filled($account['phone'] ?? null) ? (string) $account['phone'] : null,
             'cef_region' => filled($account['cef_region'] ?? null) ? (string) $account['cef_region'] : null,
         ];
     }
@@ -681,7 +685,11 @@ class ViewProject extends ViewRecord
                     'account_payload' => [
                         'Id' => $accountId,
                         'Name' => $account['name'],
+                        'BillingStreet' => $account['billing_street'],
                         'BillingCity' => $account['billing_city'],
+                        'BillingState' => $account['billing_state'],
+                        'BillingPostalCode' => $account['billing_postal_code'],
+                        'Phone' => $account['phone'],
                         'CEF_Region__c' => $account['cef_region'],
                     ],
                     'created_by_id' => auth()->id(),
@@ -789,7 +797,7 @@ class ViewProject extends ViewRecord
     }
 
     /**
-     * @return array<int, array{id: string, name: string, billing_city: string|null, cef_region: string|null}>
+     * @return array<int, array{id: string, name: string, billing_street: string|null, billing_city: string|null, billing_state: string|null, billing_postal_code: string|null, phone: string|null, cef_region: string|null}>
      */
     public function visibleTenderAccountSearchResults(): array
     {
@@ -1922,7 +1930,7 @@ class ViewProject extends ViewRecord
 
     public function canManageProjectTenders(): bool
     {
-        return $this->canEditProjectDetails();
+        return auth()->user()?->can('projects.manage-tenders') ?? false;
     }
 
     public function canCreateRevisions(): bool

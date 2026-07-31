@@ -5,7 +5,9 @@ namespace App\Services;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use ZipArchive;
 
 class PdfDownloadUrlService
 {
@@ -20,17 +22,123 @@ class PdfDownloadUrlService
     {
         $token = Str::random(48);
         $filename = $this->sanitizeFilename($pdf['filename']);
-        $path = $this->preparedPath($token);
 
+        return $this->registerFile(
+            path: $pdf['path'],
+            filename: $filename,
+            userId: $userId,
+            mimeType: 'application/pdf',
+            disposition: 'inline',
+            extension: 'pdf',
+            token: $token,
+        );
+    }
+
+    /**
+     * @param  array<int, string>  $tokens
+     */
+    public function registerZip(array $tokens, int $userId, string $filename): array
+    {
         $this->cleanupExpiredFiles();
-        File::ensureDirectoryExists(dirname($path));
-        File::copy($pdf['path'], $path);
-        File::delete($pdf['path']);
 
-        Cache::put($this->cacheKey($token), [
-            'path' => $path,
+        $downloads = collect($tokens)
+            ->map(fn (string $token): ?array => $this->metadata($token, $userId))
+            ->filter()
+            ->values();
+
+        abort_if($downloads->isEmpty(), 404);
+
+        $zipToken = Str::random(48);
+        $zipPath = $this->preparedPath($zipToken, 'zip');
+        File::ensureDirectoryExists(dirname($zipPath));
+
+        $zip = new ZipArchive;
+
+        if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            throw new RuntimeException('The quote ZIP file could not be created.');
+        }
+
+        $filesAdded = 0;
+
+        foreach ($downloads as $download) {
+            $path = (string) ($download['path'] ?? '');
+
+            if (! is_file($path)) {
+                continue;
+            }
+
+            $zip->addFile($path, $this->sanitizeFilename((string) ($download['filename'] ?? basename($path))));
+            $filesAdded++;
+        }
+
+        $zip->close();
+
+        if ($filesAdded === 0) {
+            File::delete($zipPath);
+
+            abort(404, 'The prepared quote PDFs are no longer available.');
+        }
+
+        $filename = $this->sanitizeFilename($filename);
+
+        Cache::put($this->cacheKey($zipToken), [
+            'path' => $zipPath,
             'filename' => $filename,
             'user_id' => $userId,
+            'mime_type' => 'application/zip',
+            'disposition' => 'attachment',
+        ], now()->addMinutes(self::TokenMinutes));
+
+        return [
+            'url' => route('pdf.downloads.show', [
+                'token' => $zipToken,
+                'filename' => $filename,
+            ]),
+            'filename' => $filename,
+            'token' => $zipToken,
+        ];
+    }
+
+    public function metadata(string $token, int $userId): ?array
+    {
+        abort_if(blank($token) || ! preg_match('/^[A-Za-z0-9]{48}$/', $token), 404);
+
+        $download = Cache::get($this->cacheKey($token));
+
+        if (! is_array($download) || ($download['user_id'] ?? null) !== $userId) {
+            return null;
+        }
+
+        return $download;
+    }
+
+    private function registerFile(
+        string $path,
+        string $filename,
+        int $userId,
+        string $mimeType,
+        string $disposition,
+        string $extension,
+        bool $deleteOriginal = true,
+        ?string $token = null,
+    ): array {
+        $token ??= Str::random(48);
+        $preparedPath = $this->preparedPath($token, $extension);
+
+        $this->cleanupExpiredFiles();
+        File::ensureDirectoryExists(dirname($preparedPath));
+        File::copy($path, $preparedPath);
+
+        if ($deleteOriginal) {
+            File::delete($path);
+        }
+
+        Cache::put($this->cacheKey($token), [
+            'path' => $preparedPath,
+            'filename' => $filename,
+            'user_id' => $userId,
+            'mime_type' => $mimeType,
+            'disposition' => $disposition,
         ], now()->addMinutes(self::TokenMinutes));
 
         return [
@@ -39,6 +147,7 @@ class PdfDownloadUrlService
                 'filename' => $filename,
             ]),
             'filename' => $filename,
+            'token' => $token,
         ];
     }
 
@@ -55,13 +164,15 @@ class PdfDownloadUrlService
 
         $path = (string) ($download['path'] ?? '');
         $filename = $this->sanitizeFilename((string) ($download['filename'] ?? 'luxquote.pdf'));
+        $mimeType = (string) ($download['mime_type'] ?? 'application/pdf');
+        $disposition = (string) ($download['disposition'] ?? 'inline');
 
         abort_unless(is_file($path), 404);
 
         return response()
             ->file($path, [
-                'Content-Type' => 'application/pdf',
-                'Content-Disposition' => 'inline; filename="'.$filename.'"',
+                'Content-Type' => $mimeType,
+                'Content-Disposition' => $disposition.'; filename="'.$filename.'"',
             ]);
     }
 
@@ -77,9 +188,9 @@ class PdfDownloadUrlService
         return $filename !== '' ? $filename : 'luxquote.pdf';
     }
 
-    private function preparedPath(string $token): string
+    private function preparedPath(string $token, string $extension): string
     {
-        return storage_path("app/pdf-downloads/{$token}.pdf");
+        return storage_path("app/pdf-downloads/{$token}.{$extension}");
     }
 
     private function cleanupExpiredFiles(): void

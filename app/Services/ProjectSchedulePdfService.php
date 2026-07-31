@@ -6,37 +6,56 @@ use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
+use App\Models\ProjectTender;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use RuntimeException;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\LaravelPdf\PdfBuilder;
+use Symfony\Component\Process\Process;
 use Throwable;
 
 class ProjectSchedulePdfService
 {
-    public function filename(Project $project, ProjectRevision $revision): string
+    /**
+     * @param  array<int, int>  $areaIds
+     */
+    public function filename(Project $project, ProjectRevision $revision, array $areaIds = []): string
     {
-        return $this->documentFilename('Lighting Schedule', $project, $revision);
+        return $this->documentFilename('Lighting Schedule', $project, $revision, null, $areaIds !== []);
     }
 
-    public function quoteFilename(Project $project, ProjectRevision $revision): string
+    /**
+     * @param  array<int, int>  $areaIds
+     */
+    public function quoteFilename(Project $project, ProjectRevision $revision, ?ProjectTender $tender = null, array $areaIds = []): string
     {
-        return $this->documentFilename('Lighting Quote', $project, $revision);
+        return $this->documentFilename('Lighting Quote', $project, $revision, $tender?->account_name, $areaIds !== []);
     }
 
-    public function salesforceScheduleFilename(Project $project, ProjectRevision $revision): string
+    /**
+     * @param  array<int, int>  $areaIds
+     */
+    public function salesforceScheduleFilename(Project $project, ProjectRevision $revision, array $areaIds = []): string
     {
-        return $this->stableDocumentFilename('Lighting Schedule', $project, $revision);
+        return $this->stableDocumentFilename('Lighting Schedule', $project, $revision, null, $areaIds !== []);
     }
 
-    public function salesforceQuoteFilename(Project $project, ProjectRevision $revision): string
+    /**
+     * @param  array<int, int>  $areaIds
+     */
+    public function salesforceQuoteFilename(Project $project, ProjectRevision $revision, ?ProjectTender $tender = null, array $areaIds = []): string
     {
-        return $this->stableDocumentFilename('Lighting Quote', $project, $revision);
+        return $this->stableDocumentFilename('Lighting Quote', $project, $revision, $tender?->account_name, $areaIds !== []);
     }
 
-    public function content(Project $project, ProjectRevision $revision): string
+    /**
+     * @param  array<int, int>  $areaIds
+     */
+    public function content(Project $project, ProjectRevision $revision, array $areaIds = []): string
     {
-        return $this->contentFromBuilder($this->builder($project, $revision));
+        return $this->contentFromBuilder($this->builder($project, $revision, 'schedule', $areaIds));
     }
 
     public function contentFromBuilder(PdfBuilder $builder): string
@@ -44,14 +63,22 @@ class ProjectSchedulePdfService
         return base64_decode($builder->base64(), true) ?: '';
     }
 
-    public function builder(Project $project, ProjectRevision $revision, string $documentType = 'schedule'): PdfBuilder
+    /**
+     * @param  array<int, int>  $areaIds
+     */
+    public function builder(Project $project, ProjectRevision $revision, string $documentType = 'schedule', array $areaIds = []): PdfBuilder
     {
-        $areas = ProjectArea::where('project_revision_id', $revision->id)
+        $areasQuery = ProjectArea::where('project_revision_id', $revision->id)
             ->with([
                 'lines' => fn ($query) => $query->orderBy('sort_order')->with('product'),
             ])
-            ->orderBy('sort_order')
-            ->get();
+            ->orderBy('sort_order');
+
+        if ($areaIds !== []) {
+            $areasQuery->whereIn('id', $areaIds);
+        }
+
+        $areas = $areasQuery->get();
 
         if ($documentType === 'quote') {
             $areas = $areas
@@ -99,7 +126,7 @@ class ProjectSchedulePdfService
             'revision' => $revision,
             'areas' => $areas,
             'documentType' => $documentType,
-            'documentTitle' => $documentType === 'quote' ? 'Lighting Quote' : 'Lighting Schedule',
+            'documentTitle' => $documentType === 'quote' ? 'Project Quotation' : 'Lighting Schedule',
             'showPrices' => $documentType === 'quote',
             'salesEngineerName' => $salesEngineer['name'] ?? null,
             'salesEngineerEmail' => $salesEngineer['email'] ?? $project->owner_email,
@@ -115,35 +142,77 @@ class ProjectSchedulePdfService
             ->format('A4');
     }
 
-    public function quoteBuilder(Project $project, ProjectRevision $revision): PdfBuilder
+    /**
+     * @param  array<int, int>  $areaIds
+     */
+    public function quoteBuilder(Project $project, ProjectRevision $revision, array $areaIds = []): PdfBuilder
     {
-        return $this->builder($project, $revision, 'quote');
+        return $this->builder($project, $revision, 'quote', $areaIds);
     }
 
-    public function quoteContent(Project $project, ProjectRevision $revision): string
+    /**
+     * @param  array<int, int>  $areaIds
+     */
+    public function quoteContent(Project $project, ProjectRevision $revision, ?ProjectTender $tender = null, bool $includeCover = true, array $areaIds = []): string
     {
-        return $this->contentFromBuilder($this->quoteBuilder($project, $revision));
+        $quoteContent = $this->contentFromBuilder($this->quoteBuilder($project, $revision, $areaIds));
+
+        if (! $includeCover) {
+            return $quoteContent;
+        }
+
+        return $this->prependQuoteCover(
+            coverContent: $this->quoteCoverContent($project, $revision, $tender),
+            quoteContent: $quoteContent,
+        );
     }
 
-    private function documentFilename(string $title, Project $project, ProjectRevision $revision): string
+    public function quoteCoverContent(Project $project, ProjectRevision $revision, ?ProjectTender $tender = null): string
+    {
+        return $this->contentFromBuilder($this->quoteCoverBuilder($project, $revision, $tender));
+    }
+
+    public function quoteCoverBuilder(Project $project, ProjectRevision $revision, ?ProjectTender $tender = null): PdfBuilder
+    {
+        return Pdf::view('pdfs.quote-cover', [
+            'project' => $project,
+            'revision' => $revision,
+            'contractor' => $this->quoteCoverContractor($project, $tender),
+            'salesEngineer' => $this->salesEngineerForProject($project),
+            'quoteDate' => now(),
+        ])
+            ->withBrowsershot(function ($browsershot): void {
+                $this->configureBrowsershot($browsershot);
+                $browsershot->noSandbox();
+            })
+            ->format('A4');
+    }
+
+    private function documentFilename(string $title, Project $project, ProjectRevision $revision, ?string $suffix = null, bool $byArea = false): string
     {
         return collect([
             $title,
             $project->reference_number ?? 'proj-'.$project->id,
             $revision->label(),
+            $byArea ? 'by-area' : null,
+            $suffix,
             now()->format('Ymd-His'),
         ])
+            ->filter(fn (?string $part): bool => filled($part))
             ->map(fn (string $part): string => $this->filenamePart($part))
             ->implode('-').'.pdf';
     }
 
-    private function stableDocumentFilename(string $title, Project $project, ProjectRevision $revision): string
+    private function stableDocumentFilename(string $title, Project $project, ProjectRevision $revision, ?string $suffix = null, bool $byArea = false): string
     {
         return collect([
             $title,
             $project->reference_number ?? 'proj-'.$project->id,
             $revision->label(),
+            $byArea ? 'by-area' : null,
+            $suffix,
         ])
+            ->filter(fn (?string $part): bool => filled($part))
             ->map(fn (string $part): string => $this->filenamePart($part))
             ->implode('-').'.pdf';
     }
@@ -153,8 +222,131 @@ class ProjectSchedulePdfService
         return trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-');
     }
 
+    private function prependQuoteCover(string $coverContent, string $quoteContent): string
+    {
+        $workingDirectory = storage_path('app/private/quote-cover-merge-temp/'.Str::uuid());
+        File::ensureDirectoryExists($workingDirectory);
+
+        $coverPath = $workingDirectory.'/cover.pdf';
+        $quotePath = $workingDirectory.'/quote.pdf';
+        $outputPath = $workingDirectory.'/merged.pdf';
+
+        try {
+            File::put($coverPath, $coverContent);
+            File::put($quotePath, $quoteContent);
+
+            $this->assertValidPdf($coverPath, 'The quote cover PDF could not be merged.');
+            $this->assertValidPdf($quotePath, 'The quote PDF could not be merged with the cover page.');
+            $this->merge([$coverPath, $quotePath], $outputPath);
+
+            return File::get($outputPath);
+        } finally {
+            File::deleteDirectory($workingDirectory);
+        }
+    }
+
     /**
-     * @return array{id: string, name: string|null, email: string|null}|null
+     * @return array{name: string|null, billing_street: string|null, billing_city: string|null, billing_state: string|null, billing_postal_code: string|null, phone: string|null}
+     */
+    private function quoteCoverContractor(Project $project, ?ProjectTender $tender = null): array
+    {
+        $tender ??= $project->tenders()
+            ->where('is_primary', true)
+            ->first()
+            ?? $project->tenders()->orderBy('id')->first();
+
+        if ($tender instanceof ProjectTender) {
+            $payload = $this->salesforceAccountPayloadForTender($project, $tender);
+            $cachedPayload = $tender->account_payload ?? [];
+
+            return [
+                'name' => $payload['Name'] ?? $tender->account_name,
+                'billing_street' => $payload['BillingStreet'] ?? $cachedPayload['BillingStreet'] ?? null,
+                'billing_city' => $payload['BillingCity'] ?? $tender->billing_city ?? $cachedPayload['BillingCity'] ?? null,
+                'billing_state' => $payload['BillingState'] ?? $cachedPayload['BillingState'] ?? null,
+                'billing_postal_code' => $payload['BillingPostalCode'] ?? $cachedPayload['BillingPostalCode'] ?? null,
+                'phone' => $payload['Phone'] ?? $cachedPayload['Phone'] ?? null,
+            ];
+        }
+
+        return [
+            'name' => $project->customer_name,
+            'billing_street' => null,
+            'billing_city' => $project->site_location,
+            'billing_state' => null,
+            'billing_postal_code' => null,
+            'phone' => null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function salesforceAccountPayloadForTender(Project $project, ProjectTender $tender): array
+    {
+        if (blank($tender->salesforce_account_id)) {
+            return $tender->account_payload ?? [];
+        }
+
+        try {
+            return app(SalesforceService::class)->fetchAccountById($tender->salesforce_account_id)
+                ?? $tender->account_payload
+                ?? [];
+        } catch (Throwable $exception) {
+            Log::warning('Salesforce Account lookup failed during quote cover generation', [
+                'project_id' => $project->id,
+                'project_reference' => $project->reference_number,
+                'salesforce_account_id' => $tender->salesforce_account_id,
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return $tender->account_payload ?? [];
+        }
+    }
+
+    /** @param array<int, string> $inputPaths */
+    private function merge(array $inputPaths, string $outputPath): void
+    {
+        $arguments = [$this->qpdfBinary(), '--empty', '--pages'];
+
+        foreach ($inputPaths as $inputPath) {
+            $arguments[] = $inputPath;
+            $arguments[] = '1-z';
+        }
+
+        $arguments[] = '--';
+        $arguments[] = $outputPath;
+
+        $process = new Process($arguments);
+        $process->setTimeout((float) config('document-packs.process_timeout_seconds', 60));
+        $process->run();
+
+        if (! in_array($process->getExitCode(), [0, 3], true) || ! File::isFile($outputPath)) {
+            File::delete($outputPath);
+
+            throw new RuntimeException('The quote PDF could not be merged with the cover page.');
+        }
+    }
+
+    private function assertValidPdf(string $path, string $message): void
+    {
+        $process = new Process([$this->qpdfBinary(), '--check', $path]);
+        $process->setTimeout((float) config('document-packs.process_timeout_seconds', 60));
+        $process->run();
+
+        if (! in_array($process->getExitCode(), [0, 3], true)) {
+            throw new RuntimeException($message);
+        }
+    }
+
+    private function qpdfBinary(): string
+    {
+        return (string) config('document-packs.qpdf_binary', 'qpdf');
+    }
+
+    /**
+     * @return array{id: string, name: string|null, first_name?: string|null, last_name?: string|null, email: string|null, title?: string|null, mobile_phone?: string|null}|null
      */
     private function salesEngineerForProject(Project $project): ?array
     {

@@ -1484,12 +1484,12 @@ class AdminProjectResourceTest extends TestCase
 
         $this->instance(ProjectSchedulePdfService::class, new class
         {
-            public function filename(Project $project, ProjectRevision $revision): string
+            public function filename(Project $project, ProjectRevision $revision, array $areaIds = []): string
             {
                 return 'schedule-PDF-REF-P0.pdf';
             }
 
-            public function builder(Project $project, ProjectRevision $revision): object
+            public function builder(Project $project, ProjectRevision $revision, string $documentType = 'schedule', array $areaIds = []): object
             {
                 return new class
                 {
@@ -1895,12 +1895,12 @@ class AdminProjectResourceTest extends TestCase
 
         $this->instance(ProjectSchedulePdfService::class, new class
         {
-            public function filename(Project $project, ProjectRevision $revision): string
+            public function filename(Project $project, ProjectRevision $revision, array $areaIds = []): string
             {
                 return 'schedule-DS-001-P0.pdf';
             }
 
-            public function builder(Project $project, ProjectRevision $revision): object
+            public function builder(Project $project, ProjectRevision $revision, string $documentType = 'schedule', array $areaIds = []): object
             {
                 return new class
                 {
@@ -2007,7 +2007,7 @@ class AdminProjectResourceTest extends TestCase
 
         $this->instance(ProjectSchedulePdfService::class, new class
         {
-            public function quoteFilename(Project $project, ProjectRevision $revision): string
+            public function quoteFilename(Project $project, ProjectRevision $revision, mixed $tender = null, array $areaIds = []): string
             {
                 return 'quote-QDS-001-P0.pdf';
             }
@@ -2026,6 +2026,11 @@ class AdminProjectResourceTest extends TestCase
                         return response('fake quote pdf');
                     }
                 };
+            }
+
+            public function quoteContent(Project $project, ProjectRevision $revision, mixed $tender = null, bool $includeCover = true, array $areaIds = []): string
+            {
+                return AdminProjectResourceTest::pdfFixtureContent();
             }
 
             public function contentFromBuilder(object $builder): string
@@ -2247,7 +2252,7 @@ class AdminProjectResourceTest extends TestCase
 
         $this->instance(ProjectSchedulePdfService::class, new class
         {
-            public function quoteFilename(Project $project, ProjectRevision $revision): string
+            public function quoteFilename(Project $project, ProjectRevision $revision, mixed $tender = null, array $areaIds = []): string
             {
                 return 'quote-QUOTE-REF-P0.pdf';
             }
@@ -2266,6 +2271,11 @@ class AdminProjectResourceTest extends TestCase
                         return response('fake quote pdf');
                     }
                 };
+            }
+
+            public function quoteContent(Project $project, ProjectRevision $revision, mixed $tender = null, bool $includeCover = true, array $areaIds = []): string
+            {
+                return AdminProjectResourceTest::pdfFixtureContent();
             }
 
             public function contentFromBuilder(object $builder): string

@@ -66,7 +66,7 @@ trait HasProjectSubNav
     }
 
     /**
-     * @return array{id: string, name: string|null, email: string|null}|null
+     * @return array{id: string, name: string|null, first_name?: string|null, last_name?: string|null, email: string|null, title?: string|null, mobile_phone?: string|null}|null
      */
     private function salesforceOwnerForHeader(): ?array
     {

@@ -92,6 +92,7 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Create projects | x | x |  |  | x |
 | Edit project details | x | x |  |  | x |
 | Edit project areas / line items | x | x |  | x | x |
+| Manage project tenders | x | x |  | x | x |
 | Create project revisions | x | x |  |  | x |
 | View project history | x | x | x | x | x |
 | View global history | x |  |  |  | x |
@@ -111,6 +112,7 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Produce quote | x |  | x |  | x |
 | Manage document packs | x | x | x | x | x |
 | Produce document packs | x | x | x | x | x |
+| View output history | x | x | x | x | x |
 | Request quote approval | x |  | x |  | x |
 | View products list page | x |  |  |  | x |
 | Import / fetch products | x |  |  |  |  |
@@ -129,6 +131,7 @@ Document packs deliberately separate editing from output:
 
 - `output.manage-document-packs` allows a user to create, rename, reorder, update, and delete packs, uploaded Custom PDFs, and template/generated pack entries.
 - `output.produce-document-packs` allows a user to request the merged PDF download.
+- `output.history.view` allows a user to see the Output page History tab and regenerate previously generated Quote/Schedule PDFs from the logged output options.
 
 These permissions do not bypass the permissions of generated contents:
 
@@ -189,7 +192,7 @@ Project visibility supports:
 
 ## Project Tenders
 
-Project Tenders are local links between a Project and Salesforce contractor Accounts that may tender for the project. The project page **Tenders** modal is visible from the project page, while adding or removing tender Accounts uses the existing `projects.update-details` permission and repeats that guard server-side.
+Project Tenders are local links between a Project and Salesforce contractor Accounts that may tender for the project. The project page **Tenders** modal is visible from the project page, while adding, removing, and choosing a primary tender Account uses `projects.manage-tenders` and repeats that guard server-side.
 
 The first implementation stores Salesforce Account ID and Account name locally in `project_tenders`. It only reads Salesforce `Account` records; it does not create, update, or delete Salesforce `Tender__c` records yet.
 

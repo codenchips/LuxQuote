@@ -14,6 +14,15 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/projects/{project}/pdf/quote', [ProjectPdfController::class, 'quote'])
         ->name('projects.pdf.quote');
 
+    Route::post('/projects/{project}/pdf/quote/prepare', [ProjectPdfController::class, 'prepareQuote'])
+        ->name('projects.pdf.quote.prepare');
+
+    Route::post('/projects/{project}/pdf/quote/datasheets/prepare', [ProjectPdfController::class, 'prepareQuoteDatasheets'])
+        ->name('projects.pdf.quote.datasheets.prepare');
+
+    Route::post('/projects/{project}/pdf/quote/zip', [ProjectPdfController::class, 'zipPreparedQuotes'])
+        ->name('projects.pdf.quote.zip');
+
     Route::get('/pdf-progress/{token}', [ProjectPdfController::class, 'progress'])
         ->name('pdf.progress');
 

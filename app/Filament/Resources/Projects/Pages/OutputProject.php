@@ -9,8 +9,10 @@ use App\Enums\ProjectStatus;
 use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ActivityLog;
+use App\Models\ActivityLogArchive;
 use App\Models\DocumentPack;
 use App\Models\DocumentPackItem;
+use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
 use App\Services\DocumentPackPdfService;
@@ -73,6 +75,12 @@ class OutputProject extends ViewRecord
     public bool $includeQuoteDatasheets = false;
 
     public bool $includeScheduleDatasheets = false;
+
+    public string $outputHistorySearch = '';
+
+    public int $outputHistoryPage = 1;
+
+    public int $outputHistoryPerPage = 10;
 
     public function mount(int|string $record): void
     {
@@ -147,6 +155,218 @@ class OutputProject extends ViewRecord
         }
 
         return route('projects.pdf.quote', $parameters);
+    }
+
+    public function getPreparedQuoteUrl(): string
+    {
+        abort_unless($this->canProduceQuote(), 403);
+
+        return route('projects.pdf.quote.prepare', [
+            'project' => $this->record,
+            'revision' => $this->record->active_revision_id,
+        ]);
+    }
+
+    public function getPreparedQuoteDatasheetsUrl(): string
+    {
+        abort_unless($this->canProduceQuote(), 403);
+
+        return route('projects.pdf.quote.datasheets.prepare', [
+            'project' => $this->record,
+            'revision' => $this->record->active_revision_id,
+        ]);
+    }
+
+    public function getPreparedQuoteZipUrl(): string
+    {
+        abort_unless($this->canProduceQuote(), 403);
+
+        return route('projects.pdf.quote.zip', [
+            'project' => $this->record,
+            'revision' => $this->record->active_revision_id,
+        ]);
+    }
+
+    /**
+     * @return array<int, array{id: int, name: string, items: int, qty: int, price: string|null, net: string|null}>
+     */
+    public function outputAreaOptions(): array
+    {
+        $canViewPricing = auth()->user()?->can('pricing.view') ?? false;
+
+        return ProjectArea::where('project_revision_id', $this->record->active_revision_id)
+            ->with(['lines' => fn ($query) => $query->orderBy('sort_order')])
+            ->orderBy('sort_order')
+            ->get()
+            ->map(fn (ProjectArea $area): array => [
+                'id' => $area->id,
+                'name' => $area->name,
+                'items' => $area->lines->count(),
+                'qty' => (int) $area->line_total_qty,
+                'price' => $canViewPricing ? '£'.number_format($area->line_total, 2) : null,
+                'net' => $canViewPricing && $this->record->has_cover
+                    ? '£'.number_format($area->lines->sum(fn (ProjectLine $line): float => $line->netLineTotalForProject($this->record)), 2)
+                    : null,
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{id: int, name: string, city: string|null, is_primary: bool}>
+     */
+    public function quoteTenderOptions(): array
+    {
+        return $this->record->tenders()
+            ->orderByDesc('is_primary')
+            ->orderBy('account_name')
+            ->get()
+            ->map(fn ($tender): array => [
+                'id' => $tender->id,
+                'name' => $tender->account_name,
+                'city' => $tender->billing_city,
+                'is_primary' => (bool) $tender->is_primary,
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{user: string, revision: string, type: string, type_classes: string, scope: string, included_datasheets: bool, tender: string|null, filename: string, generated_at: string, regenerate_url: string|null}>
+     */
+    public function outputHistoryRows(): array
+    {
+        $rows = $this->filteredOutputHistoryRows();
+        $page = $this->outputHistoryCurrentPage();
+
+        return array_slice($rows, ($page - 1) * $this->outputHistoryPerPage, $this->outputHistoryPerPage);
+    }
+
+    public function outputHistoryTotalRows(): int
+    {
+        return count($this->filteredOutputHistoryRows());
+    }
+
+    public function outputHistoryTotalPages(): int
+    {
+        return max(1, (int) ceil($this->outputHistoryTotalRows() / $this->outputHistoryPerPage));
+    }
+
+    public function outputHistoryCurrentPage(): int
+    {
+        return min(max(1, $this->outputHistoryPage), $this->outputHistoryTotalPages());
+    }
+
+    public function updatedOutputHistorySearch(): void
+    {
+        $this->outputHistoryPage = 1;
+    }
+
+    public function previousOutputHistoryPage(): void
+    {
+        $this->outputHistoryPage = max(1, $this->outputHistoryPage - 1);
+    }
+
+    public function nextOutputHistoryPage(): void
+    {
+        $this->outputHistoryPage = min($this->outputHistoryTotalPages(), $this->outputHistoryPage + 1);
+    }
+
+    /**
+     * @return array<int, array{user: string, revision: string, type: string, type_classes: string, scope: string, included_datasheets: bool, tender: string|null, filename: string, generated_at: string, regenerate_url: string|null}>
+     */
+    private function filteredOutputHistoryRows(): array
+    {
+        $rows = $this->allOutputHistoryRows();
+        $search = Str::of($this->outputHistorySearch)->lower()->squish()->toString();
+
+        if ($search === '') {
+            return $rows;
+        }
+
+        return collect($rows)
+            ->filter(function (array $row) use ($search): bool {
+                $haystack = Str::of(implode(' ', [
+                    $row['user'],
+                    $row['revision'],
+                    $row['type'],
+                    $row['scope'],
+                    $row['tender'] ?? '',
+                    $row['included_datasheets'] ? 'datasheets yes included' : 'datasheets no',
+                    $row['filename'],
+                    $row['generated_at'],
+                ]))->lower()->toString();
+
+                return str_contains($haystack, $search);
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{user: string, revision: string, type: string, type_classes: string, scope: string, included_datasheets: bool, tender: string|null, filename: string, generated_at: string, regenerate_url: string|null}>
+     */
+    private function allOutputHistoryRows(): array
+    {
+        if (! $this->canViewOutputHistory()) {
+            return [];
+        }
+
+        $revisions = $this->record->revisions()
+            ->get(['id', 'revision_number'])
+            ->keyBy('revision_number');
+
+        $liveLogs = ActivityLog::query()
+            ->where('project_id', $this->record->id)
+            ->whereIn('action_type', ['quote_pdf.generated', 'schedule_pdf.generated'])
+            ->with('user:id,name,email')
+            ->latest()
+            ->limit(100)
+            ->get();
+
+        $archivedLogs = ActivityLogArchive::query()
+            ->where('project_id', $this->record->id)
+            ->whereIn('action_type', ['quote_pdf.generated', 'schedule_pdf.generated'])
+            ->with('user:id,name,email')
+            ->latest('created_at')
+            ->limit(100)
+            ->get();
+
+        return $liveLogs
+            ->concat($archivedLogs)
+            ->sortByDesc('created_at')
+            ->take(100)
+            ->values()
+            ->map(function (ActivityLog|ActivityLogArchive $log) use ($revisions): array {
+                $payload = $log->payload ?? [];
+                $isQuote = $log->action_type === 'quote_pdf.generated';
+                $revisionNumber = (int) ($payload['revision_number'] ?? $log->revision_number ?? 0);
+                $revision = $revisions->get($revisionNumber);
+                $areaIds = collect($payload['area_ids'] ?? [])
+                    ->map(fn (mixed $areaId): int => (int) $areaId)
+                    ->filter(fn (int $areaId): bool => $areaId > 0)
+                    ->values()
+                    ->all();
+                $areaCount = $areaIds === []
+                    ? null
+                    : (int) ($payload['area_count'] ?? count($areaIds));
+
+                return [
+                    'user' => $log->user?->name ?: Str::before($log->user_email_snapshot, '@'),
+                    'revision' => (string) ($payload['revision_label'] ?? ($revision?->label() ?? ProjectRevision::labelForNumber($revisionNumber))),
+                    'type' => $isQuote ? 'Quote' : 'Schedule',
+                    'type_classes' => $isQuote
+                        ? 'border-sky-500/30 bg-sky-500/15 text-sky-200'
+                        : 'border-emerald-500/30 bg-emerald-500/15 text-emerald-200',
+                    'scope' => $areaCount === null ? 'Full Project' : $areaCount.' '.Str::plural('Area', $areaCount),
+                    'included_datasheets' => (bool) ($payload['include_datasheets'] ?? str_contains((string) ($payload['filename'] ?? ''), 'with-datasheets')),
+                    'tender' => filled($payload['tender_account_name'] ?? null)
+                        ? (string) $payload['tender_account_name']
+                        : (filled($payload['tender'] ?? null) ? (string) $payload['tender'] : null),
+                    'filename' => (string) ($payload['filename'] ?? ''),
+                    'generated_at' => $this->formatOutputHistoryDate($log->created_at),
+                    'regenerate_url' => $this->outputHistoryRegenerateUrl($log, $revision?->id, $areaIds),
+                ];
+            })
+            ->all();
     }
 
     public function getCsvExportUrl(): string
@@ -753,6 +973,60 @@ class OutputProject extends ViewRecord
         return $this->generationRevision();
     }
 
+    /**
+     * @param  array<int, int>  $areaIds
+     */
+    private function outputHistoryRegenerateUrl(ActivityLog|ActivityLogArchive $log, ?int $revisionId, array $areaIds): ?string
+    {
+        $payload = $log->payload ?? [];
+        $isQuote = $log->action_type === 'quote_pdf.generated';
+
+        if ($isQuote && ! $this->canProduceQuote()) {
+            return null;
+        }
+
+        if (! $isQuote && ! $this->canProduceUnpricedSchedule()) {
+            return null;
+        }
+
+        $parameters = [
+            'project' => $this->record,
+            'revision' => $revisionId ?? (int) $this->record->active_revision_id,
+            'salesforce_upload' => false,
+        ];
+
+        if ((bool) ($payload['include_datasheets'] ?? false)) {
+            $parameters['include_datasheets'] = true;
+        }
+
+        if ($areaIds !== []) {
+            $parameters['area_ids'] = $areaIds;
+        }
+
+        if ($isQuote) {
+            if (filled($payload['tender_id'] ?? null)) {
+                $parameters['tender_id'] = (int) $payload['tender_id'];
+            }
+
+            if (array_key_exists('include_cover', $payload)) {
+                $parameters['include_cover'] = (bool) $payload['include_cover'];
+            }
+
+            return route('projects.pdf.quote', $parameters);
+        }
+
+        return route('projects.pdf.schedule', $parameters);
+    }
+
+    private function formatOutputHistoryDate(mixed $date): string
+    {
+        if ($date === null) {
+            return '';
+        }
+
+        return Carbon::parse($date)->format('M d Y H:i');
+    }
+
     public function activeRevision(): ProjectRevision
     {
         return $this->record->activeRevision;
@@ -816,6 +1090,11 @@ class OutputProject extends ViewRecord
     public function canProduceDocumentPacks(): bool
     {
         return auth()->user()?->can('output.produce-document-packs') ?? false;
+    }
+
+    public function canViewOutputHistory(): bool
+    {
+        return auth()->user()?->can('output.history.view') ?? false;
     }
 
     /**

@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
+use App\Models\ProjectTender;
 use App\Models\SalesforcePdfUpload;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use JsonException;
@@ -21,18 +22,29 @@ class SalesforcePdfUploadTracker
         string $documentType,
         bool $showPrices,
         bool $includeDatasheets = false,
+        bool $includeCover = true,
+        ?ProjectTender $tender = null,
+        array $areaIds = [],
     ): string {
-        $areas = ProjectArea::where('project_revision_id', $revision->id)
+        $areasQuery = ProjectArea::where('project_revision_id', $revision->id)
             ->with(['lines' => fn ($query) => $query->orderBy('sort_order')])
-            ->orderBy('sort_order')
-            ->get();
+            ->orderBy('sort_order');
+
+        if ($areaIds !== []) {
+            $areasQuery->whereIn('id', $areaIds);
+        }
+
+        $areas = $areasQuery->get();
 
         $payload = [
-            'version' => 3,
+            'version' => 5,
             'document_type' => $documentType,
             'show_prices' => $showPrices,
             'include_datasheets' => $includeDatasheets,
+            'include_cover' => $documentType === 'quote' ? $includeCover : false,
+            'area_ids' => $areaIds,
             'template_hash' => $this->templateHash(),
+            'quote_cover_template_hash' => $documentType === 'quote' && $includeCover ? $this->quoteCoverTemplateHash() : null,
             'legal_page_hash' => $this->legalPageHash(),
             'project' => [
                 'id' => $project->id,
@@ -49,6 +61,9 @@ class SalesforcePdfUploadTracker
                 'cover_2' => $showPrices ? $project->cover_2 : null,
                 'cover_3' => $showPrices ? $project->cover_3 : null,
             ],
+            'quote_cover' => $documentType === 'quote' && $includeCover ? [
+                'tender' => $this->quoteCoverTenderPayload($project, $tender),
+            ] : null,
             'revision' => [
                 'id' => $revision->id,
                 'revision_number' => $revision->revision_number,
@@ -106,11 +121,42 @@ class SalesforcePdfUploadTracker
         return is_file($path) ? sha1_file($path) ?: null : null;
     }
 
+    private function quoteCoverTemplateHash(): ?string
+    {
+        $path = resource_path('views/pdfs/quote-cover.blade.php');
+
+        return is_file($path) ? sha1_file($path) ?: null : null;
+    }
+
     private function legalPageHash(): ?string
     {
         $path = (string) config('document-packs.legal_page_pdf');
 
         return is_file($path) ? sha1_file($path) ?: null : null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function quoteCoverTenderPayload(Project $project, ?ProjectTender $tender = null): ?array
+    {
+        $tender ??= $project->tenders()
+            ->where('is_primary', true)
+            ->first()
+            ?? $project->tenders()->orderBy('id')->first();
+
+        if ($tender === null) {
+            return null;
+        }
+
+        return [
+            'salesforce_account_id' => $tender->salesforce_account_id,
+            'account_name' => $tender->account_name,
+            'billing_city' => $tender->billing_city,
+            'account_payload' => collect($tender->account_payload ?? [])
+                ->only(['Name', 'BillingStreet', 'BillingCity', 'BillingState', 'BillingPostalCode', 'Phone'])
+                ->all(),
+        ];
     }
 
     /**

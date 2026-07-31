@@ -8,6 +8,7 @@ enum PermissionKey: string
     case ProjectsCreate = 'projects.create';
     case ProjectsUpdateDetails = 'projects.update-details';
     case ProjectsUpdateLines = 'projects.update-lines';
+    case ProjectsManageTenders = 'projects.manage-tenders';
     case RevisionsCreate = 'revisions.create';
     case ProjectHistoryView = 'project-history.view';
     case ActivityLogView = 'activity-log.view';
@@ -24,6 +25,7 @@ enum PermissionKey: string
     case OutputProduceQuote = 'output.produce-quote';
     case OutputManageDocumentPacks = 'output.manage-document-packs';
     case OutputProduceDocumentPacks = 'output.produce-document-packs';
+    case OutputHistoryView = 'output.history.view';
     case QuoteApprovalRequest = 'quote-approval.request';
     case PricingView = 'pricing.view';
     case PricingUpdate = 'pricing.update';
@@ -46,6 +48,7 @@ enum PermissionKey: string
             self::ProjectsCreate => 'Create projects',
             self::ProjectsUpdateDetails => 'Edit project details',
             self::ProjectsUpdateLines => 'Edit project areas / line items',
+            self::ProjectsManageTenders => 'Manage project tenders',
             self::RevisionsCreate => 'Create project revisions',
             self::ProjectHistoryView => 'View project history',
             self::ActivityLogView => 'View global history',
@@ -62,6 +65,7 @@ enum PermissionKey: string
             self::OutputProduceQuote => 'Produce quote',
             self::OutputManageDocumentPacks => 'Manage document packs',
             self::OutputProduceDocumentPacks => 'Produce document packs',
+            self::OutputHistoryView => 'View output history',
             self::QuoteApprovalRequest => 'Request quote approval',
             self::PricingView => 'View prices',
             self::PricingUpdate => 'Edit prices',
@@ -85,7 +89,8 @@ enum PermissionKey: string
             self::ProjectsView,
             self::ProjectsCreate,
             self::ProjectsUpdateDetails,
-            self::ProjectsUpdateLines => 'Projects',
+            self::ProjectsUpdateLines,
+            self::ProjectsManageTenders => 'Projects',
 
             self::RevisionsCreate,
             self::RevisionsApprove,
@@ -104,6 +109,7 @@ enum PermissionKey: string
             self::OutputProduceQuote,
             self::OutputManageDocumentPacks,
             self::OutputProduceDocumentPacks,
+            self::OutputHistoryView,
             self::QuoteApprovalRequest => 'Output',
 
             self::PricingView,
@@ -132,6 +138,8 @@ enum PermissionKey: string
             self::PricingView => 'Global switch for price columns and price-based outputs.',
             self::PricingUpdate => 'Allows changing project line prices. Requires price visibility.',
             self::CoverUpdate => 'Allows changing project and line-level cover percentages.',
+            self::ProjectsManageTenders => 'Allows adding, removing, and choosing primary contractor tenders for a project.',
+            self::OutputHistoryView => 'Allows viewing and regenerating previously generated project quote and schedule outputs.',
             self::SalesforceManagePush => 'Allows pausing and resuming outbound Salesforce writes while keeping Salesforce project import/search available.',
             self::TeamsManage => 'Allows creating, editing, deleting, and assigning users to teams.',
             self::PermissionsManage => 'Allows managing permission groups and viewing the permission catalogue.',
@@ -158,12 +166,14 @@ enum PermissionKey: string
                     self::ProjectsCreate,
                     self::ProjectsUpdateDetails,
                     self::ProjectsUpdateLines,
+                    self::ProjectsManageTenders,
                     self::RevisionsCreate,
                     self::ProjectHistoryView,
                     self::OutputView,
                     self::OutputProduceUnpricedSchedule,
                     self::OutputManageDocumentPacks,
                     self::OutputProduceDocumentPacks,
+                    self::OutputHistoryView,
                 ],
             ],
             'sales' => [
@@ -179,6 +189,7 @@ enum PermissionKey: string
                     self::OutputProduceQuote,
                     self::OutputManageDocumentPacks,
                     self::OutputProduceDocumentPacks,
+                    self::OutputHistoryView,
                     self::QuoteApprovalRequest,
                     self::PricingView,
                     self::PricingUpdate,
@@ -191,6 +202,7 @@ enum PermissionKey: string
                 'permissions' => [
                     self::ProjectsView,
                     self::ProjectsUpdateLines,
+                    self::ProjectsManageTenders,
                     self::ProjectHistoryView,
                     self::ValidationView,
                     self::ValidationRun,
@@ -201,6 +213,7 @@ enum PermissionKey: string
                     self::OutputProduceUnpricedSchedule,
                     self::OutputManageDocumentPacks,
                     self::OutputProduceDocumentPacks,
+                    self::OutputHistoryView,
                 ],
             ],
             'manager' => [
@@ -211,6 +224,7 @@ enum PermissionKey: string
                     self::ProjectsCreate,
                     self::ProjectsUpdateDetails,
                     self::ProjectsUpdateLines,
+                    self::ProjectsManageTenders,
                     self::RevisionsCreate,
                     self::ProjectHistoryView,
                     self::ActivityLogView,
@@ -227,6 +241,7 @@ enum PermissionKey: string
                     self::OutputProduceQuote,
                     self::OutputManageDocumentPacks,
                     self::OutputProduceDocumentPacks,
+                    self::OutputHistoryView,
                     self::QuoteApprovalRequest,
                     self::PricingView,
                     self::PricingUpdate,

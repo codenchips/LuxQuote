@@ -6,6 +6,7 @@ use App\Enums\ProjectRevisionStatus;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectRevision;
+use App\Models\ProjectTender;
 use App\Services\PdfDownloadUrlService;
 use App\Services\ProjectDatasheetPdfService;
 use App\Services\ProjectLegalPdfService;
@@ -35,10 +36,11 @@ class ProjectPdfController extends Controller
 
         $user = $request->user();
         $revision = $this->resolveRevision($request, $project);
+        $areaIds = $this->resolveSelectedAreaIds($request, $revision);
 
         $pdf = app(ProjectSchedulePdfService::class);
-        $filename = $pdf->filename($project, $revision);
-        $builder = $pdf->builder($project, $revision);
+        $filename = $pdf->filename($project, $revision, $areaIds);
+        $builder = $pdf->builder($project, $revision, 'schedule', $areaIds);
         $legalPdf = $this->legalPdf(
             pdfContent: fn (): string => $pdf->contentFromBuilder($builder),
             filename: $filename,
@@ -55,6 +57,7 @@ class ProjectPdfController extends Controller
                 revision: $revision,
                 pdfContent: fn (): string => $pdfContent,
                 filename: $filename,
+                areaIds: $areaIds,
             );
 
             if ($datasheetPdf !== null) {
@@ -63,11 +66,11 @@ class ProjectPdfController extends Controller
                 $pdfContent = app(ProjectDatasheetPdfService::class)->content($datasheetPdf['path']);
             }
 
-            if ($this->shouldUploadSchedulePdfToSalesforce($project)) {
+            if ($this->shouldUploadSchedulePdfToSalesforce($request, $project)) {
                 $salesforceNotification = $this->uploadPdfToSalesforce(
                     project: $project,
                     revision: $revision,
-                    filename: $pdf->salesforceScheduleFilename($project, $revision),
+                    filename: $pdf->salesforceScheduleFilename($project, $revision, $areaIds),
                     pdfContent: $pdfContent,
                     documentLabel: 'Lighting Schedule',
                     documentType: 'schedule',
@@ -77,6 +80,9 @@ class ProjectPdfController extends Controller
                         'schedule',
                         false,
                         $request->boolean('include_datasheets'),
+                        false,
+                        null,
+                        $areaIds,
                     ),
                 );
             }
@@ -88,7 +94,12 @@ class ProjectPdfController extends Controller
                 'user_email_snapshot' => $user->email,
                 'project_name_snapshot' => $project->name,
                 'revision_number' => $revision->revision_number,
-                'payload' => [
+                'payload' => $this->pdfActivityPayload(
+                    filename: $filename,
+                    revision: $revision,
+                    includeDatasheets: $request->boolean('include_datasheets'),
+                    areaIds: $areaIds,
+                ) + [
                     'filename' => $filename,
                 ],
             ]);
@@ -117,6 +128,7 @@ class ProjectPdfController extends Controller
         );
 
         $revision = $this->resolveRevision($request, $project);
+        $areaIds = $this->resolveSelectedAreaIds($request, $revision);
 
         abort_unless(
             $revision->validated && $revision->status === ProjectRevisionStatus::Approved,
@@ -125,46 +137,34 @@ class ProjectPdfController extends Controller
         );
 
         $pdf = app(ProjectSchedulePdfService::class);
-        $filename = $pdf->quoteFilename($project, $revision);
-        $builder = $pdf->quoteBuilder($project, $revision);
-        $legalPdf = $this->legalPdf(
-            pdfContent: fn (): string => $pdf->contentFromBuilder($builder),
-            filename: $filename,
-        );
         $salesforceNotification = null;
+        $quotePdf = $this->quotePdf(
+            request: $request,
+            project: $project,
+            revision: $revision,
+            tender: $tender = $this->resolveQuoteTender($request, $project),
+            includeCover: $includeCover = $request->boolean('include_cover', true),
+            areaIds: $areaIds,
+        );
 
         try {
-            $filename = $legalPdf['filename'];
-            $pdfContent = app(ProjectLegalPdfService::class)->content($legalPdf['path']);
-
-            $datasheetPdf = $this->datasheetPdf(
-                request: $request,
-                project: $project,
-                revision: $revision,
-                pdfContent: fn (): string => $pdfContent,
-                filename: $filename,
-            );
-
-            if ($datasheetPdf !== null) {
-                app(ProjectLegalPdfService::class)->delete($legalPdf['path']);
-                $filename = $datasheetPdf['filename'];
-                $pdfContent = app(ProjectDatasheetPdfService::class)->content($datasheetPdf['path']);
-            }
-
             if ($this->shouldUploadPdfToSalesforce($request, $project)) {
                 $salesforceNotification = $this->uploadPdfToSalesforce(
                     project: $project,
                     revision: $revision,
-                    filename: $pdf->salesforceQuoteFilename($project, $revision),
-                    pdfContent: $pdfContent,
+                    filename: $pdf->salesforceQuoteFilename($project, $revision, $includeCover ? $tender : null, $areaIds),
+                    pdfContent: $quotePdf['content'],
                     documentLabel: 'Lighting Quote',
-                    documentType: 'quote',
+                    documentType: $this->quoteSalesforceDocumentType($tender, $includeCover),
                     fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint(
                         $project,
                         $revision,
                         'quote',
                         true,
                         $request->boolean('include_datasheets'),
+                        $includeCover,
+                        $includeCover ? $tender : null,
+                        $areaIds,
                     ),
                 );
             }
@@ -176,23 +176,171 @@ class ProjectPdfController extends Controller
                 'user_email_snapshot' => $request->user()->email,
                 'project_name_snapshot' => $project->name,
                 'revision_number' => $revision->revision_number,
-                'payload' => [
-                    'filename' => $filename,
+                'payload' => $this->pdfActivityPayload(
+                    filename: $quotePdf['pdf']['filename'],
+                    revision: $revision,
+                    includeDatasheets: $request->boolean('include_datasheets'),
+                    areaIds: $areaIds,
+                    tender: $tender,
+                    includeCover: $includeCover,
+                ) + [
+                    'filename' => $quotePdf['pdf']['filename'],
                 ],
             ]);
 
             $project->markQuoted($revision);
 
-            if ($datasheetPdf !== null) {
-                return $this->respondWithPdf($request, $datasheetPdf, $salesforceNotification);
-            }
-
-            return $this->respondWithPdf($request, $legalPdf, $salesforceNotification);
+            return $this->respondWithPdf($request, $quotePdf['pdf'], $salesforceNotification);
         } catch (Throwable $exception) {
-            app(ProjectLegalPdfService::class)->delete($legalPdf['path']);
+            app(ProjectLegalPdfService::class)->delete($quotePdf['pdf']['path']);
 
             throw $exception;
         }
+    }
+
+    public function prepareQuote(Request $request, Project $project, PdfDownloadUrlService $downloads): JsonResponse
+    {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless(
+            $request->user()->can('pricing.view') && $request->user()->can('output.produce-quote'),
+            403,
+        );
+
+        $revision = $this->resolveRevision($request, $project);
+        $areaIds = $this->resolveSelectedAreaIds($request, $revision);
+
+        abort_unless(
+            $revision->validated && $revision->status === ProjectRevisionStatus::Approved,
+            403,
+            'Quote PDF requires validation passed and quote approved.',
+        );
+
+        $tender = $this->resolveQuoteTender($request, $project);
+        $includeCover = $request->boolean('include_cover', $tender !== null);
+        $quotePdf = $this->quotePdf(
+            request: $request,
+            project: $project,
+            revision: $revision,
+            tender: $tender,
+            includeCover: $includeCover,
+            preparedDatasheetsPath: $this->preparedDatasheetsPath($request, $downloads),
+            areaIds: $areaIds,
+        );
+
+        if ($this->shouldUploadPdfToSalesforce($request, $project)) {
+            $pdf = app(ProjectSchedulePdfService::class);
+
+            $this->uploadPdfToSalesforce(
+                project: $project,
+                revision: $revision,
+                filename: $pdf->salesforceQuoteFilename($project, $revision, $includeCover ? $tender : null, $areaIds),
+                pdfContent: $quotePdf['content'],
+                documentLabel: 'Lighting Quote',
+                documentType: $this->quoteSalesforceDocumentType($tender, $includeCover),
+                fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint(
+                    $project,
+                    $revision,
+                    'quote',
+                    true,
+                    $request->boolean('include_datasheets'),
+                    $includeCover,
+                    $includeCover ? $tender : null,
+                    $areaIds,
+                ),
+            );
+        }
+
+        ActivityLog::create([
+            'user_id' => $request->user()->id,
+            'project_id' => $project->id,
+            'action_type' => 'quote_pdf.generated',
+            'user_email_snapshot' => $request->user()->email,
+            'project_name_snapshot' => $project->name,
+            'revision_number' => $revision->revision_number,
+            'payload' => $this->pdfActivityPayload(
+                filename: $quotePdf['pdf']['filename'],
+                revision: $revision,
+                includeDatasheets: $request->boolean('include_datasheets'),
+                areaIds: $areaIds,
+                tender: $tender,
+                includeCover: $includeCover,
+            ) + [
+                'filename' => $quotePdf['pdf']['filename'],
+                'tender' => $tender?->account_name,
+            ],
+        ]);
+
+        $project->markQuoted($revision);
+
+        return response()->json($downloads->register($quotePdf['pdf'], $request->user()->id));
+    }
+
+    public function prepareQuoteDatasheets(Request $request, Project $project, PdfDownloadUrlService $downloads): JsonResponse
+    {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless(
+            $request->user()->can('pricing.view') && $request->user()->can('output.produce-quote'),
+            403,
+        );
+
+        $revision = $this->resolveRevision($request, $project);
+        $areaIds = $this->resolveSelectedAreaIds($request, $revision);
+
+        abort_unless(
+            $revision->validated && $revision->status === ProjectRevisionStatus::Approved,
+            403,
+            'Quote PDF requires validation passed and quote approved.',
+        );
+
+        $filename = collect([
+            'Lighting Quote Datasheets',
+            $project->reference_number ?? 'proj-'.$project->id,
+            $revision->label(),
+            $areaIds !== [] ? 'by-area' : null,
+            now()->format('Ymd-His'),
+        ])
+            ->filter(fn (?string $part): bool => filled($part))
+            ->map(fn (string $part): string => trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-'))
+            ->implode('-').'.pdf';
+
+        $datasheetsPdf = app(ProjectDatasheetPdfService::class)->datasheetsPdf(
+            project: $project,
+            revision: $revision,
+            filename: $filename,
+            progressToken: $request->string('pdf_progress_token')->toString(),
+            progressUserId: $request->user()?->id,
+            areaIds: $areaIds,
+        );
+
+        return response()->json($downloads->register($datasheetsPdf, $request->user()->id));
+    }
+
+    public function zipPreparedQuotes(Request $request, Project $project, PdfDownloadUrlService $downloads): JsonResponse
+    {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless(
+            $request->user()->can('pricing.view') && $request->user()->can('output.produce-quote'),
+            403,
+        );
+
+        $revision = $this->resolveRevision($request, $project);
+        $tokens = collect($request->input('tokens', []))
+            ->filter(fn (mixed $token): bool => is_string($token) && preg_match('/^[A-Za-z0-9]{48}$/', $token))
+            ->values()
+            ->all();
+
+        abort_if($tokens === [], 422, 'No quote PDFs were supplied for the ZIP file.');
+
+        $filename = collect([
+            'Lighting Quotes',
+            $project->reference_number ?? 'proj-'.$project->id,
+            $revision->label(),
+            now()->format('Ymd-His'),
+        ])
+            ->map(fn (string $part): string => trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-'))
+            ->implode('-').'.zip';
+
+        return response()->json($downloads->registerZip($tokens, $request->user()->id, $filename));
     }
 
     /**
@@ -328,6 +476,130 @@ class ProjectPdfController extends Controller
     }
 
     /**
+     * @return array<int, int>
+     */
+    private function resolveSelectedAreaIds(Request $request, ProjectRevision $revision): array
+    {
+        if (! $request->has('area_ids')) {
+            return [];
+        }
+
+        $areaInput = $request->input('area_ids', []);
+        $areaInput = is_string($areaInput) ? explode(',', $areaInput) : $areaInput;
+
+        $requestedAreaIds = collect($areaInput)
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+
+        abort_if($requestedAreaIds->isEmpty(), 422, 'Select at least one area for output.');
+
+        $availableAreaIds = $revision->areas()
+            ->orderBy('sort_order')
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->values();
+
+        abort_unless($requestedAreaIds->diff($availableAreaIds)->isEmpty(), 422, 'One or more selected areas are not part of this project revision.');
+
+        if ($requestedAreaIds->count() === $availableAreaIds->count()) {
+            return [];
+        }
+
+        return $requestedAreaIds->all();
+    }
+
+    private function resolveQuoteTender(Request $request, Project $project): ?ProjectTender
+    {
+        $tenderId = $request->integer('tender_id');
+
+        if ($tenderId <= 0) {
+            return null;
+        }
+
+        return $project->tenders()->findOrFail($tenderId);
+    }
+
+    private function quoteSalesforceDocumentType(?ProjectTender $tender, bool $includeCover): string
+    {
+        if (! $includeCover || ! $tender instanceof ProjectTender) {
+            return 'quote';
+        }
+
+        return 'quote_tender_'.$tender->id;
+    }
+
+    /**
+     * @return array{pdf: array{path: string, filename: string}, content: string}
+     */
+    private function quotePdf(
+        Request $request,
+        Project $project,
+        ProjectRevision $revision,
+        ?ProjectTender $tender,
+        bool $includeCover,
+        ?string $preparedDatasheetsPath = null,
+        array $areaIds = [],
+    ): array {
+        $pdf = app(ProjectSchedulePdfService::class);
+        $filename = $pdf->quoteFilename($project, $revision, $includeCover ? $tender : null, $areaIds);
+        $legalPdf = $this->legalPdf(
+            pdfContent: fn (): string => $pdf->quoteContent($project, $revision, $tender, $includeCover, $areaIds),
+            filename: $filename,
+        );
+
+        try {
+            $filename = $legalPdf['filename'];
+            $pdfContent = app(ProjectLegalPdfService::class)->content($legalPdf['path']);
+
+            $datasheetPdf = $this->datasheetPdf(
+                request: $request,
+                project: $project,
+                revision: $revision,
+                pdfContent: fn (): string => $pdfContent,
+                filename: $filename,
+                preparedDatasheetsPath: $preparedDatasheetsPath,
+                areaIds: $areaIds,
+            );
+
+            if ($datasheetPdf === null) {
+                return [
+                    'pdf' => $legalPdf,
+                    'content' => $pdfContent,
+                ];
+            }
+
+            app(ProjectLegalPdfService::class)->delete($legalPdf['path']);
+
+            return [
+                'pdf' => $datasheetPdf,
+                'content' => app(ProjectDatasheetPdfService::class)->content($datasheetPdf['path']),
+            ];
+        } catch (Throwable $exception) {
+            app(ProjectLegalPdfService::class)->delete($legalPdf['path']);
+
+            throw $exception;
+        }
+    }
+
+    private function preparedDatasheetsPath(Request $request, PdfDownloadUrlService $downloads): ?string
+    {
+        $token = $request->string('datasheet_token')->toString();
+
+        if (blank($token)) {
+            return null;
+        }
+
+        $metadata = $downloads->metadata($token, $request->user()->id);
+        $path = (string) ($metadata['path'] ?? '');
+
+        abort_unless(is_file($path), 404, 'The prepared datasheet PDF is no longer available.');
+
+        return $path;
+    }
+
+    /**
      * @return array{title: string, body: string, status: string}|null
      */
     private function uploadPdfToSalesforce(
@@ -413,9 +685,21 @@ class ProjectPdfController extends Controller
         ProjectRevision $revision,
         callable $pdfContent,
         string $filename,
+        ?string $preparedDatasheetsPath = null,
+        array $areaIds = [],
     ): ?array {
         if (! $request->boolean('include_datasheets')) {
             return null;
+        }
+
+        if ($preparedDatasheetsPath !== null) {
+            return app(ProjectDatasheetPdfService::class)->appendExistingDatasheets(
+                documentContent: $pdfContent(),
+                filename: $filename,
+                datasheetsPath: $preparedDatasheetsPath,
+                progressToken: $request->string('pdf_progress_token')->toString(),
+                progressUserId: $request->user()?->id,
+            );
         }
 
         return app(ProjectDatasheetPdfService::class)->appendDatasheets(
@@ -425,6 +709,7 @@ class ProjectPdfController extends Controller
             filename: $filename,
             progressToken: $request->string('pdf_progress_token')->toString(),
             progressUserId: $request->user()?->id,
+            areaIds: $areaIds,
         );
     }
 
@@ -472,10 +757,42 @@ class ProjectPdfController extends Controller
             && ($project->salesforce_project || filled($project->salesforce_id));
     }
 
-    private function shouldUploadSchedulePdfToSalesforce(Project $project): bool
+    private function shouldUploadSchedulePdfToSalesforce(Request $request, Project $project): bool
     {
-        return app(SalesforcePushControl::class)->enabled()
+        return $request->boolean('salesforce_upload', true)
+            && app(SalesforcePushControl::class)->enabled()
             && ($project->salesforce_project || filled($project->salesforce_id));
+    }
+
+    /**
+     * @return array{filename: string, revision_id: int, revision_number: int, revision_label: string, include_datasheets: bool, area_ids: array<int, int>, area_count: int|null, area_scope: string, tender_id?: int|null, tender_account_name?: string|null, include_cover?: bool}
+     */
+    private function pdfActivityPayload(
+        string $filename,
+        ProjectRevision $revision,
+        bool $includeDatasheets,
+        array $areaIds,
+        ?ProjectTender $tender = null,
+        ?bool $includeCover = null,
+    ): array {
+        $payload = [
+            'filename' => $filename,
+            'revision_id' => $revision->id,
+            'revision_number' => $revision->revision_number,
+            'revision_label' => $revision->label(),
+            'include_datasheets' => $includeDatasheets,
+            'area_ids' => array_values(array_map(fn (int|string $areaId): int => (int) $areaId, $areaIds)),
+            'area_count' => $areaIds === [] ? null : count($areaIds),
+            'area_scope' => $areaIds === [] ? 'full' : 'selected',
+        ];
+
+        if ($tender instanceof ProjectTender || $includeCover !== null) {
+            $payload['tender_id'] = $tender?->id;
+            $payload['tender_account_name'] = $tender?->account_name;
+            $payload['include_cover'] = (bool) $includeCover;
+        }
+
+        return $payload;
     }
 
     private function progressCacheKey(Request $request, string $token): string
