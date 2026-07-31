@@ -79,9 +79,14 @@
         },
     }"
     x-init="
-        touchProjectLockActivity();
-        ['click', 'keydown', 'input', 'pointermove'].forEach((eventName) => {
-            window.addEventListener(eventName, () => touchProjectLockActivity(), { passive: true });
+        ['click', 'keydown', 'input', 'change', 'paste'].forEach((eventName) => {
+            window.addEventListener(eventName, (event) => {
+                if (! event.isTrusted) {
+                    return;
+                }
+
+                touchProjectLockActivity();
+            }, { passive: true });
         });
         window.addEventListener('pagehide', () => releaseProjectLock());
     "

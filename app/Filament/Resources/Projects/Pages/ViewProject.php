@@ -357,12 +357,20 @@ class ViewProject extends ViewRecord
                 ->label('Areas')
                 ->icon(Heroicon::OutlinedMapPin)
                 ->color('gray')
-                ->visible(fn (): bool => $this->canEditLines() && ! $this->isViewingRevisionValidated && ! $this->projectEditLocked())
+                ->visible(fn (): bool => $this->canEditLines())
+                ->tooltip(fn (): string => match (true) {
+                    $this->projectEditLocked() => 'Areas are read-only while another user has the edit lock',
+                    $this->isViewingRevisionValidated => 'Areas are locked on approved revisions',
+                    default => 'Manage areas',
+                })
                 ->modalHeading('Manage Areas')
                 ->modalDescription('Define the rooms, floors, and areas for this project.')
                 ->modalContent(fn (): View => view(
                     'filament.resources.projects.pages.areas-modal-content',
-                    ['areas' => $this->getAreas()],
+                    [
+                        'areas' => $this->getAreas(),
+                        'readOnly' => $this->isViewingRevisionValidated || $this->projectEditLocked(),
+                    ],
                 ))
                 ->modalSubmitAction(false)
                 ->modalCancelActionLabel('Close'),

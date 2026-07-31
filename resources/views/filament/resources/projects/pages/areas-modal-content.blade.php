@@ -3,6 +3,12 @@
         Define the rooms, floors, and areas for this project.
     </p>
 
+    @if($readOnly)
+    <p class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+        Areas are read-only while this project is locked.
+    </p>
+    @endif
+
     {{-- Add new area --}}
     <div class="flex gap-2">
         <input
@@ -10,11 +16,13 @@
             wire:keydown.enter="addArea"
             type="text"
             placeholder="e.g. Ground Floor, Reception, Office 1..."
+            @disabled($readOnly)
             class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
         <button
             type="button"
             wire:click="addArea"
+            @disabled($readOnly)
             class="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300"
         >
             <x-heroicon-o-plus class="w-4 h-4" /> Add
@@ -37,6 +45,7 @@
                 wire:change="renameArea({{ $area->id }}, $event.target.value)"
                 x-on:keydown.enter="$el.blur()"
                 aria-label="Rename {{ $area->name }}"
+                @disabled($readOnly)
                 class="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-gray-900 hover:border-gray-300 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:text-white dark:hover:border-gray-600"
             />
             <span class="text-xs text-gray-400">{{ $area->lines->count() }} {{ Str::plural('item', $area->lines->count()) }}</span>
@@ -44,6 +53,7 @@
                 type="button"
                 @click.stop="confirmDeleteAreaId = {{ $area->id }}; confirmDeleteAreaName = '{{ addslashes($area->name) }}'"
                 title="Delete area"
+                @disabled($readOnly)
                 class="text-gray-400 hover:text-red-500 dark:hover:text-red-400 rounded p-1 hover:bg-gray-100 dark:hover:bg-gray-800"
             >
                 <x-heroicon-o-trash class="size-4" />
@@ -52,6 +62,7 @@
                 type="button"
                 wire:click.stop="copyArea({{ $area->id }})"
                 title="Copy area"
+                @disabled($readOnly)
                 class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
             >
                 <x-heroicon-o-document-duplicate class="size-4" />
