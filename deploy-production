@@ -5,7 +5,7 @@ set -Eeuo pipefail
 current_branch="$(git branch --show-current)"
 version_file="VERSION"
 changelog_file="CHANGELOG.md"
-version_bump="${VERSION_BUMP:-beta}"
+version_bump="${VERSION_BUMP:-patch}"
 release_baseline_ref="${RELEASE_BASELINE_REF:-origin/production}"
 
 bump_version() {
@@ -40,13 +40,13 @@ bump_version() {
             echo "${base}-beta.1"
             ;;
         patch)
-            echo "${major}.${minor}.$((patch + 1))-beta.1"
+            echo "${major}.${minor}.$((patch + 1))"
             ;;
         minor)
-            echo "${major}.$((minor + 1)).0-beta.1"
+            echo "${major}.$((minor + 1)).0"
             ;;
         major)
-            echo "$((major + 1)).0.0-beta.1"
+            echo "$((major + 1)).0.0"
             ;;
         none)
             echo "$version"

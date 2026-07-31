@@ -67,7 +67,7 @@ VERSION_BUMP=major ./deploy-production
 VERSION_BUMP=none ./deploy-production
 ```
 
-The default bump is the beta suffix, for example `0.1.0-beta.1` to `0.1.0-beta.2`.
+The default bump is now a normal patch increment, for example `0.2.1` to `0.2.2`. Use `VERSION_BUMP=beta` only if a future pre-release stream is deliberately needed.
 
 The helper also prepends a `CHANGELOG.md` entry for the version being deployed. The entry lists the commits included between the current `production` branch and `main`, so the GitHub Actions run may still be triggered by a release/version commit, but the release contents are recorded against the visible app version. When there are deployable changes, the version commit message is:
 
@@ -632,7 +632,7 @@ vendor/bin/sail exec -T laravel.test sh -lc 'gzip -dc /var/www/html/backup.gz' |
 
 Code can be deployed automatically from GitHub by pushing the `production` branch. The workflow in `.github/workflows/deploy-production.yml` runs on the `luxquote-production` self-hosted GitHub Actions runner on the VPS and executes `scripts/deploy-production.sh` against the production checkout.
 
-The local `./deploy-production` helper bumps the tracked app version in `VERSION`, commits that bump on `main`, pushes `main`, fast-forwards `production`, and pushes `production`. By default it increments the beta suffix, for example `0.1.0-beta.1` to `0.1.0-beta.2`. Use `VERSION_BUMP=patch`, `VERSION_BUMP=minor`, `VERSION_BUMP=major`, or `VERSION_BUMP=none` when a deploy needs a different version bump.
+The local `./deploy-production` helper bumps the tracked app version in `VERSION`, commits that bump on `main`, pushes `main`, fast-forwards `production`, and pushes `production`. By default it increments the patch version, for example `0.2.1` to `0.2.2`. Use `VERSION_BUMP=minor`, `VERSION_BUMP=major`, `VERSION_BUMP=beta`, or `VERSION_BUMP=none` when a deploy needs a different version bump.
 
 The deploy script:
 
