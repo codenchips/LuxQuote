@@ -80,21 +80,19 @@ class ProjectSchedulePdfService
 
         $areas = $areasQuery->get();
 
-        if ($documentType === 'quote') {
-            $areas = $areas
-                ->map(function (ProjectArea $area): ProjectArea {
-                    $area->setRelation(
-                        'lines',
-                        $area->lines
-                            ->reject(fn (ProjectLine $line): bool => $line->isNoOffer())
-                            ->values(),
-                    );
+        $areas = $areas
+            ->map(function (ProjectArea $area) use ($documentType): ProjectArea {
+                $area->setRelation(
+                    'lines',
+                    $area->lines
+                        ->filter(fn (ProjectLine $line): bool => $this->specialLineShouldShow($line, $documentType))
+                        ->values(),
+                );
 
-                    return $area;
-                })
-                ->filter(fn (ProjectArea $area): bool => $area->lines->isNotEmpty())
-                ->values();
-        }
+                return $area;
+            })
+            ->filter(fn (ProjectArea $area): bool => $area->lines->isNotEmpty())
+            ->values();
 
         $generatedAt = now()->format('M d Y H:i');
         $salesEngineer = $this->salesEngineerForProject($project);
@@ -148,6 +146,19 @@ class ProjectSchedulePdfService
     public function quoteBuilder(Project $project, ProjectRevision $revision, array $areaIds = []): PdfBuilder
     {
         return $this->builder($project, $revision, 'quote', $areaIds);
+    }
+
+    private function specialLineShouldShow(ProjectLine $line, string $documentType): bool
+    {
+        $specialOrderCode = ProjectLine::specialOrderCodeFor($line->code);
+
+        if ($specialOrderCode === null) {
+            return true;
+        }
+
+        return $documentType === 'quote'
+            ? $specialOrderCode->show_on_quotes
+            : $specialOrderCode->show_on_schedules;
     }
 
     /**

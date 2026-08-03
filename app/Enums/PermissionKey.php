@@ -32,6 +32,7 @@ enum PermissionKey: string
     case CoverUpdate = 'cover.update';
     case ProductsView = 'products.view';
     case ProductsImport = 'products.import';
+    case SpecialsManage = 'specials.manage';
     case SalesforceView = 'salesforce.view';
     case SalesforceManagePush = 'salesforce.manage-push';
     case UsersView = 'users.view';
@@ -72,6 +73,7 @@ enum PermissionKey: string
             self::CoverUpdate => 'Edit cover percentages',
             self::ProductsView => 'View products list page',
             self::ProductsImport => 'Import / fetch products',
+            self::SpecialsManage => 'Manage special order codes',
             self::SalesforceView => 'View Salesforce projects list page',
             self::SalesforceManagePush => 'Manage Salesforce push switch',
             self::UsersView => 'View users list page',
@@ -117,7 +119,8 @@ enum PermissionKey: string
             self::CoverUpdate => 'Pricing',
 
             self::ProductsView,
-            self::ProductsImport => 'Products',
+            self::ProductsImport,
+            self::SpecialsManage => 'Products',
 
             self::SalesforceView => 'Salesforce',
             self::SalesforceManagePush => 'Salesforce',
@@ -139,6 +142,7 @@ enum PermissionKey: string
             self::PricingUpdate => 'Allows changing project line prices. Requires price visibility.',
             self::CoverUpdate => 'Allows changing project and line-level cover percentages.',
             self::ProjectsManageTenders => 'Allows adding, removing, and choosing primary contractor tenders for a project.',
+            self::SpecialsManage => 'Allows managing special order codes that affect project entry, validation, and PDF outputs.',
             self::OutputHistoryView => 'Allows viewing and regenerating previously generated project quote and schedule outputs.',
             self::SalesforceManagePush => 'Allows pausing and resuming outbound Salesforce writes while keeping Salesforce project import/search available.',
             self::TeamsManage => 'Allows creating, editing, deleting, and assigning users to teams.',

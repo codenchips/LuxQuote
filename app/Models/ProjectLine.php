@@ -14,10 +14,6 @@ class ProjectLine extends Model
 {
     use HasFactory;
 
-    public const NoOfferCode = 'NO OFFER';
-
-    public const NoOfferDescription = 'No equivalent Tamlite offering available.';
-
     protected $attributes = [
         'approved' => false,
         'validation_flagged' => false,
@@ -56,9 +52,14 @@ class ProjectLine extends Model
 
     public static function isNoOfferCode(?string $code): bool
     {
-        $normalisedCode = preg_replace('/\s+/', '', mb_strtoupper(trim((string) $code)));
+        $specialOrderCode = SpecialOrderCode::findForCode($code);
 
-        return $normalisedCode === 'NOOFFER';
+        return $specialOrderCode !== null && ! $specialOrderCode->requires_approval;
+    }
+
+    public static function specialOrderCodeFor(?string $code): ?SpecialOrderCode
+    {
+        return SpecialOrderCode::findForCode($code);
     }
 
     public function isNoOffer(): bool
@@ -89,7 +90,7 @@ class ProjectLine extends Model
     protected function description(): Attribute
     {
         return Attribute::make(
-            get: fn (?string $value): string => $this->isNoOffer() ? self::NoOfferDescription : (string) $value,
+            get: fn (?string $value): string => $this->specialOrderCodeFor($this->code)?->description ?? (string) $value,
         );
     }
 

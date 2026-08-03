@@ -76,6 +76,10 @@ class AdminProjectValidationTest extends TestCase
             'action_type' => 'validation.issue_approved',
             'revision_number' => 0,
         ]);
+        $this->assertDatabaseMissing(ActivityLog::class, [
+            'project_id' => $project->id,
+            'action_type' => 'line.updated',
+        ]);
 
         $component
             ->call('undoIssueApproval', $issueKey)
@@ -87,6 +91,10 @@ class AdminProjectValidationTest extends TestCase
             'project_id' => $project->id,
             'action_type' => 'validation.issue_approval_undone',
             'revision_number' => 0,
+        ]);
+        $this->assertDatabaseMissing(ActivityLog::class, [
+            'project_id' => $project->id,
+            'action_type' => 'line.updated',
         ]);
 
         Livewire::test(ListActivityLogs::class)

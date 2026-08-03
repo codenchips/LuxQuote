@@ -325,7 +325,7 @@ class ProjectDatasheetPdfService
         return $areas
             ->get()
             ->flatMap->lines
-            ->filter(fn (ProjectLine $line): bool => filled($line->code))
+            ->filter(fn (ProjectLine $line): bool => filled($line->code) && ProjectLine::specialOrderCodeFor($line->code) === null)
             ->map(fn (ProjectLine $line): array => [
                 'qty' => (int) ($line->qty ?? 0),
                 'sku' => (string) $line->code,

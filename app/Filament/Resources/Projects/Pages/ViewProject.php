@@ -1265,19 +1265,21 @@ class ViewProject extends ViewRecord
         ?string $ref = null,
         ?string $description = null,
     ): array {
-        if (ProjectLine::isNoOfferCode($sku)) {
+        $specialOrderCode = ProjectLine::specialOrderCodeFor($sku);
+
+        if ($specialOrderCode !== null) {
             return [
                 'product_id' => null,
-                'code' => ProjectLine::NoOfferCode,
+                'code' => $specialOrderCode->code,
                 'ref' => $ref,
-                'description' => ProjectLine::NoOfferDescription,
-                'qty' => 0,
+                'description' => $specialOrderCode->description,
+                'qty' => $specialOrderCode->qty,
                 'type' => ProjectLineType::Custom->value,
-                'unit_price' => 0,
+                'unit_price' => $specialOrderCode->price,
                 ...$this->defaultLineCoverAttributes(),
                 'status' => self::LineStatusPriced,
-                'approved' => true,
-                'approved_at' => now(),
+                'approved' => ! $specialOrderCode->requires_approval,
+                'approved_at' => $specialOrderCode->requires_approval ? null : now(),
                 'approved_by' => null,
                 'validation_flagged' => false,
                 'validation_note' => null,
@@ -1398,18 +1400,22 @@ class ViewProject extends ViewRecord
     /**
      * @return array<string, mixed>
      */
-    private function noOfferLineUpdateData(): array
+    private function specialOrderLineUpdateData(string $code): array
     {
+        $specialOrderCode = ProjectLine::specialOrderCodeFor($code);
+
+        abort_unless($specialOrderCode !== null, 404);
+
         return [
             'product_id' => null,
-            'code' => ProjectLine::NoOfferCode,
-            'description' => ProjectLine::NoOfferDescription,
-            'qty' => 0,
+            'code' => $specialOrderCode->code,
+            'description' => $specialOrderCode->description,
+            'qty' => $specialOrderCode->qty,
             'type' => ProjectLineType::Custom->value,
-            'unit_price' => 0,
+            'unit_price' => $specialOrderCode->price,
             'status' => self::LineStatusPriced,
-            'approved' => true,
-            'approved_at' => now(),
+            'approved' => ! $specialOrderCode->requires_approval,
+            'approved_at' => $specialOrderCode->requires_approval ? null : now(),
             'approved_by' => null,
             'validation_flagged' => false,
             'validation_note' => null,
@@ -1422,8 +1428,8 @@ class ViewProject extends ViewRecord
      */
     private function pastedLineUpdateData(array $row, ?Product $product): array
     {
-        if (ProjectLine::isNoOfferCode($row['sku'])) {
-            return $this->noOfferLineUpdateData();
+        if (ProjectLine::specialOrderCodeFor($row['sku']) !== null) {
+            return $this->specialOrderLineUpdateData($row['sku']);
         }
 
         $data = [
@@ -1449,8 +1455,10 @@ class ViewProject extends ViewRecord
 
     private function normaliseSku(string $sku): string
     {
-        if (ProjectLine::isNoOfferCode($sku)) {
-            return ProjectLine::NoOfferCode;
+        $specialOrderCode = ProjectLine::specialOrderCodeFor($sku);
+
+        if ($specialOrderCode !== null) {
+            return $specialOrderCode->code;
         }
 
         return strtoupper(trim($sku));
@@ -1814,7 +1822,7 @@ class ViewProject extends ViewRecord
         }
 
         if ($line->isNoOffer() && $field !== 'ref') {
-            $data = $this->noOfferLineUpdateData();
+            $data = $this->specialOrderLineUpdateData((string) $line->code);
 
             if (! $this->lineDataWouldChange($line, $data)) {
                 return;
@@ -1916,8 +1924,8 @@ class ViewProject extends ViewRecord
     {
         $code = $this->normaliseSku($value);
 
-        if (ProjectLine::isNoOfferCode($code)) {
-            return $this->noOfferLineUpdateData();
+        if (ProjectLine::specialOrderCodeFor($code) !== null) {
+            return $this->specialOrderLineUpdateData($code);
         }
 
         $data = [

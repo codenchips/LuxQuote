@@ -116,6 +116,7 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Request quote approval | x |  | x |  | x |
 | View products list page | x |  |  |  | x |
 | Import / fetch products | x |  |  |  |  |
+| Manage special order codes | x |  |  |  |  |
 | View Salesforce projects list page | x |  |  |  | x |
 | Manage Salesforce push switch | x |  |  |  |  |
 | View users list page | x |  |  |  |  |
@@ -175,6 +176,14 @@ Validation flagging is controlled by `validation.flag-lines`. Flagging an issue 
 The Salesforce page includes a global persistent push switch controlled by `salesforce.manage-push`.
 
 Users with `salesforce.view` can still search and import Salesforce projects. Users with `salesforce.manage-push` can pause or resume outbound Salesforce writes. The switch stores its global state in `app_settings` and must stay where it was set across logout/login and page refreshes. When pushes are paused, the app must not upload quote/schedule PDFs or update Opportunity Amount values, but read-only Salesforce pulls remain available.
+
+## Special Order Codes
+
+The **Specials** page is controlled by `specials.manage`. Special order codes are local rules used when users type or paste a code that needs special quote/schedule handling rather than a product catalogue match.
+
+Each special order code defines the canonical code and description to use on project lines, whether the line requires validation approval, whether it appears on Schedule PDFs, and whether it appears on Quote PDFs.
+
+The initial special is `NO OFFER`, which is matched case-insensitively with or without spaces. It uses the description "No equivalent Tamlite offering available.", does not require approval, appears on schedules, and is excluded from quotes.
 
 ## Teams
 
