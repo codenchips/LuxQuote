@@ -91,6 +91,15 @@ curl -I https://quote.tamlite.co.uk
 
 If the runner is not listed, recreate it using the runner container command in the Deployment Method section with a fresh GitHub runner token.
 
+The GitHub runner may not appear in `docker compose ps`. If it was recreated manually with `docker run`, it is managed by plain Docker rather than this app's Compose file. In that case GitHub showing the runner as **Idle** is healthy, and the correct checks are:
+
+```bash
+docker ps --filter name=luxquote-github-runner
+docker logs --tail=80 luxquote-github-runner
+```
+
+Healthy logs end with `Listening for Jobs`. Use `docker restart luxquote-github-runner` for a quick runner restart. Do not use Compose commands for that manually-created runner unless it has later been moved into `compose.yaml`.
+
 ## Docker Firewall and Container DNS Recovery
 
 The production host uses a custom iptables script at `/root/apply_iptables_rules.sh`. Docker creates and manages its own filter/NAT chains for bridge networking, container DNS, outbound traffic, and published ports. The host firewall script must not flush, delete, replace, or restart those Docker-managed rules while Docker is running.

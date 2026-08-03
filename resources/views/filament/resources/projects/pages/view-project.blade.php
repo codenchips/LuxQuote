@@ -1166,8 +1166,23 @@
                 <div>CEF Region</div>
             </div>
 
+            @php
+                $visibleTenderAccounts = $this->visibleTenderAccountSearchResults();
+            @endphp
+
             <div class="flex-1 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800">
-                @forelse($this->visibleTenderAccountSearchResults() as $account)
+                @if($tenderAccountSearchError)
+                <div class="mx-6 my-4 rounded-lg border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+                    <div class="flex gap-2">
+                        <x-heroicon-o-exclamation-triangle class="mt-0.5 h-4 w-4 shrink-0" />
+                        <div>
+                            <div class="font-semibold">Salesforce Account search unavailable</div>
+                            <div class="mt-1 text-amber-700 dark:text-amber-300">{{ $tenderAccountSearchError }}</div>
+                        </div>
+                    </div>
+                </div>
+                @else
+                @forelse($visibleTenderAccounts as $account)
                 @php
                     $isSelected = isset($tenderAccountSelections[$account['id']]);
                     $alreadyAdded = $this->projectTenders->contains('salesforce_account_id', $account['id']);
@@ -1205,6 +1220,7 @@
                     No Salesforce Accounts found{{ $tenderAccountSearch ? ' for your search' : '' }}.
                 </div>
                 @endforelse
+                @endif
             </div>
 
             <div class="flex items-center justify-between px-6 py-2.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 shrink-0 text-sm text-gray-500 dark:text-gray-400">

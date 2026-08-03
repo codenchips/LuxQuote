@@ -132,6 +132,79 @@ class SalesforceServiceTest extends TestCase
             && str_contains((string) ($request->data()['q'] ?? ''), 'OFFSET 0'));
     }
 
+    public function test_search_accounts_falls_back_when_optional_cef_region_field_is_unavailable(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                $query = (string) ($request->data()['q'] ?? '');
+
+                if (str_contains($query, 'CEF_Region__c')) {
+                    return Http::response([[
+                        'message' => 'No such column CEF_Region__c on entity Account.',
+                        'errorCode' => 'INVALID_FIELD',
+                    ]], 400);
+                }
+
+                return Http::response([
+                    'records' => [
+                        [
+                            'Id' => '001000000000001AAA',
+                            'Name' => 'Example Contractor',
+                            'BillingStreet' => '1 Test Street',
+                            'BillingCity' => 'Birmingham',
+                            'BillingState' => 'West Midlands',
+                            'BillingPostalCode' => 'B1 1AA',
+                            'Phone' => '0121 000 0000',
+                        ],
+                    ],
+                ]);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $accounts = app(SalesforceService::class)->searchAccounts('Contractor');
+
+        $this->assertSame('Example Contractor', $accounts[0]['name']);
+        $this->assertNull($accounts[0]['cef_region']);
+    }
+
+    public function test_search_accounts_result_reports_salesforce_failures_without_throwing(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response([[
+                    'message' => 'sObject type Account is not supported.',
+                    'errorCode' => 'INVALID_TYPE',
+                ]], 400);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $result = app(SalesforceService::class)->searchAccountsResult('Contractor');
+
+        $this->assertFalse($result['success']);
+        $this->assertSame([], $result['records']);
+        $this->assertStringContainsString('Salesforce Account search failed', $result['message']);
+    }
+
     public function test_jwt_bearer_authenticates_and_returns_options(): void
     {
         $this->travelTo('2026-07-02 10:00:00');

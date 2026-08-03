@@ -81,6 +81,8 @@ class ViewProject extends ViewRecord
     /** @var array<string, array{name: string, billing_street: string|null, billing_city: string|null, billing_state: string|null, billing_postal_code: string|null, phone: string|null, cef_region: string|null}> */
     public array $tenderAccountSelections = [];
 
+    public ?string $tenderAccountSearchError = null;
+
     // ── Product picker state ─────────────────────────────────────────────────
 
     public bool $productPickerOpen = false;
@@ -780,6 +782,7 @@ class ViewProject extends ViewRecord
         $this->tenderAccountSearch = '';
         $this->tenderAccountPage = 1;
         $this->tenderAccountSelections = [];
+        $this->tenderAccountSearchError = null;
         unset($this->tenderAccountSearchResults);
     }
 
@@ -789,12 +792,14 @@ class ViewProject extends ViewRecord
         $this->tenderAccountSearch = '';
         $this->tenderAccountPage = 1;
         $this->tenderAccountSelections = [];
+        $this->tenderAccountSearchError = null;
         unset($this->tenderAccountSearchResults);
     }
 
     public function updatedTenderAccountSearch(): void
     {
         $this->tenderAccountPage = 1;
+        $this->tenderAccountSearchError = null;
         unset($this->tenderAccountSearchResults);
     }
 
@@ -970,23 +975,30 @@ class ViewProject extends ViewRecord
     public function tenderAccountSearchResults(): array
     {
         if (! $this->tenderAccountPickerOpen) {
+            $this->tenderAccountSearchError = null;
+
             return [];
         }
 
         try {
-            return app(SalesforceService::class)->searchAccounts(
+            $result = app(SalesforceService::class)->searchAccountsResult(
                 $this->tenderAccountSearch,
                 self::TenderAccountPageSize + 1,
                 ($this->tenderAccountPage - 1) * self::TenderAccountPageSize,
             );
+
+            if (! $result['success']) {
+                $this->tenderAccountSearchError = $result['message'] ?? 'Salesforce Account search failed.';
+
+                return [];
+            }
+
+            $this->tenderAccountSearchError = null;
+
+            return $result['records'];
         } catch (Throwable $throwable) {
             report($throwable);
-
-            Notification::make()
-                ->title('Salesforce Account search failed')
-                ->body('The Account list could not be loaded from Salesforce.')
-                ->danger()
-                ->send();
+            $this->tenderAccountSearchError = 'Salesforce Account search failed. The Account list could not be loaded.';
 
             return [];
         }

@@ -442,10 +442,24 @@ class SalesforceService
      */
     public function searchAccounts(string $query = '', int $limit = 25, int $offset = 0): array
     {
+        return $this->searchAccountsResult($query, $limit, $offset)['records'] ?? [];
+    }
+
+    /**
+     * Search Account records and keep Salesforce permission failures explainable.
+     *
+     * @return array{success: bool, records: array<int, array{id: string, name: string, billing_street: string|null, billing_city: string|null, billing_state: string|null, billing_postal_code: string|null, phone: string|null, cef_region: string|null}>, message?: string}
+     */
+    public function searchAccountsResult(string $query = '', int $limit = 25, int $offset = 0): array
+    {
         $auth = $this->authenticate();
 
         if ($auth === null) {
-            return [];
+            return [
+                'success' => false,
+                'records' => [],
+                'message' => 'Salesforce authentication failed.',
+            ];
         }
 
         $limit = max(1, min(50, $limit));
@@ -463,7 +477,22 @@ class SalesforceService
             "SELECT Id, Name, BillingStreet, BillingCity, BillingState, BillingPostalCode, Phone, CEF_Region__c FROM Account{$where} ORDER BY Name ASC LIMIT {$limit} OFFSET {$offset}",
         );
 
-        return collect($result['records'] ?? [])
+        if ($result === null) {
+            $result = $this->soqlQuery(
+                $auth,
+                "SELECT Id, Name, BillingStreet, BillingCity, BillingState, BillingPostalCode, Phone FROM Account{$where} ORDER BY Name ASC LIMIT {$limit} OFFSET {$offset}",
+            );
+        }
+
+        if ($result === null) {
+            return [
+                'success' => false,
+                'records' => [],
+                'message' => 'Salesforce Account search failed. Check the integration user can read Account, Account.Type, and the tender picker fields.',
+            ];
+        }
+
+        $records = collect($result['records'] ?? [])
             ->map(fn (array $record): array => [
                 'id' => (string) ($record['Id'] ?? ''),
                 'name' => (string) ($record['Name'] ?? ''),
@@ -477,6 +506,11 @@ class SalesforceService
             ->filter(fn (array $record): bool => filled($record['id']) && filled($record['name']))
             ->values()
             ->all();
+
+        return [
+            'success' => true,
+            'records' => $records,
+        ];
     }
 
     /**
