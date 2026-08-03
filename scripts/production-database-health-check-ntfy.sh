@@ -2,6 +2,8 @@
 set -uo pipefail
 
 APP_DIR="${APP_DIR:-/home/tamliteco/luxquote.app}"
+DATABASE_HEALTH_RETRIES="${DATABASE_HEALTH_RETRIES:-3}"
+DATABASE_HEALTH_RETRY_DELAY_SECONDS="${DATABASE_HEALTH_RETRY_DELAY_SECONDS:-20}"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/LuxQuoteDatabase}"
 NTFY_TITLE="${NTFY_TITLE:-LuxQuote database health check failed}"
 NTFY_PRIORITY="${NTFY_PRIORITY:-high}"
@@ -30,7 +32,18 @@ ${trimmed_output}"
         "$NTFY_URL" >/dev/null || true
 }
 
+run_checks() {
+    (
+        {
+            set -e
+            docker compose exec -T mysql sh -lc 'mysqladmin ping -h 127.0.0.1 -u"$MYSQL_USER" -p"$MYSQL_PASSWORD"'
+            docker compose exec -T -u sail laravel.test php artisan tinker --execute 'DB::select("select 1 as health_check"); echo "Laravel database query passed.\n";'
+        } 2>&1
+    )
+}
+
 main() {
+    local attempt
     local output
     local status
 
@@ -42,20 +55,25 @@ main() {
         return 2
     fi
 
-    output="$(
-        {
-            set -e
-            docker compose exec -T mysql sh -lc 'mysqladmin ping -h 127.0.0.1 -u"$MYSQL_USER" -p"$MYSQL_PASSWORD"'
-            docker compose exec -T -u sail laravel.test php artisan tinker --execute 'DB::select("select 1 as health_check"); echo "Laravel database query passed.\n";'
-        } 2>&1
-    )"
-    status=$?
+    attempt=1
+    status=1
 
-    if [ "$status" -eq 0 ]; then
-        printf '[%s] LuxQuote database health check passed.\n' "$(timestamp)"
+    while [ "$attempt" -le "$DATABASE_HEALTH_RETRIES" ]; do
+        output="$(run_checks)"
+        status=$?
 
-        return 0
-    fi
+        if [ "$status" -eq 0 ]; then
+            printf '[%s] LuxQuote database health check passed on attempt %s/%s.\n' "$(timestamp)" "$attempt" "$DATABASE_HEALTH_RETRIES"
+
+            return 0
+        fi
+
+        if [ "$attempt" -lt "$DATABASE_HEALTH_RETRIES" ]; then
+            sleep "$DATABASE_HEALTH_RETRY_DELAY_SECONDS"
+        fi
+
+        attempt=$((attempt + 1))
+    done
 
     printf '%s\n' "$output"
     notify_failure "$output"

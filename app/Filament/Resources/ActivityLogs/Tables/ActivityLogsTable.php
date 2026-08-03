@@ -174,6 +174,19 @@ class ActivityLogsTable
 
                         'salesforce_pdf.uploaded' => 'Uploaded '.e((string) ($payload['document_label'] ?? 'PDF')).' to Salesforce <strong>'.e((string) ($payload['filename'] ?? '')).'</strong>',
 
+                        'special.created' => 'Created special code <strong>'.e((string) ($payload['code'] ?? '?')).'</strong>',
+
+                        'special.updated' => (function () use ($payload): string {
+                            $code = e((string) ($payload['code'] ?? '?'));
+                            $changes = $payload['changes'] ?? [];
+
+                            if (empty($changes)) {
+                                return "Updated special code <strong>{$code}</strong>";
+                            }
+
+                            return "Updated special code <strong>{$code}</strong>: ".self::formatSpecialChanges($changes);
+                        })(),
+
                         'user.login' => (function () use ($payload): string {
                             $context = $payload['login_context']['display'] ?? null;
 
@@ -353,6 +366,8 @@ class ActivityLogsTable
             'schedule_pdf.generated' => 'Schedule PDF Generated',
             'quote_pdf.generated' => 'Quote PDF Generated',
             'salesforce_pdf.uploaded' => 'Salesforce PDF Uploaded',
+            'special.created' => 'Special Created',
+            'special.updated' => 'Special Updated',
             'user.login' => 'User Login',
             'product.added' => 'Product Added',
             'line.updated' => 'Line Updated',
@@ -473,6 +488,51 @@ class ActivityLogsTable
         }
 
         return implode('; ', $parts);
+    }
+
+    /**
+     * @param  array<string, array{old?: mixed, new?: mixed}>  $changes
+     */
+    private static function formatSpecialChanges(array $changes): string
+    {
+        $fieldNames = [
+            'code' => 'Code',
+            'description' => 'Description',
+            'price' => 'Price',
+            'qty' => 'Qty',
+            'requires_approval' => 'Requires Approval',
+            'show_on_schedules' => 'Show on Schedules',
+            'show_on_quotes' => 'Show on Quotes',
+        ];
+
+        $parts = [];
+
+        foreach ($changes as $key => $change) {
+            $label = $fieldNames[$key] ?? (string) str($key)->headline();
+            $old = e(self::formatSpecialValue($key, $change['old'] ?? null));
+            $new = e(self::formatSpecialValue($key, $change['new'] ?? null));
+
+            $parts[] = "Changed <strong>{$label}</strong> from <strong>{$old}</strong> to <strong>{$new}</strong>";
+        }
+
+        return implode('; ', $parts);
+    }
+
+    private static function formatSpecialValue(string $key, mixed $value): string
+    {
+        if (in_array($key, ['requires_approval', 'show_on_schedules', 'show_on_quotes'], true)) {
+            return (bool) $value ? 'Yes' : 'No';
+        }
+
+        if ($key === 'price') {
+            return number_format((float) ($value ?? 0), 2);
+        }
+
+        if ($key === 'qty') {
+            return (string) (int) ($value ?? 0);
+        }
+
+        return self::formatChangedValue($value);
     }
 
     /**

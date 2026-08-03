@@ -7,10 +7,12 @@ use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
+use App\Models\SpecialOrderCode;
 use App\Models\User;
 use App\Observers\ProjectAreaObserver;
 use App\Observers\ProjectLineObserver;
 use App\Observers\ProjectObserver;
+use App\Observers\SpecialOrderCodeObserver;
 use App\Services\SalesforceService;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -66,6 +68,7 @@ class AppServiceProvider extends ServiceProvider
         Project::observe(ProjectObserver::class);
         ProjectArea::observe(ProjectAreaObserver::class);
         ProjectLine::observe(ProjectLineObserver::class);
+        SpecialOrderCode::observe(SpecialOrderCodeObserver::class);
 
         RateLimiter::for('login', function (Request $request) {
             return Limit::perMinute(5)->by($request->ip());

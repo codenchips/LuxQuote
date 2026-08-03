@@ -25,6 +25,8 @@ class ValidationProject extends ViewRecord
 {
     use HasProjectSubNav;
 
+    private const MaxProjectLinePrice = 99999999.99;
+
     protected static string $resource = ProjectResource::class;
 
     protected string $view = 'filament.resources.projects.pages.validation-project';
@@ -395,7 +397,7 @@ class ValidationProject extends ViewRecord
 
         $quotePrice = $value === '' || $value === null
             ? null
-            : number_format(max(0, (float) $value), 2, '.', '');
+            : number_format(min(self::MaxProjectLinePrice, max(0, (float) $value)), 2, '.', '');
 
         $this->linesForIssue($issue)->update([
             'unit_price' => $quotePrice,

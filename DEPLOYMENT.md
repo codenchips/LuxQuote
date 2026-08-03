@@ -572,6 +572,7 @@ Suggested cron entry:
 ```
 
 This is intentionally lightweight and can run every 10 minutes. It sends no notification on success.
+To reduce false positives from brief proxy/network blips, the script now fails only after `LOGIN_HEALTH_RETRIES` attempts, defaulting to 3 attempts with `LOGIN_HEALTH_RETRY_DELAY_SECONDS=20` between attempts.
 
 ### ntfy Disk, Docker, Database, Salesforce, and Runner Alerts
 
@@ -581,7 +582,7 @@ These focused wrappers are also available:
 |---|---|---|---|
 | `LuxQuoteDisk` | `scripts/production-disk-health-check-ntfy.sh` | Host filesystem and inode usage for the app path, `/`, and `/var/lib/docker` when present | Every 15 minutes |
 | `LuxQuoteDocker` | `scripts/production-docker-health-check-ntfy.sh` | Core Docker Compose services are running, MySQL responds, Redis responds | Every 10 minutes |
-| `LuxQuoteDatabase` | `scripts/production-database-health-check-ntfy.sh` | MySQL responds and Laravel can run a `select 1` query | Every 10 minutes |
+| `LuxQuoteDatabase` | `scripts/production-database-health-check-ntfy.sh` | MySQL responds and Laravel can run a `select 1` query, with retry protection against short transient failures | Every 10 minutes |
 | `LuxQuoteSalesforce` | `scripts/production-salesforce-health-check-ntfy.sh` | Read-only Salesforce auth/API smoke using `salesforce:interrogate --limit=1 --format=json` | Hourly |
 | `LuxQuoteRunner` | `scripts/production-github-runner-health-check-ntfy.sh` | Deployment runner container, listener process, persistent registration, and SSH mounts | Every 10 minutes |
 

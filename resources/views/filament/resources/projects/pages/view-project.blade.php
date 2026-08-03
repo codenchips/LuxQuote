@@ -338,6 +338,7 @@
                             wire:key="line-{{ $line->id }}-code-{{ $line->code }}"
                             value="{{ $line->code }}"
                             @disabled(! $canEditLines || $this->isViewingRevisionValidated || $projectEditLocked)
+                            maxlength="255"
                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'code', $el.value)"
@@ -371,6 +372,7 @@
                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'description', $el.value)"
+                            maxlength="255"
                             placeholder="Description..."
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
                         />
@@ -382,9 +384,10 @@
                             value="{{ $line->qty }}"
                             @disabled(! $canEditLines || $this->isViewingRevisionValidated || $projectEditLocked)
                             min="{{ $line->isNoOffer() ? 0 : 1 }}"
+                            max="4294967295"
                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
-                            x-on:blur="$wire.updateLineField({{ $line->id }}, 'qty', parseInt($el.value) || {{ $line->isNoOffer() ? 0 : 1 }})"
+                            x-on:blur="$wire.updateLineField({{ $line->id }}, 'qty', Math.min(4294967295, Math.max({{ $line->isNoOffer() ? 0 : 1 }}, parseInt($el.value) || {{ $line->isNoOffer() ? 0 : 1 }})))"
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
                         />
 
@@ -404,12 +407,13 @@
                                         data-line-column="unit_price"
                                         type="number"
                                         step="0.01"
+                                        max="99999999.99"
                                         value="{{ $line->unit_price }}"
                                         @disabled(! $canEditPrices || $this->isViewingRevisionValidated || $projectEditLocked)
                                         x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                         x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                                         x-on:blur="
-                                            const value = $el.value === '' ? '' : Math.max(0, Number.parseFloat($el.value) || 0).toFixed(2);
+                                            const value = $el.value === '' ? '' : Math.min(99999999.99, Math.max(0, Number.parseFloat($el.value) || 0)).toFixed(2);
                                             $el.value = value;
                                             $wire.updateLineField({{ $line->id }}, 'unit_price', value);
                                         "
@@ -427,12 +431,13 @@
                                         data-line-column="unit_price"
                                         type="number"
                                         step="0.01"
+                                        max="99999999.99"
                                         value="{{ $line->unit_price }}"
                                         @disabled(! $canEditPrices || $this->isViewingRevisionValidated || $projectEditLocked)
                                         x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                         x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                                         x-on:blur="
-                                            const value = $el.value === '' ? '' : Math.max(0, Number.parseFloat($el.value) || 0).toFixed(2);
+                                            const value = $el.value === '' ? '' : Math.min(99999999.99, Math.max(0, Number.parseFloat($el.value) || 0)).toFixed(2);
                                             $el.value = value;
                                             $wire.updateLineField({{ $line->id }}, 'unit_price', value);
                                         "
@@ -445,12 +450,13 @@
                                     data-line-column="unit_price"
                                     type="number"
                                     step="0.01"
+                                    max="99999999.99"
                                     value="{{ $line->unit_price }}"
                                     @disabled(! $canEditPrices || $this->isViewingRevisionValidated || $projectEditLocked)
                                     x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                     x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                                     x-on:blur="
-                                        const value = $el.value === '' ? '' : Math.max(0, Number.parseFloat($el.value) || 0).toFixed(2);
+                                        const value = $el.value === '' ? '' : Math.min(99999999.99, Math.max(0, Number.parseFloat($el.value) || 0)).toFixed(2);
                                         $el.value = value;
                                         $wire.updateLineField({{ $line->id }}, 'unit_price', value);
                                     "
@@ -476,7 +482,7 @@
                                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                                             x-on:blur="
-                                                const value = $el.value === '' ? '' : Number.parseFloat($el.value).toFixed(2);
+                                                const value = $el.value === '' ? '' : Math.min(999.99, Math.max(0, Number.parseFloat($el.value) || 0)).toFixed(2);
                                                 $el.value = value;
                                                 $wire.updateLineField({{ $line->id }}, '{{ $coverField }}', value);
                                             "

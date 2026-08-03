@@ -15,6 +15,8 @@ class ProductImportService
 
     public const LastPulledAtSettingKey = 'products_last_pulled_at';
 
+    private const MaxProductPrice = 99999999.99;
+
     private const PRODUCT_SPEC_COLUMNS = [
         'length_mm',
         'width_mm',
@@ -89,21 +91,21 @@ class ProductImportService
      */
     private function mapProductRow(array $row): ?array
     {
-        $sku = $this->normaliseNullableValue($row['sku'] ?? null);
-        $productName = $this->normaliseNullableValue($row['product'] ?? null);
+        $sku = $this->normaliseNullableString($row['sku'] ?? null);
+        $productName = $this->normaliseNullableString($row['product'] ?? null);
 
         if ($sku === null || $productName === null) {
             return null;
         }
 
         $record = [
-            'site' => $this->normaliseNullableValue($row['site'] ?? null),
+            'site' => $this->normaliseNullableString($row['site'] ?? null),
             'product_name' => $productName,
             'sku' => $sku,
-            'price' => $this->normaliseNullableValue($row['cost'] ?? null),
+            'price' => $this->normaliseProductPrice($row['cost'] ?? null),
             'description' => $row['description'] ?? null,
             'v_description' => $row['description'] ?? null,
-            'type_name' => $this->normaliseNullableValue($row['type'] ?? null),
+            'type_name' => $this->normaliseNullableString($row['type'] ?? null),
         ];
 
         foreach (self::PRODUCT_SPEC_COLUMNS as $column) {
@@ -116,6 +118,28 @@ class ProductImportService
     private function normaliseNullableValue(mixed $value): mixed
     {
         return $value !== '' ? $value : null;
+    }
+
+    private function normaliseNullableString(mixed $value): ?string
+    {
+        $value = $this->normaliseNullableValue($value);
+
+        if ($value === null) {
+            return null;
+        }
+
+        return mb_substr((string) $value, 0, 255);
+    }
+
+    private function normaliseProductPrice(mixed $value): ?string
+    {
+        $value = $this->normaliseNullableValue($value);
+
+        if ($value === null || ! is_numeric($value)) {
+            return null;
+        }
+
+        return number_format(min(self::MaxProductPrice, max(0, (float) $value)), 2, '.', '');
     }
 
     /**

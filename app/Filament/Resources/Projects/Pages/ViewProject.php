@@ -56,6 +56,10 @@ class ViewProject extends ViewRecord
 
     private const ProjectLockInactivityMinutes = 15;
 
+    private const MaxProjectLinePrice = 99999999.99;
+
+    private const MaxUnsignedInteger = 4294967295;
+
     protected static string $resource = ProjectResource::class;
 
     protected string $view = 'filament.resources.projects.pages.view-project';
@@ -1461,7 +1465,7 @@ class ViewProject extends ViewRecord
             return $specialOrderCode->code;
         }
 
-        return strtoupper(trim($sku));
+        return substr(strtoupper(trim($sku)), 0, 255);
     }
 
     private function normaliseRef(?string $ref): ?string
@@ -1483,10 +1487,10 @@ class ViewProject extends ViewRecord
         $description = trim($lineData['description']);
 
         if ($description !== '') {
-            return $description;
+            return substr($description, 0, 255);
         }
 
-        return $product?->displayDescription() ?? '';
+        return substr($product?->displayDescription() ?? '', 0, 255);
     }
 
     /**
@@ -1525,9 +1529,9 @@ class ViewProject extends ViewRecord
             }
 
             $rows[] = [
-                'qty' => max(1, (int) $qty),
-                'sku' => $sku,
-                'unit_price' => $price === '' ? null : number_format(max(0, (float) $price), 2, '.', ''),
+                'qty' => min(self::MaxUnsignedInteger, max(1, (int) $qty)),
+                'sku' => substr($sku, 0, 255),
+                'unit_price' => $price === '' ? null : number_format(min(self::MaxProjectLinePrice, max(0, (float) $price)), 2, '.', ''),
             ];
         }
 
@@ -1656,10 +1660,10 @@ class ViewProject extends ViewRecord
 
         return [
             'line' => [
-                'sku' => $sku,
+                'sku' => substr($sku, 0, 255),
                 'ref' => $ref,
-                'qty' => (int) $qty,
-                'description' => $description,
+                'qty' => min(self::MaxUnsignedInteger, (int) $qty),
+                'description' => substr($description, 0, 255),
             ],
             'error' => null,
         ];
@@ -1972,7 +1976,7 @@ class ViewProject extends ViewRecord
         }
 
         if ($field === 'qty') {
-            return max(1, (int) $value);
+            return min(self::MaxUnsignedInteger, max(1, (int) $value));
         }
 
         if ($field === 'code') {
@@ -1980,11 +1984,15 @@ class ViewProject extends ViewRecord
         }
 
         if ($field === 'unit_price') {
-            return max(0, (float) $value);
+            return number_format(min(self::MaxProjectLinePrice, max(0, (float) $value)), 2, '.', '');
         }
 
         if (in_array($field, ['cover_1', 'cover_2', 'cover_3'], true)) {
             return number_format(min(999.99, max(0, (float) $value)), 2, '.', '');
+        }
+
+        if ($field === 'description') {
+            return substr((string) $value, 0, 255);
         }
 
         return $value;

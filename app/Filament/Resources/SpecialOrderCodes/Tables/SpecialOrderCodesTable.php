@@ -46,8 +46,8 @@ class SpecialOrderCodesTable
                     ->badge()
                     ->formatStateUsing(fn (mixed $state): string => (bool) $state ? 'Yes' : 'No')
                     ->color(fn (mixed $state): string => (bool) $state ? 'success' : 'gray'),
-                TextColumn::make('created_at')
-                    ->label('Created')
+                TextColumn::make('updated_at')
+                    ->label('Modified')
                     ->dateTime('M d Y H:i')
                     ->sortable(),
             ])
@@ -58,7 +58,7 @@ class SpecialOrderCodesTable
                     ->modalDescription('Delete this special order code? Existing project lines will keep their stored values, but future matching will no longer use this special rule.'),
             ])
             ->toolbarActions([])
-            ->defaultSort('created_at', 'desc')
+            ->defaultSort('updated_at', 'desc')
             ->paginated([25, 50, 100]);
     }
 }

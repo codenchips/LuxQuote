@@ -25,6 +25,8 @@ use Illuminate\Support\Str;
 
 class ProjectForm
 {
+    private const MaxProjectValue = 999999999.99;
+
     public static function configure(Schema $schema, bool $forceReadOnly = false): Schema
     {
         return $schema
@@ -47,6 +49,7 @@ class ProjectForm
                     ->placeholder('e.g. Office Fit-Out 2026')
                     ->live()
                     ->required()
+                    ->maxLength(255)
                     ->unique(ignoreRecord: true)
                     ->validationMessages([
                         'unique' => 'A project with this project name already exists.',
@@ -171,6 +174,7 @@ class ProjectForm
                     ->placeholder('e.g. LQ-2026-001')
                     ->live()
                     ->required()
+                    ->maxLength(255)
                     ->unique(ignoreRecord: true)
                     ->validationMessages([
                         'unique' => 'A project with this reference number already exists.',
@@ -186,23 +190,27 @@ class ProjectForm
                     ->placeholder('Customer')
                     ->live()
                     ->required()
+                    ->maxLength(255)
                     ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 TextInput::make('site_location')
                     ->label('Site Location')
                     ->placeholder('Location')
+                    ->maxLength(255)
                     ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 TextInput::make('owner_email')
                     ->label('Project Owner (email)')
                     ->placeholder('owner@company.com')
                     ->email()
+                    ->maxLength(255)
                     ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 TextInput::make('created_by_email')
                     ->label('Created By (email)')
                     ->placeholder('creator@company.com')
                     ->email()
+                    ->maxLength(255)
                     ->default(fn (): ?string => auth()->user()?->email)
                     ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
@@ -238,6 +246,8 @@ class ProjectForm
                     ->label('Value')
                     ->placeholder('0.00')
                     ->numeric()
+                    ->minValue(0)
+                    ->maxValue(self::MaxProjectValue)
                     ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
                     ->prefix('£')
                     ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
@@ -245,6 +255,7 @@ class ProjectForm
                 TextInput::make('branch_name')
                     ->label('Branch Name')
                     ->placeholder('e.g. Birmingham Central')
+                    ->maxLength(255)
                     ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 Toggle::make('has_cover')
@@ -386,6 +397,7 @@ class ProjectForm
     public static function normaliseVisibilityData(array $data, ?Project $record = null): array
     {
         $data = self::normaliseCoverData($data, $record);
+        $data = self::normaliseProjectValueData($data, $record);
 
         $visibility = $data['visibility'] ?? ProjectVisibility::Open->value;
         $teamId = $data['team_id'] ?? null;
@@ -416,6 +428,31 @@ class ProjectForm
 
         $data['visibility'] = ProjectVisibility::Team->value;
         $data['team_id'] = (int) $teamId;
+
+        return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private static function normaliseProjectValueData(array $data, ?Project $record): array
+    {
+        if (! array_key_exists('value', $data)) {
+            if ($record !== null) {
+                $data['value'] = $record->value;
+            }
+
+            return $data;
+        }
+
+        if ($data['value'] === '' || $data['value'] === null) {
+            $data['value'] = null;
+
+            return $data;
+        }
+
+        $data['value'] = number_format(min(self::MaxProjectValue, max(0, (float) $data['value'])), 2, '.', '');
 
         return $data;
     }

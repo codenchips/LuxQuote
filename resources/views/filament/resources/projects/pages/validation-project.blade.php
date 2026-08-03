@@ -103,8 +103,13 @@
                                             type="number"
                                             step="0.01"
                                             min="0"
+                                            max="99999999.99"
                                             value="{{ $issue['quote_price'] }}"
-                                            x-on:blur="$wire.updateIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }}, $el.value)"
+                                            x-on:blur="
+                                                const value = $el.value === '' ? '' : Math.min(99999999.99, Math.max(0, Number.parseFloat($el.value) || 0)).toFixed(2);
+                                                $el.value = value;
+                                                $wire.updateIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }}, value);
+                                            "
                                             class="h-[34px] w-full rounded-lg border border-gray-300 bg-white px-2 py-0 text-left text-sm text-gray-950 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                                         />
                                     @else
@@ -153,7 +158,7 @@
                                                     max="999.99"
                                                     value="{{ ($issue['cover_values'][$coverField] ?? null) !== null ? number_format((float) $issue['cover_values'][$coverField], 2, '.', '') : '' }}"
                                                     x-on:blur="
-                                                        const value = $el.value === '' ? '' : Number.parseFloat($el.value).toFixed(2);
+                                                        const value = $el.value === '' ? '' : Math.min(999.99, Math.max(0, Number.parseFloat($el.value) || 0)).toFixed(2);
                                                         $el.value = value;
                                                         $wire.updateIssueCoverValue({{ \Illuminate\Support\Js::from($issue['key']) }}, '{{ $coverField }}', value);
                                                     "
