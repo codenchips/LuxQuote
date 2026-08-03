@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.2 - 2026-08-03
+
+Version: `0.2.1` -> `0.2.2`
+
+Changes included:
+
+- `e429c27` Restore Archived
+- `96d6a76` sf cli commands
+- `f7cadc8` Add Tenders!  Phase 1
+- `f5588d6` Tenders Phase 2
+- `adc8488` Enhanced keyboard controls on areas tables. "no offer" special condition.
+- `ca86882` delete blanks without comfirmation
+- `a83114a` Pick a Tender PDF By Area, Pick an area
+- `a771f0b` Project Locking
+- `5e329a8` Lock timeout fix
+- `b541b67` Version number format change
+- `20dc709` zero rrp lines flag in validation cover footer optional cover when no tenders
+- `b44ab0e` Salesforce error checking
+
 ## 0.1.0-beta.12 - 2026-07-23
 
 Version: `0.1.0-beta.11` -> `0.1.0-beta.12`
