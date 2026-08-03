@@ -9,6 +9,7 @@ enum ProjectStatus: string
     case ApprovalRequested = 'approval_requested';
     case Approved = 'approved';
     case Quoted = 'quoted';
+    case DesignComplete = 'design_complete';
     case Archived = 'archived';
 
     public function label(): string
@@ -19,6 +20,7 @@ enum ProjectStatus: string
             ProjectStatus::ApprovalRequested => 'Approval Requested',
             ProjectStatus::Approved => 'Approved',
             ProjectStatus::Quoted => 'Quoted',
+            ProjectStatus::DesignComplete => 'Design Complete',
             ProjectStatus::Archived => 'Archived',
         };
     }
@@ -31,6 +33,7 @@ enum ProjectStatus: string
             ProjectStatus::ApprovalRequested => 'warning',
             ProjectStatus::Approved => 'success',
             ProjectStatus::Quoted => 'warning',
+            ProjectStatus::DesignComplete => 'success',
         };
     }
 }

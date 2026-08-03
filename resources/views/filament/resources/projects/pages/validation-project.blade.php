@@ -178,7 +178,7 @@
                                 'self-start pt-5' => in_array($issue['type'], ['price_mismatch', 'cover_mismatch'], true),
                             ])
                         >
-                            @if($issue['type'] === 'price_mismatch' && $canViewPrices && $canEditPrices && $canUpdateValidationLines && ($issue['rrp'] ?? null) !== null)
+                            @if($issue['type'] === 'price_mismatch' && $canViewPrices && $canEditPrices && $canUpdateValidationLines && ($issue['rrp'] ?? null) !== null && (float) $issue['rrp'] > 0)
                                 <x-filament::button
                                     wire:click="matchIssueQuotePrice({{ \Illuminate\Support\Js::from($issue['key']) }})"
                                     color="gray"

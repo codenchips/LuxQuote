@@ -1,6 +1,13 @@
 # Company App — Project Status
 
-_Last updated: 30 July 2026_
+_Last updated: 3 August 2026_
+
+---
+
+## Quote Cover and Design Complete Status — 3 August 2026
+
+- **Quote cover footer logos added**: The quote cover sheet now embeds `public/images/quote-cover-footer-logos.png` in the reserved footer area at full available width while preserving the PNG aspect ratio.
+- **Design Complete project status added**: Projects now support a visible **Design Complete** status. The project page includes a rightmost header toggle for users with project-detail edit permission. Toggling it off recalculates the normal status from the active revision, such as Draft, In Progress, Approved, or Quoted. The status appears in the Projects table and existing Status filter.
 
 ---
 
@@ -202,7 +209,7 @@ products
 projects
   id, user_id (FK), name, reference_number, customer_name, contractor
   site_location, owner_email, created_by_email, department
-  date, revision, visibility (open|private), status (draft|in_progress|complete|cancelled|archived)
+  date, revision, visibility (open|private|team), status (draft|in_progress|approval_requested|approved|quoted|design_complete|archived)
   branch_name, has_cover (bool), cover_direction (added|deducted)
   cover_percentage (legacy string, nullable), cover_1, cover_2, cover_3, value (decimal, nullable)
   quote_notes, internal_notes, general_notes

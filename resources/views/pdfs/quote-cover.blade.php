@@ -3,6 +3,10 @@
     $logoSrc = file_exists($logoPath)
         ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath))
         : null;
+    $footerLogosPath = public_path('images/quote-cover-footer-logos.png');
+    $footerLogosSrc = file_exists($footerLogosPath)
+        ? 'data:image/png;base64,'.base64_encode(file_get_contents($footerLogosPath))
+        : null;
     $windSongRegularPath = public_path('fonts/windsong/WindSong-Regular.ttf');
     $windSongMediumPath = public_path('fonts/windsong/WindSong-Medium.ttf');
     $windSongRegularSrc = file_exists($windSongRegularPath)
@@ -236,16 +240,18 @@
         }
 
         .logo-space {
-            height: 19mm;
-            margin-top: 8mm;
+            margin-top: auto;
+            padding-top: 6mm;
             border-top: 0.5pt solid #d1d5db;
-            color: #9ca3af;
             display: flex;
             align-items: flex-end;
             justify-content: center;
-            font-size: 7.5pt;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
+        }
+
+        .footer-logos {
+            display: block;
+            width: 100%;
+            height: auto;
         }
     </style>
 </head>
@@ -326,7 +332,9 @@
         </section>
 
         <footer class="logo-space">
-            Accreditation logo space
+            @if($footerLogosSrc)
+                <img src="{{ $footerLogosSrc }}" class="footer-logos" alt="Accreditations">
+            @endif
         </footer>
     </main>
 </body>

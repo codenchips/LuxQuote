@@ -190,6 +190,8 @@ Project visibility supports:
 - `Private` — only the project owner and admins may see it.
 - `Team` — the project owner, admins, and members of the selected team may see it.
 
+The project page **Design Complete** status toggle is controlled by `projects.update-details`. It changes only the visible project status and does not unlock approved revisions, change line validation, or change output permissions.
+
 ## Project Tenders
 
 Project Tenders are local links between a Project and Salesforce contractor Accounts that may tender for the project. The project page **Tenders** modal is visible from the project page, while adding, removing, and choosing a primary tender Account uses `projects.manage-tenders` and repeats that guard server-side.

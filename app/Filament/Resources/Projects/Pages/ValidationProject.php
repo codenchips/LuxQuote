@@ -418,7 +418,13 @@ class ValidationProject extends ViewRecord
         $issue = $this->findIssue($issueKey);
         $lines = $this->linesForIssue($issue)->get();
 
-        abort_unless($issue['type'] === 'price_mismatch' && ! $issue['approved'] && $issue['rrp'] !== null, 404);
+        abort_unless(
+            $issue['type'] === 'price_mismatch'
+                && ! $issue['approved']
+                && $issue['rrp'] !== null
+                && (float) $issue['rrp'] > 0,
+            404,
+        );
 
         $this->linesForIssue($issue)->update([
             'unit_price' => number_format((float) $issue['rrp'], 2, '.', ''),
@@ -757,7 +763,7 @@ class ValidationProject extends ViewRecord
      */
     private function quotePriceResolvesIssue(array $issue, ?string $quotePrice): bool
     {
-        if ($quotePrice === null || ($issue['rrp'] ?? null) === null) {
+        if ($quotePrice === null || ($issue['rrp'] ?? null) === null || (float) $issue['rrp'] <= 0) {
             return false;
         }
 

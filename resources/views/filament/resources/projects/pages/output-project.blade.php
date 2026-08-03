@@ -20,7 +20,6 @@
         $includeQuoteDatasheets = $this->includeQuoteDatasheets;
         $includeScheduleDatasheets = $this->includeScheduleDatasheets;
         $quoteTenderOptions = $canProduceQuote ? $this->quoteTenderOptions() : [];
-        $hasQuoteTenders = count($quoteTenderOptions) > 0;
         $outputAreaOptions = ($canProduceQuote || $canProduceUnpricedSchedule) ? $this->outputAreaOptions() : [];
         $schedulePdfUrl = $canProduceUnpricedSchedule ? $this->getSchedulePdfUrl() : null;
         $quotePdfUrl = $canProduceQuote ? $this->getQuotePdfUrl() : null;
@@ -48,6 +47,7 @@
         class="space-y-7"
         x-data="quoteTenderOutput({
             tenders: @js($quoteTenderOptions),
+            customerName: @js($this->record->customer_name ?: 'Customer'),
             areas: @js($outputAreaOptions),
             scheduleUrl: @js($schedulePdfUrl),
             quoteUrl: @js($quotePdfUrl),
@@ -759,27 +759,13 @@
 
                                 <div class="mt-4 space-y-3">
                                     @if($validationPassed && $quoteApproved)
-                                        @if($hasQuoteTenders)
-                                            <button
-                                                type="button"
-                                                x-on:click="openTenderDialog()"
-                                                class="{{ $primaryButtonClasses }}"
-                                            >
-                                                Generate Quote PDF
-                                            </button>
-                                        @else
-                                            <a
-                                                href="{{ $quotePdfUrl }}"
-                                                x-bind:href="directQuoteUrl()"
-                                                target="_blank"
-                                                data-pdf-generation
-                                                data-pdf-title="Generating quote PDF"
-                                                data-pdf-message="Your quote PDF is being generated. Including datasheets can take a while."
-                                                class="{{ $primaryButtonClasses }}"
-                                            >
-                                                Generate Quote PDF
-                                            </a>
-                                        @endif
+                                        <button
+                                            type="button"
+                                            x-on:click="openTenderDialog()"
+                                            class="{{ $primaryButtonClasses }}"
+                                        >
+                                            Generate Quote PDF
+                                        </button>
                                     @else
                                         <button type="button" disabled class="{{ $disabledOutputButtonClasses }}">
                                             Generate Quote PDF
@@ -971,7 +957,7 @@
                 <div class="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4 dark:border-white/10">
                     <div>
                         <h2 id="quote-tender-title" class="text-lg font-semibold text-gray-950 dark:text-white">Choose Tenders</h2>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Select the contractors that need their own quote cover sheet.</p>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400" x-text="tenders.length > 0 ? 'Select the contractors that need their own quote cover sheet.' : 'Choose whether to include a customer cover sheet.'"></p>
                     </div>
                     <button type="button" x-on:click="! generating && close()" class="rounded-md p-1 text-gray-400 transition hover:text-gray-700 dark:hover:text-gray-200">
                         <x-heroicon-o-x-mark class="h-6 w-6" />
@@ -990,7 +976,7 @@
                     </div>
 
                     <div class="divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 dark:divide-white/10 dark:border-white/10">
-                        <template x-for="tender in tenders" :key="tender.id">
+                        <template x-for="tender in quoteCoverOptions()" :key="tender.id">
                             <div class="grid grid-cols-[auto_1fr_auto] items-center gap-4 bg-white px-4 py-3 dark:bg-white/[0.02]">
                                 <input
                                     type="checkbox"
@@ -1003,7 +989,7 @@
                                         <span class="truncate text-sm font-semibold text-gray-950 dark:text-white" x-text="tender.name"></span>
                                         <span x-show="tender.is_primary" class="rounded-md border border-orange-400/40 bg-orange-400/15 px-2 py-0.5 text-[11px] font-semibold text-orange-200">Primary</span>
                                     </div>
-                                    <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400" x-text="tender.city || 'No city recorded'"></p>
+                                    <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400" x-text="tender.city || (tender.is_customer ? customerName : 'No city recorded')"></p>
                                 </div>
                                 <div class="min-w-32 text-right text-sm">
                                     <template x-if="results[tender.id]?.url">
@@ -1066,6 +1052,7 @@
                     dotTimer: null,
                     includeDatasheets: Boolean(config.includeDatasheets),
                     quoteUrl: config.quoteUrl,
+                    customerName: config.customerName || 'Customer',
                     scheduleUrl: config.scheduleUrl,
                     includeScheduleDatasheets: Boolean(config.includeScheduleDatasheets),
                     prepareUrl: config.prepareUrl,
@@ -1154,7 +1141,7 @@
                         this.selected = {};
                         this.dotCount = 1;
 
-                        for (const tender of this.tenders) {
+                        for (const tender of this.quoteCoverOptions()) {
                             this.selected[tender.id] = true;
                             this.status[tender.id] = 'Ready';
                         }
@@ -1190,24 +1177,36 @@
                     close() {
                         this.open = false;
                     },
+                    customerCoverOption() {
+                        return {
+                            id: 'customer',
+                            name: 'Include Cover sheet to Customer',
+                            city: this.customerName,
+                            is_primary: false,
+                            is_customer: true,
+                        };
+                    },
+                    quoteCoverOptions() {
+                        return this.tenders.length > 0 ? this.tenders : [this.customerCoverOption()];
+                    },
                     selectAll() {
-                        for (const tender of this.tenders) {
+                        for (const tender of this.quoteCoverOptions()) {
                             this.selected[tender.id] = true;
                         }
                     },
                     clearAll() {
-                        for (const tender of this.tenders) {
+                        for (const tender of this.quoteCoverOptions()) {
                             this.selected[tender.id] = false;
                         }
                     },
-                    selectedTenders() {
-                        return this.tenders.filter((tender) => Boolean(this.selected[tender.id]));
+                    selectedQuoteCoverOptions() {
+                        return this.quoteCoverOptions().filter((tender) => Boolean(this.selected[tender.id]));
                     },
                     footerMessage() {
                         const completed = Object.values(this.results).filter((result) => result?.url).length;
 
                         if (this.generating) {
-                            return `Generated ${completed} of ${this.selectedTenders().length} quote PDFs`;
+                            return `Generated ${completed} of ${this.selectedQuoteCoverOptions().length} quote PDFs`;
                         }
 
                         return completed > 0 ? `${completed} quote PDFs ready.` : 'No quote PDFs generated yet.';
@@ -1244,7 +1243,7 @@
                         this.zipDownload = null;
                         this.startDots();
 
-                        const selectedTenders = this.selectedTenders();
+                        const selectedTenders = this.selectedQuoteCoverOptions();
 
                         try {
                             if (selectedTenders.length === 0) {
@@ -1268,7 +1267,7 @@
 
                             for (const tender of selectedTenders) {
                                 this.status[tender.id] = 'Generating...';
-                                const prepared = await this.prepareQuote(tender.id, true, datasheetToken);
+                                const prepared = await this.prepareQuote(tender.is_customer ? null : tender.id, true, datasheetToken);
                                 this.results[tender.id] = prepared;
                                 this.status[tender.id] = 'Ready';
 

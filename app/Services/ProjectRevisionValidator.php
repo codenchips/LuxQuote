@@ -275,7 +275,7 @@ class ProjectRevisionValidator
                 /** @var Product|null $product */
                 $product = $productsBySku->get($this->normaliseSku($line->code));
 
-                if ($product !== null && $product->price !== null && $this->pricesMatch($line->unit_price, $product->price)) {
+                if ($this->productHasUsableRrp($product) && $this->pricesMatch($line->unit_price, $product->price)) {
                     return null;
                 }
 
@@ -478,7 +478,7 @@ class ProjectRevisionValidator
                 : "SKU \"{$line->code}\" was not found in the product catalogue. Review the quote price before approving.";
         }
 
-        if ($product->price === null) {
+        if (! $this->productHasUsableRrp($product)) {
             return $line->unit_price === null
                 ? "SKU \"{$line->code}\" has no product RRP and no quote price."
                 : "SKU \"{$line->code}\" has no product RRP. Review the quote price before approving.";
@@ -498,6 +498,13 @@ class ProjectRevisionValidator
         }
 
         return $this->normalisePrice($quotePrice) === $this->normalisePrice($rrp);
+    }
+
+    private function productHasUsableRrp(?Product $product): bool
+    {
+        return $product !== null
+            && $product->price !== null
+            && (float) $product->price > 0;
     }
 
     private function normalisePrice(string|float|int $price): string

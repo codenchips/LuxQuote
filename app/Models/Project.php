@@ -174,20 +174,23 @@ class Project extends Model
 
     public function syncStatusFromActiveRevision(): void
     {
-        if ($this->status === ProjectStatus::Archived) {
+        if (in_array($this->status, [ProjectStatus::Archived, ProjectStatus::DesignComplete], true)) {
             return;
         }
 
-        $this->load('activeRevision');
+        $this->updateQuietly(['status' => $this->statusFromActiveRevision()]);
+    }
 
-        $status = match (true) {
+    public function statusFromActiveRevision(): ProjectStatus
+    {
+        $this->loadMissing('activeRevision');
+
+        return match (true) {
             $this->activeRevisionHasGeneratedQuote() => ProjectStatus::Quoted,
             $this->activeRevision?->status === ProjectRevisionStatus::Approved => ProjectStatus::Approved,
             $this->activeRevisionHasScheduleProducts() => ProjectStatus::InProgress,
             default => ProjectStatus::Draft,
         };
-
-        $this->updateQuietly(['status' => $status]);
     }
 
     public function isVisibleTo(User $user): bool

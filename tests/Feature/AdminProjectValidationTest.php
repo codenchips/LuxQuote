@@ -587,6 +587,30 @@ class AdminProjectValidationTest extends TestCase
         $this->assertFalse($project->activeRevision->fresh()->validated);
     }
 
+    public function test_zero_price_catalogue_product_is_flagged_for_price_review(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $product = Product::factory()->create([
+            'sku' => 'ZERO-RRP-SKU',
+            'price' => 0,
+        ]);
+        $line = $this->createLine($project, $product->sku, unitPrice: 0);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertSee('1 unresolved issue')
+            ->assertSee('ZERO-RRP-SKU')
+            ->assertSee('has no product RRP. Review the quote price before approving.')
+            ->assertSee('RRP')
+            ->assertSee('Quote')
+            ->assertDontSee('Match');
+
+        $this->assertFalse($line->fresh()->approved);
+        $this->assertFalse($project->activeRevision->fresh()->validated);
+    }
+
     public function test_custom_product_price_can_be_updated_and_approved_from_one_review_issue(): void
     {
         $admin = User::factory()->admin()->create();

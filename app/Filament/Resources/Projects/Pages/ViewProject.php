@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Projects\Pages;
 
 use App\Enums\ProjectLineType;
 use App\Enums\ProjectRevisionStatus;
+use App\Enums\ProjectStatus;
 use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Filament\Resources\Projects\Schemas\ProjectForm;
@@ -375,6 +376,18 @@ class ViewProject extends ViewRecord
                 ->modalSubmitAction(false)
                 ->modalCancelActionLabel('Close'),
 
+            Action::make('toggleDesignComplete')
+                ->label('Design Complete')
+                ->icon(fn (): string => $this->record->status === ProjectStatus::DesignComplete
+                    ? 'heroicon-o-check-badge'
+                    : 'heroicon-o-check-circle')
+                ->color(fn (): string => $this->record->status === ProjectStatus::DesignComplete ? 'success' : 'gray')
+                ->visible(fn (): bool => $this->canEditProjectDetails())
+                ->tooltip(fn (): string => $this->record->status === ProjectStatus::DesignComplete
+                    ? 'Toggle Design Complete off'
+                    : 'Mark this project as Design Complete')
+                ->action(fn () => $this->toggleDesignComplete()),
+
         ];
     }
 
@@ -540,6 +553,40 @@ class ViewProject extends ViewRecord
         $this->viewingRevisionId = $revision->id;
         unset($this->isViewingRevisionValidated);
         $this->revisionsModalOpen = false;
+    }
+
+    public function toggleDesignComplete(): void
+    {
+        abort_unless($this->canEditProjectDetails(), 403);
+
+        if (! $this->ensureProjectEditLockAvailable()) {
+            return;
+        }
+
+        if ($this->record->status === ProjectStatus::Archived) {
+            Notification::make()
+                ->title('Archived project')
+                ->body('Restore the project before changing its status.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $nextStatus = $this->record->status === ProjectStatus::DesignComplete
+            ? $this->record->statusFromActiveRevision()
+            : ProjectStatus::DesignComplete;
+
+        $this->record->update(['status' => $nextStatus]);
+        $this->record->refresh();
+
+        Notification::make()
+            ->title($nextStatus === ProjectStatus::DesignComplete ? 'Design complete' : 'Design complete removed')
+            ->body($nextStatus === ProjectStatus::DesignComplete
+                ? 'This project is now marked as Design Complete.'
+                : 'The project status has been recalculated from the active revision.')
+            ->success()
+            ->send();
     }
 
     public function createNewRevision(): void
