@@ -388,7 +388,7 @@ class ViewProject extends ViewRecord
                     ? 'heroicon-o-check-badge'
                     : 'heroicon-o-check-circle')
                 ->color(fn (): string => $this->record->status === ProjectStatus::DesignComplete ? 'success' : 'gray')
-                ->visible(fn (): bool => $this->canEditProjectDetails())
+                ->visible(fn (): bool => $this->canMarkDesignComplete())
                 ->tooltip(fn (): string => $this->record->status === ProjectStatus::DesignComplete
                     ? 'Toggle Design Complete off'
                     : 'Mark this project as Design Complete')
@@ -563,7 +563,7 @@ class ViewProject extends ViewRecord
 
     public function toggleDesignComplete(): void
     {
-        abort_unless($this->canEditProjectDetails(), 403);
+        abort_unless($this->canMarkDesignComplete(), 403);
 
         if (! $this->ensureProjectEditLockAvailable()) {
             return;
@@ -1324,8 +1324,22 @@ class ViewProject extends ViewRecord
             ->get()
             ->keyBy(fn (Product $product): string => $this->normaliseSku($product->sku));
 
+        $existingPricing = $this->technicalPasteExistingPricing();
+        $technicalPasteSummary = [
+            'areas_replaced' => 0,
+            'lines_added' => 0,
+            'prices_preserved' => 0,
+            'prices_defaulted' => 0,
+            'prices_unmatched' => 0,
+        ];
+
         try {
-            DB::transaction(function () use ($parsed, $productsBySku): void {
+            DB::transaction(function () use ($parsed, $productsBySku, &$existingPricing, &$technicalPasteSummary): void {
+                $technicalPasteSummary['areas_replaced'] = ProjectArea::query()
+                    ->where('project_id', $this->record->id)
+                    ->where('project_revision_id', $this->viewingRevisionId)
+                    ->count();
+
                 ProjectArea::query()
                     ->where('project_id', $this->record->id)
                     ->where('project_revision_id', $this->viewingRevisionId)
@@ -1342,16 +1356,44 @@ class ViewProject extends ViewRecord
                     foreach ($areaData['lines'] as $lineIndex => $lineData) {
                         /** @var Product|null $product */
                         $product = $productsBySku->get($this->normaliseSku($lineData['sku']));
+                        $description = $this->technicalLineDescription($lineData, $product);
+                        $preservedPricing = $this->takeTechnicalPastePricing(
+                            $existingPricing,
+                            $areaData['name'],
+                            $lineData['sku'],
+                            $lineData['ref'],
+                            $description,
+                        );
 
-                        $area->lines()->create($this->lineCreateDataFromSku(
+                        if ($preservedPricing !== null) {
+                            $technicalPasteSummary['prices_preserved']++;
+                        } elseif ($product !== null || ProjectLine::specialOrderCodeFor($lineData['sku']) !== null) {
+                            $technicalPasteSummary['prices_defaulted']++;
+                        } else {
+                            $technicalPasteSummary['prices_unmatched']++;
+                        }
+
+                        $createData = $this->lineCreateDataFromSku(
                             sku: $lineData['sku'],
                             qty: $lineData['qty'],
                             product: $product,
-                            unitPrice: null,
+                            unitPrice: $preservedPricing['unit_price'] ?? null,
                             sortOrder: $lineIndex,
                             ref: $lineData['ref'],
-                            description: $this->technicalLineDescription($lineData, $product),
-                        ));
+                            description: $description,
+                        );
+
+                        if ($preservedPricing !== null && ProjectLine::specialOrderCodeFor($lineData['sku']) === null) {
+                            $createData = [
+                                ...$createData,
+                                'cover_1' => $preservedPricing['cover_1'],
+                                'cover_2' => $preservedPricing['cover_2'],
+                                'cover_3' => $preservedPricing['cover_3'],
+                            ];
+                        }
+
+                        $area->lines()->create($createData);
+                        $technicalPasteSummary['lines_added']++;
                     }
                 }
             });
@@ -1363,7 +1405,95 @@ class ViewProject extends ViewRecord
             return;
         }
 
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'project_id' => $this->record->id,
+            'action_type' => 'technical_paste.applied',
+            'user_email_snapshot' => auth()->user()?->email ?? '',
+            'project_name_snapshot' => $this->record->name,
+            'revision_number' => $this->record->revision,
+            'payload' => $technicalPasteSummary,
+        ]);
+
+        Notification::make()
+            ->title('Technical paste applied')
+            ->body($technicalPasteSummary['prices_preserved'].' existing '.Str::plural('price', $technicalPasteSummary['prices_preserved']).' preserved. New or unmatched lines still need Sales review.')
+            ->success()
+            ->send();
+
         $this->closePasteProductsModal();
+    }
+
+    /**
+     * @return array{exact: array<string, array<int, array<string, mixed>>>, fallback: array<string, array<int, array<string, mixed>>>}
+     */
+    private function technicalPasteExistingPricing(): array
+    {
+        $pricing = ['exact' => [], 'fallback' => []];
+
+        $areas = ProjectArea::query()
+            ->where('project_id', $this->record->id)
+            ->where('project_revision_id', $this->viewingRevisionId)
+            ->with('lines')
+            ->get();
+
+        foreach ($areas as $area) {
+            foreach ($area->lines as $line) {
+                if (blank($line->code) || $line->unit_price === null) {
+                    continue;
+                }
+
+                $payload = [
+                    'unit_price' => $line->unit_price,
+                    'cover_1' => $line->cover_1,
+                    'cover_2' => $line->cover_2,
+                    'cover_3' => $line->cover_3,
+                ];
+
+                $exactKey = $this->technicalPastePriceKey($area->name, (string) $line->code, $line->ref, (string) $line->description);
+                $fallbackKey = $this->technicalPastePriceKey(null, (string) $line->code, $line->ref, (string) $line->description);
+
+                $pricing['exact'][$exactKey][] = $payload;
+                $pricing['fallback'][$fallbackKey][] = $payload;
+            }
+        }
+
+        return $pricing;
+    }
+
+    /**
+     * @param  array{exact: array<string, array<int, array<string, mixed>>>, fallback: array<string, array<int, array<string, mixed>>>}  $pricing
+     * @return array<string, mixed>|null
+     */
+    private function takeTechnicalPastePricing(array &$pricing, string $areaName, string $sku, ?string $ref, string $description): ?array
+    {
+        $exactKey = $this->technicalPastePriceKey($areaName, $sku, $ref, $description);
+        $fallbackKey = $this->technicalPastePriceKey(null, $sku, $ref, $description);
+
+        if (! empty($pricing['exact'][$exactKey])) {
+            return array_shift($pricing['exact'][$exactKey]);
+        }
+
+        if (! empty($pricing['fallback'][$fallbackKey])) {
+            return array_shift($pricing['fallback'][$fallbackKey]);
+        }
+
+        return null;
+    }
+
+    private function technicalPastePriceKey(?string $areaName, string $sku, ?string $ref, string $description): string
+    {
+        return implode('|', [
+            $areaName === null ? '*' : $this->normaliseMatchText($areaName),
+            $this->normaliseSku($sku),
+            $this->normaliseRef($ref) ?? '',
+            $this->normaliseMatchText($description),
+        ]);
+    }
+
+    private function normaliseMatchText(string $value): string
+    {
+        return (string) str($value)->squish()->lower();
     }
 
     public function notifyApprovedRevisionLocked(): void
@@ -1797,7 +1927,7 @@ class ViewProject extends ViewRecord
                 return;
             }
 
-            $data = $this->lineCodeUpdateData((string) $value);
+            $data = $this->lineCodeUpdateData((string) $value, $line);
 
             if (! $this->lineDataWouldChange($line, $data)) {
                 return;
@@ -1924,7 +2054,7 @@ class ViewProject extends ViewRecord
     /**
      * @return array<string, mixed>
      */
-    private function lineCodeUpdateData(string $value): array
+    private function lineCodeUpdateData(string $value, ?ProjectLine $line = null): array
     {
         $code = $this->normaliseSku($value);
 
@@ -1947,7 +2077,7 @@ class ViewProject extends ViewRecord
         ];
 
         if ($code === '') {
-            return $data;
+            return $this->preserveExistingPriceForNonPricingUser($data, $line);
         }
 
         $product = Product::query()
@@ -1955,10 +2085,10 @@ class ViewProject extends ViewRecord
             ->first();
 
         if (! $product) {
-            return $data;
+            return $this->preserveExistingPriceForNonPricingUser($data, $line);
         }
 
-        return [
+        return $this->preserveExistingPriceForNonPricingUser([
             ...$data,
             'product_id' => $product->id,
             'code' => $product->sku,
@@ -1966,7 +2096,22 @@ class ViewProject extends ViewRecord
             'type' => ProjectLineType::Standard->value,
             'unit_price' => $product->price,
             'status' => self::LineStatusPriced,
-        ];
+        ], $line);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function preserveExistingPriceForNonPricingUser(array $data, ?ProjectLine $line): array
+    {
+        if ($this->canEditPrices() || $line === null || $line->unit_price === null) {
+            return $data;
+        }
+
+        $data['unit_price'] = $line->unit_price;
+
+        return $data;
     }
 
     private function normaliseLineFieldValue(string $field, mixed $value): mixed
@@ -2182,6 +2327,11 @@ class ViewProject extends ViewRecord
     public function canEditProjectDetails(): bool
     {
         return auth()->user()?->can('projects.update-details') ?? false;
+    }
+
+    public function canMarkDesignComplete(): bool
+    {
+        return auth()->user()?->can('projects.mark-design-complete') ?? false;
     }
 
     public function canManageProjectTenders(): bool

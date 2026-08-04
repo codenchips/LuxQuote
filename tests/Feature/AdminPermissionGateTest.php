@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\ProjectLineType;
+use App\Enums\ProjectStatus;
 use App\Filament\Resources\Projects\Pages\ViewProject;
 use App\Models\Project;
 use App\Models\User;
@@ -23,6 +24,7 @@ class AdminPermissionGateTest extends TestCase
 
         $this->assertTrue($user->can('projects.create'));
         $this->assertTrue($user->can('projects.manage-tenders'));
+        $this->assertTrue($user->can('projects.mark-design-complete'));
         $this->assertTrue($user->can('output.produce-unpriced-schedule'));
         $this->assertTrue($user->can('output.manage-document-packs'));
         $this->assertTrue($user->can('output.produce-document-packs'));
@@ -38,6 +40,7 @@ class AdminPermissionGateTest extends TestCase
 
         $this->assertTrue($technical->can('projects.update-lines'));
         $this->assertTrue($technical->can('projects.manage-tenders'));
+        $this->assertTrue($technical->can('projects.mark-design-complete'));
         $this->assertTrue($technical->can('validation.merge-lines'));
         $this->assertFalse($technical->can('pricing.view'));
         $this->assertFalse($technical->can('output.produce-priced-schedule'));
@@ -47,6 +50,7 @@ class AdminPermissionGateTest extends TestCase
         $this->assertTrue($manager->can('projects.create'));
         $this->assertTrue($manager->can('projects.update-lines'));
         $this->assertTrue($manager->can('projects.manage-tenders'));
+        $this->assertTrue($manager->can('projects.mark-design-complete'));
         $this->assertTrue($manager->can('revisions.approve'));
         $this->assertTrue($manager->can('pricing.view'));
         $this->assertTrue($manager->can('output.manage-document-packs'));
@@ -80,5 +84,27 @@ class AdminPermissionGateTest extends TestCase
             ->assertForbidden();
 
         $this->assertSame('10.00', $line->fresh()->unit_price);
+    }
+
+    public function test_design_complete_has_its_own_permission(): void
+    {
+        $technical = User::factory()->technical()->create();
+        $this->actingAs($technical);
+
+        $project = Project::factory()->for($technical)->create([
+            'status' => ProjectStatus::InProgress,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('toggleDesignComplete');
+
+        $this->assertSame(ProjectStatus::DesignComplete, $project->fresh()->status);
+
+        $sales = User::factory()->sales()->create();
+        $this->actingAs($sales);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('toggleDesignComplete')
+            ->assertForbidden();
     }
 }

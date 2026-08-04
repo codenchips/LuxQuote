@@ -93,6 +93,7 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Edit project details | x | x |  |  | x |
 | Edit project areas / line items | x | x |  | x | x |
 | Manage project tenders | x | x |  | x | x |
+| Mark design complete | x | x |  | x | x |
 | Create project revisions | x | x |  |  | x |
 | View project history | x | x | x | x | x |
 | View global history | x |  |  |  | x |
@@ -199,7 +200,7 @@ Project visibility supports:
 - `Private` — only the project owner and admins may see it.
 - `Team` — the project owner, admins, and members of the selected team may see it.
 
-The project page **Design Complete** status toggle is controlled by `projects.update-details`. It changes only the visible project status and does not unlock approved revisions, change line validation, or change output permissions.
+The project page **Design Complete** status toggle is controlled by `projects.mark-design-complete`. It changes only the visible project status and does not unlock approved revisions, change line validation, grant pricing access, or change output permissions.
 
 ## Project Tenders
 

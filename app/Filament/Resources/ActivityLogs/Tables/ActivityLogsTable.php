@@ -9,6 +9,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
 
 class ActivityLogsTable
 {
@@ -211,6 +212,21 @@ class ActivityLogsTable
                             return 'Added '.$label.($detail !== '' ? " ({$detail})" : '');
                         })(),
 
+                        'technical_paste.applied' => (function () use ($payload): string {
+                            $areasReplaced = (int) ($payload['areas_replaced'] ?? 0);
+                            $linesAdded = (int) ($payload['lines_added'] ?? 0);
+                            $pricesPreserved = (int) ($payload['prices_preserved'] ?? 0);
+                            $pricesDefaulted = (int) ($payload['prices_defaulted'] ?? 0);
+                            $pricesUnmatched = (int) ($payload['prices_unmatched'] ?? 0);
+
+                            return "Applied technical paste: <strong>{$areasReplaced}</strong> "
+                                .Str::plural('area', $areasReplaced).' replaced, '
+                                ."<strong>{$linesAdded}</strong> ".Str::plural('line', $linesAdded).' created, '
+                                ."<strong>{$pricesPreserved}</strong> ".Str::plural('price', $pricesPreserved).' preserved, '
+                                ."<strong>{$pricesDefaulted}</strong> defaulted, "
+                                ."<strong>{$pricesUnmatched}</strong> unmatched";
+                        })(),
+
                         'line.updated' => (function () use ($payload): string {
                             $code = e((string) ($payload['code'] ?? '?'));
                             $changes = $payload['changes'] ?? [];
@@ -370,6 +386,7 @@ class ActivityLogsTable
             'special.updated' => 'Special Updated',
             'user.login' => 'User Login',
             'product.added' => 'Product Added',
+            'technical_paste.applied' => 'Technical Paste Applied',
             'line.updated' => 'Line Updated',
             'line.qty_updated' => 'Quantity / Price Updated (legacy)',
         ];

@@ -108,6 +108,7 @@ start_runner() {
         -e "REPO_URL=$REPO_URL"
         -e "CONFIGURED_ACTIONS_RUNNER_FILES_DIR=/runner/config"
         -e "DISABLE_AUTO_UPDATE=true"
+        -e "DISABLE_AUTOMATIC_DEREGISTRATION=true"
         -v "$WORK_DIR:/home/runner/_work"
         -v "$CONFIG_DIR:/runner/config"
         -v "$SSH_DIR:/root/.ssh:ro"
@@ -130,18 +131,45 @@ start_runner() {
 
 verify_runner() {
     local status
+    local attempts
 
-    sleep 5
-    status="$(docker inspect --format '{{.State.Status}}' "$RUNNER_NAME")"
+    attempts=1
+    status=""
+
+    while [ "$attempts" -le 12 ]; do
+        status="$(docker inspect --format '{{.State.Status}}' "$RUNNER_NAME")"
+
+        if [ "$status" = "running" ]; then
+            break
+        fi
+
+        if [ "$status" = "restarting" ]; then
+            log "Runner container is restarting while verification waits (${attempts}/12)"
+        fi
+
+        sleep 5
+        attempts=$((attempts + 1))
+    done
 
     if [ "$status" != "running" ]; then
         docker logs --tail=120 "$RUNNER_NAME" || true
         fail "Runner container did not remain running."
     fi
 
-    docker exec "$RUNNER_NAME" test -s /root/.ssh/luxquote_github_repo_deploy || fail "Runner cannot read the persistent deploy key."
-    docker exec "$RUNNER_NAME" test -s /root/.ssh/known_hosts || fail "Runner cannot read persistent SSH fingerprints."
-    docker exec "$RUNNER_NAME" sh -lc "cd '$APP_DIR' && git ls-remote --exit-code origin refs/heads/production >/dev/null" || fail "Runner cannot read the production branch from GitHub."
+    if ! docker exec "$RUNNER_NAME" test -s /root/.ssh/luxquote_github_repo_deploy; then
+        docker logs --tail=120 "$RUNNER_NAME" || true
+        fail "Runner cannot read the persistent deploy key."
+    fi
+
+    if ! docker exec "$RUNNER_NAME" test -s /root/.ssh/known_hosts; then
+        docker logs --tail=120 "$RUNNER_NAME" || true
+        fail "Runner cannot read persistent SSH fingerprints."
+    fi
+
+    if ! docker exec "$RUNNER_NAME" sh -lc "cd '$APP_DIR' && git ls-remote --exit-code origin refs/heads/production >/dev/null"; then
+        docker logs --tail=120 "$RUNNER_NAME" || true
+        fail "Runner cannot read the production branch from GitHub."
+    fi
 
     log "Runner container is running. Recent logs follow:"
     docker logs --tail=40 "$RUNNER_NAME"

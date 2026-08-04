@@ -1397,6 +1397,73 @@ class AdminProjectResourceTest extends TestCase
         ]);
     }
 
+    public function test_technical_paste_preserves_existing_pricing_for_matching_lines(): void
+    {
+        $technical = User::factory()->technical()->create();
+        $this->actingAs($technical);
+
+        $project = Project::factory()->for($technical)->create();
+        $existingArea = $project->activeRevision->areas()->first();
+        $product = Product::factory()->create([
+            'sku' => 'TAB-SKU',
+            'product_name' => 'Tab Product',
+            'description' => 'Tab Product Description',
+            'price' => 12.34,
+        ]);
+
+        $existingArea->update(['name' => 'Ground Floor']);
+        $existingArea->lines()->create([
+            'product_id' => $product->id,
+            'code' => 'TAB-SKU',
+            'ref' => 'R1',
+            'description' => 'Manual description',
+            'qty' => 1,
+            'type' => ProjectLineType::Standard->value,
+            'unit_price' => 99.99,
+            'cover_1' => '7.00',
+            'cover_2' => '8.00',
+            'cover_3' => '9.00',
+            'sort_order' => 0,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('openPasteProductsModal', $existingArea->id)
+            ->set('pasteProductsMode', 'technical')
+            ->set('pastedProductData', implode("\n", [
+                'Ground Floor',
+                "TAB-SKU\tR1\t2\tManual description",
+            ]))
+            ->call('addPastedProducts')
+            ->assertSet('pasteProductsModalOpen', false);
+
+        $line = ProjectArea::where('project_revision_id', $project->active_revision_id)
+            ->where('name', 'Ground Floor')
+            ->firstOrFail()
+            ->lines()
+            ->firstOrFail();
+
+        $this->assertSame('TAB-SKU', $line->code);
+        $this->assertSame(2, $line->qty);
+        $this->assertSame('99.99', $line->unit_price);
+        $this->assertSame('7.00', $line->cover_1);
+        $this->assertSame('8.00', $line->cover_2);
+        $this->assertSame('9.00', $line->cover_3);
+        $this->assertFalse($line->approved);
+
+        $this->assertDatabaseHas('activity_logs', [
+            'project_id' => $project->id,
+            'action_type' => 'technical_paste.applied',
+        ]);
+
+        $log = ActivityLog::where('project_id', $project->id)
+            ->where('action_type', 'technical_paste.applied')
+            ->latest()
+            ->firstOrFail();
+
+        $this->assertSame(1, $log->payload['prices_preserved']);
+        $this->assertSame(1, $log->payload['lines_added']);
+    }
+
     public function test_project_line_status_reflects_validation_state(): void
     {
         $admin = User::factory()->admin()->create();
@@ -2742,6 +2809,42 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame('0.00', $line->unit_price);
         $this->assertSame(ProjectLineType::Custom, $line->type);
         $this->assertSame('Priced', $line->status);
+    }
+
+    public function test_non_pricing_user_editing_line_code_preserves_existing_price(): void
+    {
+        $technical = User::factory()->technical()->create();
+        $this->actingAs($technical);
+
+        $project = Project::factory()->for($technical)->create();
+        $replacementProduct = Product::factory()->create([
+            'sku' => 'KNOWN-SKU',
+            'product_name' => 'Known Product',
+            'description' => 'Known Product Description',
+            'price' => 45.67,
+        ]);
+        $line = $project->activeRevision->areas()->first()->lines()->create([
+            'code' => 'OLD-SKU',
+            'description' => 'Old description',
+            'qty' => 1,
+            'type' => ProjectLineType::Custom->value,
+            'unit_price' => 77.77,
+            'approved' => true,
+            'approved_at' => now(),
+            'approved_by' => $technical->id,
+            'sort_order' => 0,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('updateLineField', $line->id, 'code', 'known-sku');
+
+        $line->refresh();
+
+        $this->assertSame($replacementProduct->id, $line->product_id);
+        $this->assertSame('KNOWN-SKU', $line->code);
+        $this->assertSame('Known Product Description', $line->description);
+        $this->assertSame('77.77', $line->unit_price);
+        $this->assertFalse($line->approved);
     }
 
     public function test_line_fields_can_be_cleared_for_spacing_rows(): void

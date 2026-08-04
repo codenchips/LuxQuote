@@ -9,6 +9,7 @@ enum PermissionKey: string
     case ProjectsUpdateDetails = 'projects.update-details';
     case ProjectsUpdateLines = 'projects.update-lines';
     case ProjectsManageTenders = 'projects.manage-tenders';
+    case ProjectsMarkDesignComplete = 'projects.mark-design-complete';
     case RevisionsCreate = 'revisions.create';
     case ProjectHistoryView = 'project-history.view';
     case ActivityLogView = 'activity-log.view';
@@ -50,6 +51,7 @@ enum PermissionKey: string
             self::ProjectsUpdateDetails => 'Edit project details',
             self::ProjectsUpdateLines => 'Edit project areas / line items',
             self::ProjectsManageTenders => 'Manage project tenders',
+            self::ProjectsMarkDesignComplete => 'Mark design complete',
             self::RevisionsCreate => 'Create project revisions',
             self::ProjectHistoryView => 'View project history',
             self::ActivityLogView => 'View global history',
@@ -92,7 +94,8 @@ enum PermissionKey: string
             self::ProjectsCreate,
             self::ProjectsUpdateDetails,
             self::ProjectsUpdateLines,
-            self::ProjectsManageTenders => 'Projects',
+            self::ProjectsManageTenders,
+            self::ProjectsMarkDesignComplete => 'Projects',
 
             self::RevisionsCreate,
             self::RevisionsApprove,
@@ -142,6 +145,7 @@ enum PermissionKey: string
             self::PricingUpdate => 'Allows changing project line prices. Requires price visibility.',
             self::CoverUpdate => 'Allows changing project and line-level cover percentages.',
             self::ProjectsManageTenders => 'Allows adding, removing, and choosing primary contractor tenders for a project.',
+            self::ProjectsMarkDesignComplete => 'Allows toggling the Design Complete project status without granting full project-detail editing.',
             self::SpecialsManage => 'Allows managing special order codes that affect project entry, validation, and PDF outputs.',
             self::OutputHistoryView => 'Allows viewing and regenerating previously generated project quote and schedule outputs.',
             self::SalesforceManagePush => 'Allows pausing and resuming outbound Salesforce writes while keeping Salesforce project import/search available.',
@@ -171,6 +175,7 @@ enum PermissionKey: string
                     self::ProjectsUpdateDetails,
                     self::ProjectsUpdateLines,
                     self::ProjectsManageTenders,
+                    self::ProjectsMarkDesignComplete,
                     self::RevisionsCreate,
                     self::ProjectHistoryView,
                     self::OutputView,
@@ -207,6 +212,7 @@ enum PermissionKey: string
                     self::ProjectsView,
                     self::ProjectsUpdateLines,
                     self::ProjectsManageTenders,
+                    self::ProjectsMarkDesignComplete,
                     self::ProjectHistoryView,
                     self::ValidationView,
                     self::ValidationRun,
@@ -229,6 +235,7 @@ enum PermissionKey: string
                     self::ProjectsUpdateDetails,
                     self::ProjectsUpdateLines,
                     self::ProjectsManageTenders,
+                    self::ProjectsMarkDesignComplete,
                     self::RevisionsCreate,
                     self::ProjectHistoryView,
                     self::ActivityLogView,
