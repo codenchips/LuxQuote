@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.3 - 2026-08-04
+
+Version: `0.2.2` -> `0.2.3`
+
+Changes included:
+
+- `b2756f1` Specials interface
+- `c04ef55` Numric validation, health check hardening
+- `069bbdb` Paste Technical does not default existing SKU's
+
 ## 0.2.2 - 2026-08-03
 
 Version: `0.2.1` -> `0.2.2`
