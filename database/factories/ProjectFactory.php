@@ -37,6 +37,7 @@ class ProjectFactory extends Factory
             'branch_name' => null,
             'cover_percentage' => null,
             'value' => null,
+            'currency' => 'GBP',
             'quote_notes' => null,
             'internal_notes' => null,
             'general_notes' => null,

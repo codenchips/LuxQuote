@@ -242,6 +242,19 @@ class ProjectForm
                     ->disabled(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record, $forceReadOnly))
                     ->columnSpanFull(),
 
+                ToggleButtons::make('currency')
+                    ->label('Currency')
+                    ->options([
+                        'GBP' => '£ GBP',
+                        'EUR' => '€ Euro',
+                    ])
+                    ->default('GBP')
+                    ->live()
+                    ->grouped()
+                    ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
+                    ->disabled(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record, $forceReadOnly))
+                    ->columnSpanFull(),
+
                 TextInput::make('value')
                     ->label('Value')
                     ->placeholder('0.00')
@@ -249,7 +262,7 @@ class ProjectForm
                     ->minValue(0)
                     ->maxValue(self::MaxProjectValue)
                     ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
-                    ->prefix('£')
+                    ->prefix(fn (Get $get, ?Project $record): string => $get('currency') === 'EUR' ? '€' : '£')
                     ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 TextInput::make('branch_name')

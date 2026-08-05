@@ -38,6 +38,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'cover_2',
     'cover_3',
     'value',
+    'currency',
     'quote_notes',
     'internal_notes',
     'general_notes',
@@ -97,6 +98,7 @@ class Project extends Model
             'status' => ProjectStatus::class,
             'date' => 'date',
             'value' => 'decimal:2',
+            'currency' => 'string',
             'has_cover' => 'boolean',
             'cover_1' => 'decimal:2',
             'cover_2' => 'decimal:2',
@@ -108,6 +110,19 @@ class Project extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function getCurrencySymbol(): string
+    {
+        return match (strtoupper((string) $this->currency)) {
+            'EUR' => '€',
+            default => '£',
+        };
+    }
+
+    public function formatCurrency(float|int|string|null $value): string
+    {
+        return $this->getCurrencySymbol().number_format((float) $value, 2);
     }
 
     public function team(): BelongsTo

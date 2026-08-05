@@ -886,7 +886,7 @@ class ValidationProject extends ViewRecord
 
         Notification::make()
             ->title('Salesforce value updated')
-            ->body('Opportunity Amount updated to £'.number_format($total, 2).'.')
+            ->body('Opportunity Amount updated to '.$this->record->formatCurrency($total).'.')
             ->success()
             ->send();
     }

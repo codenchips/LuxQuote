@@ -170,6 +170,8 @@ Cover controls and calculations are active only when `projects.has_cover` is tru
 
 For Cover-enabled projects, Net is always the lower amount and Total is always the higher amount, regardless of Cover Direction. With deducted Cover, the stored `project_lines.unit_price` is Total; with added Cover, it is Net. All price-visible schedule, validation, PDF, CSV, and project-total displays must derive their labelled Net/Total values through the `ProjectLine` Cover calculation methods.
 
+Project currency is display-only. The `projects.currency` value changes whether price-visible screens and PDFs display `£` or `€`; it does not convert stored numeric prices, run exchange-rate maths, or change Salesforce Amount payload values. Currency controls are still price-related UI, so they follow `pricing.view` visibility and project-detail edit guards rather than having a separate permission.
+
 Validation flagging is controlled by `validation.flag-lines`. Flagging an issue or validated line must collect a short note, store it against the affected line(s), and keep the same server-side editable-revision guard as other validation mutations.
 
 ## Salesforce Push Control

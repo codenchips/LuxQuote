@@ -487,7 +487,7 @@
             </tr>
             <tr class="grand">
                 <td class="label">Quote total</td>
-                <td class="value">&pound;{{ number_format($grandTotal, 2) }}</td>
+                <td class="value">{{ $project->formatCurrency($grandTotal) }}</td>
             </tr>
         </table>
     </div>
@@ -515,7 +515,7 @@
                                     qty {{ number_format($areaQty) }}
                                     @if($showPrices)
                                         &nbsp;&middot;&nbsp;
-                                        &pound;{{ number_format($areaTotal, 2) }}
+                                        {{ $project->formatCurrency($areaTotal) }}
                                     @endif
                                 </span>
                             </div>
@@ -554,8 +554,8 @@
                                 $unitPrice = (float) ($line->totalUnitPriceForProject($project) ?? 0);
                                 $lineTotal = ((int) ($line->qty ?? 0)) * $unitPrice;
                             @endphp
-                            <td class="col-money">{!! $hasSku ? '&pound;'.e(number_format($unitPrice, 2)) : '&nbsp;' !!}</td>
-                            <td class="col-money">{!! $hasSku ? '&pound;'.e(number_format($lineTotal, 2)) : '&nbsp;' !!}</td>
+                            <td class="col-money">{!! $hasSku ? e($project->formatCurrency($unitPrice)) : '&nbsp;' !!}</td>
+                            <td class="col-money">{!! $hasSku ? e($project->formatCurrency($lineTotal)) : '&nbsp;' !!}</td>
                         @endif
                         <td class="col-ds">
                             @if($hasSku && isset($existingSkus[$line->code]))

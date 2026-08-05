@@ -464,7 +464,7 @@ class ViewProject extends ViewRecord
 
         Notification::make()
             ->title('Salesforce value updated')
-            ->body('Opportunity Amount updated to £'.number_format((float) ($this->record->value ?? 0), 2).'.')
+            ->body('Opportunity Amount updated to '.$this->record->formatCurrency((float) ($this->record->value ?? 0)).'.')
             ->success()
             ->send();
 

@@ -171,12 +171,12 @@
             @if($projectHasCover)
                 <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
                     <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Net Project Total</div>
-                    <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">&pound;{{ number_format($revisionTotals['net_value'], 2) }}</div>
+                    <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{{ $this->record->formatCurrency($revisionTotals['net_value']) }}</div>
                 </div>
             @endif
             <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
                 <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Project Total</div>
-                <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">&pound;{{ number_format($revisionTotals['value'], 2) }}</div>
+                <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{{ $this->record->formatCurrency($revisionTotals['value']) }}</div>
             </div>
         @endif
     </div>
@@ -216,12 +216,12 @@
                         @if($projectHasCover)
                         <span class="text-sm text-gray-500 dark:text-gray-400 mr-2">
                             Net:
-                            <span class="font-medium text-gray-900 dark:text-white">£{{ number_format($areaNetTotal, 2) }}</span>
+                            <span class="font-medium text-gray-900 dark:text-white">{{ $this->record->formatCurrency($areaNetTotal) }}</span>
                         </span>
                         @endif
                         <span class="text-sm text-gray-500 dark:text-gray-400 mr-4">
                             Price:
-                            <span class="font-medium text-gray-900 dark:text-white">£{{ number_format($areaTotal, 2) }}</span>
+                            <span class="font-medium text-gray-900 dark:text-white">{{ $this->record->formatCurrency($areaTotal) }}</span>
                         </span>
                     @endif
                 @endif

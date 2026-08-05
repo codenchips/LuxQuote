@@ -1,6 +1,15 @@
 # Company App — Project Status
 
-_Last updated: 3 August 2026_
+_Last updated: 5 August 2026_
+
+---
+
+## Currency Display — 5 August 2026
+
+- **Project currency display added**: Projects now store a `currency` value with `GBP` as the default and `EUR` as the alternate option. This controls visible currency symbols in the project details form, project totals, area totals, validation displays, activity-log price snippets, and quote/schedule PDF price output.
+- **Display only, no conversion**: Currency selection does not convert values, apply exchange rates, or change stored prices. A stored value of `100.00` displays as `£100.00` for GBP or `€100.00` for EUR.
+- **Pricing rules unchanged**: Currency selection is treated as price display context. Users still need the existing pricing permissions to see project values, prices, quote output, and price-based totals.
+- **Salesforce Amount unchanged**: Salesforce Amount pushes remain numeric. The selected project currency only affects LuxQuote display text and generated document presentation.
 
 ---
 
@@ -211,7 +220,7 @@ projects
   site_location, owner_email, created_by_email, department
   date, revision, visibility (open|private|team), status (draft|in_progress|approval_requested|approved|quoted|design_complete|archived)
   branch_name, has_cover (bool), cover_direction (added|deducted)
-  cover_percentage (legacy string, nullable), cover_1, cover_2, cover_3, value (decimal, nullable)
+  cover_percentage (legacy string, nullable), cover_1, cover_2, cover_3, value (decimal, nullable), currency (GBP|EUR)
   quote_notes, internal_notes, general_notes
   active_revision_id (FK → project_revisions, nullOnDelete)
   last_edited_at (nullable timestamp)
@@ -344,7 +353,7 @@ This is the most complex page. It is a custom `ViewRecord` Livewire component wi
 - Body: accordion list of `ProjectArea` cards, each collapsible
 
 ### Per-area card
-Each area header shows the area name, line count, total qty, and £ total. Buttons in the header:
+Each area header shows the area name, line count, total qty, and the project-currency total. Buttons in the header:
 - **Product** → opens the product picker modal (see below)
 - **Paste** → opens a paste modal for importing spreadsheet rows into the area
 - **Blank** → adds an empty `ProjectLine` to the area

@@ -138,7 +138,7 @@ class ActivityLogsTable
                             return 'Undid validation approval'.($items !== '' ? " for <strong>{$items}</strong>" : '');
                         })(),
 
-                        'validation.issue_matched' => (function () use ($payload): string {
+                        'validation.issue_matched' => (function () use ($payload, $record): string {
                             $lines = $payload['lines'] ?? [];
                             $items = implode(', ', array_map(function (array $line): string {
                                 $code = e((string) ($line['code'] ?? ''));
@@ -146,7 +146,7 @@ class ActivityLogsTable
 
                                 return $code !== '' && $desc !== '' ? "{$code} ({$desc})" : ($code ?: $desc ?: '—');
                             }, $lines));
-                            $price = isset($payload['matched_price']) ? ' to <strong>£'.e(number_format((float) $payload['matched_price'], 2)).'</strong>' : '';
+                            $price = isset($payload['matched_price']) ? ' to <strong>'.e($record->project?->formatCurrency((float) $payload['matched_price']) ?? '').'</strong>' : '';
 
                             return 'Matched and approved quote price'.$price.($items !== '' ? " for <strong>{$items}</strong>" : '');
                         })(),
@@ -198,12 +198,12 @@ class ActivityLogsTable
                             return 'Logged in <strong>'.e((string) $context).'</strong>';
                         })(),
 
-                        'product.added' => (function () use ($payload): string {
+                        'product.added' => (function () use ($payload, $record): string {
                             $qty = e((string) ($payload['qty'] ?? '1'));
                             $description = e((string) ($payload['description'] ?? ''));
                             $code = e((string) ($payload['code'] ?? ''));
                             $ref = isset($payload['ref']) ? ' | Ref: '.e((string) $payload['ref']) : '';
-                            $price = isset($payload['unit_price']) ? ' | £'.e(number_format((float) $payload['unit_price'], 2)) : '';
+                            $price = isset($payload['unit_price']) ? ' | '.e($record->project?->formatCurrency((float) $payload['unit_price']) ?? '') : '';
                             $notes = isset($payload['notes']) && $payload['notes'] !== '' ? ' | '.e((string) $payload['notes']) : '';
 
                             $detail = trim("{$code}{$ref}{$price}{$notes}", ' |');

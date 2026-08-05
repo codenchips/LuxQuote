@@ -92,7 +92,7 @@
                                 <label class="w-24 space-y-1">
                                     <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">RRP</span>
                                     <span class="block h-[34px] px-1 py-2 text-left text-sm text-gray-500 dark:text-gray-400">
-                                        {{ $issue['rrp'] !== null ? '£'.number_format((float) $issue['rrp'], 2) : '—' }}
+                                        {{ $issue['rrp'] !== null ? $this->record->formatCurrency((float) $issue['rrp']) : '—' }}
                                     </span>
                                 </label>
 
@@ -114,7 +114,7 @@
                                         />
                                     @else
                                         <span class="block h-[34px] px-1 py-2 text-left text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                            {{ ($issue['quote_price'] ?? null) !== null ? '£'.number_format((float) $issue['quote_price'], 2) : '—' }}
+                                            {{ ($issue['quote_price'] ?? null) !== null ? $this->record->formatCurrency((float) $issue['quote_price']) : '—' }}
                                         </span>
                                     @endif
                                 </label>
@@ -126,21 +126,21 @@
                                 <label class="w-24 space-y-1">
                                     <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">RRP</span>
                                     <span class="block h-[34px] px-1 py-2 text-left text-sm text-gray-500 dark:text-gray-400">
-                                        {{ ($issue['rrp'] ?? null) !== null ? '£'.number_format((float) $issue['rrp'], 2) : '—' }}
+                                        {{ ($issue['rrp'] ?? null) !== null ? $this->record->formatCurrency((float) $issue['rrp']) : '—' }}
                                     </span>
                                 </label>
 
                                 <label class="w-24 space-y-1">
                                     <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Net</span>
                                     <span class="block h-[34px] px-1 py-2 text-left text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                        {{ ($issue['net_price'] ?? null) !== null ? '£'.number_format((float) $issue['net_price'], 2) : '—' }}
+                                        {{ ($issue['net_price'] ?? null) !== null ? $this->record->formatCurrency((float) $issue['net_price']) : '—' }}
                                     </span>
                                 </label>
 
                                 <label class="w-24 space-y-1">
                                     <span class="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Total</span>
                                     <span class="block h-[34px] px-1 py-2 text-left text-sm font-semibold text-gray-700 dark:text-gray-200">
-                                        {{ ($issue['total_price'] ?? null) !== null ? '£'.number_format((float) $issue['total_price'], 2) : '—' }}
+                                        {{ ($issue['total_price'] ?? null) !== null ? $this->record->formatCurrency((float) $issue['total_price']) : '—' }}
                                     </span>
                                 </label>
 
@@ -275,7 +275,7 @@
                     <div class="text-center text-gray-600 dark:text-gray-300">{{ $line['qty'] }}</div>
                     @if($canViewPrices)
                     <div class="text-right text-gray-600 dark:text-gray-300">
-                        {{ $line['unit_price'] !== null ? '£'.number_format((float) $line['unit_price'], 2) : '—' }}
+                        {{ $line['unit_price'] !== null ? $this->record->formatCurrency((float) $line['unit_price']) : '—' }}
                     </div>
                     @endif
                     @if($canViewPrices && $projectHasCover)

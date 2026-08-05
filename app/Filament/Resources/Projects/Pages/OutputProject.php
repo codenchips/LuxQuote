@@ -203,9 +203,9 @@ class OutputProject extends ViewRecord
                 'name' => $area->name,
                 'items' => $area->lines->count(),
                 'qty' => (int) $area->line_total_qty,
-                'price' => $canViewPricing ? '£'.number_format($area->line_total, 2) : null,
+                'price' => $canViewPricing ? $this->record->formatCurrency($area->line_total) : null,
                 'net' => $canViewPricing && $this->record->has_cover
-                    ? '£'.number_format($area->lines->sum(fn (ProjectLine $line): float => $line->netLineTotalForProject($this->record)), 2)
+                    ? $this->record->formatCurrency($area->lines->sum(fn (ProjectLine $line): float => $line->netLineTotalForProject($this->record)))
                     : null,
             ])
             ->all();

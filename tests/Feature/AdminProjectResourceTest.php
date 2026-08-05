@@ -113,6 +113,20 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame([0, 1, 2], $project->revisions()->pluck('revision_number')->all());
     }
 
+    public function test_project_view_uses_the_project_currency_symbol(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'currency' => 'EUR',
+            'value' => 1234.56,
+        ]);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->assertSee('€');
+    }
+
     public function test_project_create_form_requires_key_project_fields(): void
     {
         $this->assertTrue(ProjectForm::createActionIsDisabled([
