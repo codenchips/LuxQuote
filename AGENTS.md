@@ -21,6 +21,29 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - laravel/sail (SAIL) - v1
 - phpunit/phpunit (PHPUNIT) - v12
 
+## Database Safety Rule
+
+Never run destructive database commands without explicit user approval.
+
+Forbidden unless the user explicitly asks for a restore/reset:
+
+- `migrate:fresh`
+- `migrate:refresh`
+- `db:wipe`
+- `schema:dump --prune`
+- `TRUNCATE`
+- `DROP DATABASE`
+- deleting all rows from business tables
+- restoring backups over an existing database
+
+Production must never use destructive database commands during normal deploys. Production deploys may only run forward migrations:
+
+```bash
+docker compose exec laravel.test php artisan migrate --force
+```
+
+Before any command that may affect data, first state the exact database name and whether the command is destructive.
+
 ## Skills Activation
 
 This project has domain-specific skills available in `**/skills/**`. You MUST activate the relevant skill whenever you work in that domain—don't wait until you're stuck.

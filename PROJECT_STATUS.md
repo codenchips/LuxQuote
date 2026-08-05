@@ -10,6 +10,7 @@ _Last updated: 5 August 2026_
 - **Display only, no conversion**: Currency selection does not convert values, apply exchange rates, or change stored prices. A stored value of `100.00` displays as `£100.00` for GBP or `€100.00` for EUR.
 - **Pricing rules unchanged**: Currency selection is treated as price display context. Users still need the existing pricing permissions to see project values, prices, quote output, and price-based totals.
 - **Salesforce Amount unchanged**: Salesforce Amount pushes remain numeric. The selected project currency only affects LuxQuote display text and generated document presentation.
+- **Database safety rule reinforced**: `AGENTS.md` and `DEPLOYMENT.md` now explicitly forbid destructive database commands such as `migrate:fresh`, `migrate:refresh`, `db:wipe`, `TRUNCATE`, and database restores unless the user/operator explicitly requests that specific destructive action. Normal production deploys may only run forward migrations with `php artisan migrate --force`.
 
 ---
 

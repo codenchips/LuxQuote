@@ -38,6 +38,29 @@ docker compose exec laravel.test php artisan migrate --force
 
 Use `--force` for production migrations to bypass Laravel's interactive production prompt.
 
+## Database Safety Rule
+
+Never run destructive database commands without explicit user approval.
+
+Forbidden unless the operator explicitly asks for a restore/reset:
+
+- `migrate:fresh`
+- `migrate:refresh`
+- `db:wipe`
+- `schema:dump --prune`
+- `TRUNCATE`
+- `DROP DATABASE`
+- deleting all rows from business tables
+- restoring backups over an existing database
+
+Production deploys must not use destructive database commands. Normal production deploys may only run forward migrations:
+
+```bash
+docker compose exec laravel.test php artisan migrate --force
+```
+
+Before any command that may affect data, confirm the exact database name and whether the command is destructive. If the command is destructive, stop unless the operator has explicitly requested that specific restore/reset action.
+
 ## Environment Configuration
 
 Production should include:
