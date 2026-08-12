@@ -113,6 +113,27 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame([0, 1, 2], $project->revisions()->pluck('revision_number')->all());
     }
 
+    public function test_creating_new_revision_resets_design_complete_status_to_in_progress(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'status' => ProjectStatus::DesignComplete,
+        ]);
+        $sourceRevisionId = $project->active_revision_id;
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('createNewRevision');
+
+        $project->refresh();
+
+        $this->assertNotSame($sourceRevisionId, $project->active_revision_id);
+        $this->assertSame(1, $project->revision);
+        $this->assertSame(ProjectStatus::InProgress, $project->status);
+        $this->assertSame(ProjectRevisionStatus::Draft, $project->activeRevision->status);
+    }
+
     public function test_project_view_uses_the_project_currency_symbol(): void
     {
         $admin = User::factory()->admin()->create();

@@ -605,6 +605,7 @@ class ViewProject extends ViewRecord
 
         $sourceRevision = ProjectRevision::where('project_id', $this->record->id)
             ->findOrFail($this->viewingRevisionId);
+        $wasDesignComplete = $this->record->status === ProjectStatus::DesignComplete;
 
         $newRevisionNumber = $this->record->revisions()->max('revision_number') + 1;
 
@@ -643,11 +644,20 @@ class ViewProject extends ViewRecord
             }
         }
 
-        $this->record->update([
+        $projectUpdates = [
             'active_revision_id' => $newRevision->id,
             'revision' => $newRevisionNumber,
-        ]);
-        $this->record->syncStatusFromActiveRevision();
+        ];
+
+        if ($wasDesignComplete) {
+            $projectUpdates['status'] = ProjectStatus::InProgress;
+        }
+
+        $this->record->update($projectUpdates);
+
+        if (! $wasDesignComplete) {
+            $this->record->syncStatusFromActiveRevision();
+        }
 
         $this->record->refresh();
         $this->viewingRevisionId = $newRevision->id;
