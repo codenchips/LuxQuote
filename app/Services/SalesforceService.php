@@ -924,6 +924,72 @@ class SalesforceService
     }
 
     /**
+     * @return array{success: bool, records: array<int, array<string, mixed>>, errors?: array<int, string>}
+     */
+    public function fetchPublicCalendars(int $limit = 100): array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return ['success' => false, 'records' => [], 'errors' => ['Authentication failed']];
+        }
+
+        $limit = max(1, min(200, $limit));
+        $result = $this->soqlQuery(
+            $auth,
+            "SELECT Id, Name, Type FROM Calendar WHERE Type = 'Public' ORDER BY Name ASC LIMIT {$limit}",
+        );
+
+        if ($result === null) {
+            return ['success' => false, 'records' => [], 'errors' => ['Calendar query failed']];
+        }
+
+        return ['success' => true, 'records' => $result['records'] ?? []];
+    }
+
+    /**
+     * @return array{success: bool, records: array<int, array<string, mixed>>, errors?: array<int, string>}
+     */
+    public function fetchCalendarBookings(
+        string $calendarId,
+        string $from,
+        ?string $to = null,
+        int $limit = 100,
+    ): array {
+        if (! preg_match('/^[A-Za-z0-9]{15,18}$/', $calendarId)) {
+            return ['success' => false, 'records' => [], 'errors' => ['Invalid Salesforce Calendar ID']];
+        }
+
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return ['success' => false, 'records' => [], 'errors' => ['Authentication failed']];
+        }
+
+        $limit = max(1, min(200, $limit));
+        $filters = [
+            "OwnerId = '".$this->soqlEscape($calendarId)."'",
+            "StartDateTime >= {$from}",
+        ];
+
+        if (filled($to)) {
+            $filters[] = "StartDateTime <= {$to}";
+        }
+
+        $result = $this->soqlQuery(
+            $auth,
+            'SELECT Id, Subject, StartDateTime, EndDateTime, IsAllDayEvent, Location, OwnerId '
+                .'FROM Event WHERE '.implode(' AND ', $filters)." ORDER BY StartDateTime ASC LIMIT {$limit}",
+        );
+
+        if ($result === null) {
+            return ['success' => false, 'records' => [], 'errors' => ['Calendar booking query failed']];
+        }
+
+        return ['success' => true, 'records' => $result['records'] ?? []];
+    }
+
+    /**
      * Fetch the Account linked to an Opportunity.
      *
      * @return array<string, mixed>|null

@@ -237,6 +237,26 @@ vendor/bin/sail artisan salesforce:sample-object Opportunity 1 --format=table
 
 If Salesforce rejects individual fields, the command reports them in `skipped_fields` instead of failing the whole sample.
 
+List the public calendars visible to the configured Salesforce integration user (user calendars are excluded):
+
+```bash
+docker compose exec -T laravel.test php artisan salesforce:calendars
+```
+
+Copy a calendar ID from that output, then list its bookings. Date-only values are interpreted in the app timezone, and `--to` includes the whole final day:
+
+```bash
+docker compose exec -T laravel.test php artisan salesforce:calendars 023YOUR_CALENDAR_ID --from=2026-09-01 --to=2026-09-30
+docker compose exec -T laravel.test php artisan salesforce:calendars 023YOUR_CALENDAR_ID --from=2026-09-01 --format=json
+```
+
+Local development uses Sail:
+
+```bash
+vendor/bin/sail artisan salesforce:calendars
+vendor/bin/sail artisan salesforce:calendars 023YOUR_CALENDAR_ID --from=2026-09-01 --to=2026-09-30
+```
+
 Get a single Opportunity by Id, including all fields the integration user can read:
 
 ```bash

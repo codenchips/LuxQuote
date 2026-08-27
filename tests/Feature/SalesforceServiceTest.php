@@ -205,6 +205,77 @@ class SalesforceServiceTest extends TestCase
         $this->assertStringContainsString('Salesforce Account search failed', $result['message']);
     }
 
+    public function test_fetch_public_calendars_excludes_user_calendars(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            return Http::response([
+                'records' => [[
+                    'Id' => '023000000000001AAA',
+                    'Name' => 'Lighting Design',
+                    'Type' => 'Public',
+                ]],
+            ]);
+        });
+
+        $result = app(SalesforceService::class)->fetchPublicCalendars(25);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('Lighting Design', $result['records'][0]['Name']);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
+            && str_contains($request->url(), '/services/data/v65.0/query/')
+            && ($request->data()['q'] ?? null) === "SELECT Id, Name, Type FROM Calendar WHERE Type = 'Public' ORDER BY Name ASC LIMIT 25");
+    }
+
+    public function test_fetch_calendar_bookings_queries_events_owned_by_the_calendar(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            return Http::response([
+                'records' => [[
+                    'Id' => '00U000000000001AAA',
+                    'Subject' => 'Hospital survey',
+                ]],
+            ]);
+        });
+
+        $result = app(SalesforceService::class)->fetchCalendarBookings(
+            '023000000000001AAA',
+            '2026-08-31T23:00:00Z',
+            '2026-09-30T22:59:59Z',
+            25,
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('Hospital survey', $result['records'][0]['Subject']);
+
+        Http::assertSent(function (Request $request): bool {
+            $query = (string) ($request->data()['q'] ?? '');
+
+            return $request->method() === 'GET'
+                && str_contains($request->url(), '/services/data/v65.0/query/')
+                && str_contains($query, "OwnerId = '023000000000001AAA'")
+                && str_contains($query, 'StartDateTime >= 2026-08-31T23:00:00Z')
+                && str_contains($query, 'StartDateTime <= 2026-09-30T22:59:59Z')
+                && str_contains($query, 'ORDER BY StartDateTime ASC LIMIT 25');
+        });
+    }
+
     public function test_jwt_bearer_authenticates_and_returns_options(): void
     {
         $this->travelTo('2026-07-02 10:00:00');
