@@ -118,6 +118,7 @@ New code should use the dotted permission keys from `PermissionKey`.
 | View products list page | x |  |  |  | x |
 | Import / fetch products | x |  |  |  |  |
 | Manage special order codes | x |  |  |  |  |
+| View company calendar | x | x | x | x | x |
 | View Salesforce projects list page | x |  |  |  | x |
 | Manage Salesforce push switch | x |  |  |  |  |
 | View users list page | x |  |  |  |  |
@@ -179,6 +180,10 @@ Validation flagging is controlled by `validation.flag-lines`. Flagging an issue 
 The Salesforce page includes a global persistent push switch controlled by `salesforce.manage-push`.
 
 Users with `salesforce.view` can still search and import Salesforce projects. Users with `salesforce.manage-push` can pause or resume outbound Salesforce writes. The switch stores its global state in `app_settings` and must stay where it was set across logout/login and page refreshes. When pushes are paused, the app must not upload quote/schedule PDFs or update Opportunity Amount values, but read-only Salesforce pulls remain available.
+
+## Calendar
+
+The standalone Calendar page is controlled by `calendar.view`. Every default permission group receives this capability, while custom groups can omit it. The first version provides month, week, and day calendar navigation without loading or mutating Salesforce events.
 
 ## Special Order Codes
 

@@ -34,6 +34,7 @@ enum PermissionKey: string
     case ProductsView = 'products.view';
     case ProductsImport = 'products.import';
     case SpecialsManage = 'specials.manage';
+    case CalendarView = 'calendar.view';
     case SalesforceView = 'salesforce.view';
     case SalesforceManagePush = 'salesforce.manage-push';
     case UsersView = 'users.view';
@@ -76,6 +77,7 @@ enum PermissionKey: string
             self::ProductsView => 'View products list page',
             self::ProductsImport => 'Import / fetch products',
             self::SpecialsManage => 'Manage special order codes',
+            self::CalendarView => 'View company calendar',
             self::SalesforceView => 'View Salesforce projects list page',
             self::SalesforceManagePush => 'Manage Salesforce push switch',
             self::UsersView => 'View users list page',
@@ -125,6 +127,7 @@ enum PermissionKey: string
             self::ProductsImport,
             self::SpecialsManage => 'Products',
 
+            self::CalendarView => 'Calendar',
             self::SalesforceView => 'Salesforce',
             self::SalesforceManagePush => 'Salesforce',
             self::ActivityLogView => 'History',
@@ -183,6 +186,7 @@ enum PermissionKey: string
                     self::OutputManageDocumentPacks,
                     self::OutputProduceDocumentPacks,
                     self::OutputHistoryView,
+                    self::CalendarView,
                 ],
             ],
             'sales' => [
@@ -203,6 +207,7 @@ enum PermissionKey: string
                     self::PricingView,
                     self::PricingUpdate,
                     self::CoverUpdate,
+                    self::CalendarView,
                 ],
             ],
             'technical' => [
@@ -224,6 +229,7 @@ enum PermissionKey: string
                     self::OutputManageDocumentPacks,
                     self::OutputProduceDocumentPacks,
                     self::OutputHistoryView,
+                    self::CalendarView,
                 ],
             ],
             'manager' => [
@@ -258,6 +264,7 @@ enum PermissionKey: string
                     self::PricingUpdate,
                     self::CoverUpdate,
                     self::ProductsView,
+                    self::CalendarView,
                     self::SalesforceView,
                 ],
             ],
