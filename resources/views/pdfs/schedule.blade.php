@@ -428,9 +428,7 @@
             <div class="doc-title">{{ $documentTitle }}</div>
             <div class="ref-lines">
                 <div><span class="ref-label">Ref: </span><span class="ref-val">{{ $project->reference_number ?? '-' }}</span></div>
-                @if($revision->revision_number > 0)
-                    <div><span class="ref-label">Rev: </span><span class="ref-val">{{ $revision->label() }}</span></div>
-                @endif
+                <div><span class="ref-label">Rev: </span><span class="ref-val">{{ $revision->label() }}</span></div>
                 <div><span class="ref-label">Date: </span><span class="ref-val">{!! $formatPdfDate($project->date) !!}</span></div>
                 <div><span class="ref-label">Sales Engineer: </span><span class="ref-val">{{ $salesEngineerName ?? '-' }}</span></div>
                 <div><span class="ref-label">Email: </span><span class="ref-val">{{ $salesEngineerEmail ?? $project->owner_email ?? '-' }}</span></div>
@@ -466,10 +464,8 @@
             </div>
         @endif
         <div class="project-meta-row">
-            @if($revision->revision_number > 0)
-                <span class="meta-lbl">Revision:</span> {{ $revision->label() }}
-                <span class="meta-sep">&middot;</span>
-            @endif
+            <span class="meta-lbl">Revision:</span> {{ $revision->label() }}
+            <span class="meta-sep">&middot;</span>
             <span class="meta-lbl">Prepared by:</span> {{ $project->user?->name ?? '-' }}
         </div>
     </div>

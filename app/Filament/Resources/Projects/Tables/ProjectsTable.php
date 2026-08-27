@@ -265,7 +265,7 @@ class ProjectsTable
 
                         $attributes['name'] = $record->name.' - Copy';
                         $attributes['reference_number'] = null;
-                        $attributes['revision'] = 0;
+                        $attributes['revision'] = 1;
 
                         // withoutEvents prevents the booted hook from auto-creating a revision+area
                         $copy = Project::withoutEvents(fn (): Project => Project::create($attributes));
@@ -273,7 +273,7 @@ class ProjectsTable
                         // Manually create the initial revision for the copied project
                         $newRevision = ProjectRevision::create([
                             'project_id' => $copy->id,
-                            'revision_number' => 0,
+                            'revision_number' => 1,
                             'created_by' => auth()->id(),
                         ]);
 

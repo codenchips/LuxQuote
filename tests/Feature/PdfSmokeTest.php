@@ -53,7 +53,7 @@ class PdfSmokeTest extends TestCase
             'revision' => $project->active_revision_id,
         ]));
 
-        $response->assertOk()->assertDownload();
+        $response->assertOk()->assertDownload('PDF-SMOKE-SCHEDULE-PDF-Smoke-Project-TL-LS-P1.pdf');
 
         $path = $this->downloadedPdfPath($response->baseResponse);
         $this->assertValidPdf($path);
@@ -79,7 +79,7 @@ class PdfSmokeTest extends TestCase
             'revision' => $project->active_revision_id,
         ]));
 
-        $response->assertOk()->assertDownload();
+        $response->assertOk()->assertDownload('PDF-SMOKE-QUOTE-PDF-Smoke-Project-TL-PQ-P1.pdf');
 
         $path = $this->downloadedPdfPath($response->baseResponse);
         $this->assertValidPdf($path);
@@ -126,7 +126,7 @@ class PdfSmokeTest extends TestCase
             'revision' => $project->active_revision_id,
         ]));
 
-        $response->assertOk()->assertDownload('PDF-SMOKE-PACK-Smoke-Pack-P0-document-pack.pdf');
+        $response->assertOk()->assertDownload('PDF-SMOKE-PACK-PDF-Smoke-Project-TL-DP-P1.pdf');
 
         $path = $this->downloadedPdfPath($response->baseResponse);
         $this->assertValidPdf($path);

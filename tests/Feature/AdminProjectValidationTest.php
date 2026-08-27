@@ -74,7 +74,7 @@ class AdminProjectValidationTest extends TestCase
         $this->assertDatabaseHas(ActivityLog::class, [
             'project_id' => $project->id,
             'action_type' => 'validation.issue_approved',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
         $this->assertDatabaseMissing(ActivityLog::class, [
             'project_id' => $project->id,
@@ -90,7 +90,7 @@ class AdminProjectValidationTest extends TestCase
         $this->assertDatabaseHas(ActivityLog::class, [
             'project_id' => $project->id,
             'action_type' => 'validation.issue_approval_undone',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
         $this->assertDatabaseMissing(ActivityLog::class, [
             'project_id' => $project->id,
@@ -162,7 +162,7 @@ class AdminProjectValidationTest extends TestCase
         $this->assertDatabaseHas(ActivityLog::class, [
             'project_id' => $project->id,
             'action_type' => 'validation.issue_flagged',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
 
         Livewire::test(ListActivityLogs::class)
@@ -226,7 +226,7 @@ class AdminProjectValidationTest extends TestCase
         $this->assertDatabaseHas(ActivityLog::class, [
             'project_id' => $project->id,
             'action_type' => 'validation.issue_flagged',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
     }
 
@@ -301,18 +301,18 @@ class AdminProjectValidationTest extends TestCase
         $this->assertDatabaseHas(ActivityLog::class, [
             'project_id' => $project->id,
             'action_type' => 'revision.approved',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
         $this->assertDatabaseHas(ActivityLog::class, [
             'project_id' => $project->id,
             'action_type' => 'revision.unapproved',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
 
         Livewire::test(ListActivityLogs::class)
             ->assertSee('Approved and locked')
             ->assertSee('Unapproved and unlocked')
-            ->assertSee('P0');
+            ->assertSee('P1');
     }
 
     public function test_approving_salesforce_revision_updates_opportunity_amount(): void
@@ -669,7 +669,7 @@ class AdminProjectValidationTest extends TestCase
         $this->assertDatabaseHas(ActivityLog::class, [
             'project_id' => $project->id,
             'action_type' => 'validation.issue_matched',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
 
         Livewire::test(ListActivityLogs::class)

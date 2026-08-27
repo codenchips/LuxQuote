@@ -26,8 +26,8 @@
     ])->filter(fn ($line) => filled($line))->values();
 
     $reference = $project->reference_number ?? 'Project '.$project->id;
-    $revisionLabel = $revision->revision_number > 0 ? $revision->label() : null;
-    $quotationReference = filled($revisionLabel) ? "{$reference} / {$revisionLabel}" : $reference;
+    $revisionLabel = $revision->label();
+    $quotationReference = "{$reference} / {$revisionLabel}";
 
     $salesEngineerFullName = collect([
         $salesEngineer['first_name'] ?? null,

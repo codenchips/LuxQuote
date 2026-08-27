@@ -156,12 +156,12 @@ class DocumentPackPdfService
 
     private function filename(DocumentPack $documentPack, ProjectRevision $revision): string
     {
-        $reference = $documentPack->project->reference_number ?? 'project-'.$documentPack->project_id;
-
-        return collect([$reference, $documentPack->name, $revision->label(), 'document-pack'])
-            ->map(fn (string $part): string => trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-'))
-            ->filter()
-            ->implode('-').'.pdf';
+        return app(ProjectExportFilenameService::class)->make(
+            $documentPack->project,
+            $revision,
+            ProjectExportFilenameService::DocumentPack,
+            'pdf',
+        );
     }
 
     private function qpdfBinary(): string

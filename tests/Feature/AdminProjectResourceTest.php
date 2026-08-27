@@ -84,33 +84,33 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('Legacy Route Project');
     }
 
-    public function test_project_revisions_progress_from_p0_to_r1_and_r2(): void
+    public function test_project_revisions_progress_from_p1_to_p2_and_p3(): void
     {
         $admin = User::factory()->admin()->create();
         $this->actingAs($admin);
 
         $project = Project::factory()->for($admin)->create();
 
-        $this->assertSame(0, $project->revision);
-        $this->assertSame('P0', $project->activeRevision->label());
+        $this->assertSame(1, $project->revision);
+        $this->assertSame('P1', $project->activeRevision->label());
 
         $component = Livewire::test(ViewProject::class, ['record' => $project->id])
-            ->assertSee('P0')
+            ->assertSee('P1')
             ->set('revisionsModalOpen', true)
             ->assertSee('Create New Revision')
             ->call('createNewRevision');
 
-        $this->assertSame(1, $project->fresh()->revision);
-        $this->assertSame('R1', $project->fresh()->activeRevision->label());
+        $this->assertSame(2, $project->fresh()->revision);
+        $this->assertSame('P2', $project->fresh()->activeRevision->label());
 
         $component
             ->set('revisionsModalOpen', true)
-            ->assertSee('R1')
+            ->assertSee('P2')
             ->call('createNewRevision');
 
-        $this->assertSame(2, $project->fresh()->revision);
-        $this->assertSame('R2', $project->fresh()->activeRevision->label());
-        $this->assertSame([0, 1, 2], $project->revisions()->pluck('revision_number')->all());
+        $this->assertSame(3, $project->fresh()->revision);
+        $this->assertSame('P3', $project->fresh()->activeRevision->label());
+        $this->assertSame([1, 2, 3], $project->revisions()->pluck('revision_number')->all());
     }
 
     public function test_creating_new_revision_resets_design_complete_status_to_in_progress(): void
@@ -129,7 +129,7 @@ class AdminProjectResourceTest extends TestCase
         $project->refresh();
 
         $this->assertNotSame($sourceRevisionId, $project->active_revision_id);
-        $this->assertSame(1, $project->revision);
+        $this->assertSame(2, $project->revision);
         $this->assertSame(ProjectStatus::InProgress, $project->status);
         $this->assertSame(ProjectRevisionStatus::Draft, $project->activeRevision->status);
     }
@@ -528,7 +528,7 @@ class AdminProjectResourceTest extends TestCase
         $line = $area->lines()->create([
             'product_id' => $product->id,
             'code' => $product->sku,
-            'ref' => 'RCP001',
+            'ref' => 'RCP101',
             'description' => 'Reception fitting',
             'qty' => 4,
             'type' => ProjectLineType::Modified->value,
@@ -1005,7 +1005,7 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(ValidationProject::class, ['record' => $project->id])
             ->assertSee('Hospital Lighting')
             ->assertSee('Example Customer')
-            ->assertSee('P0')
+            ->assertSee('P1')
             ->assertSee('2 unresolved issues')
             ->assertSee('SKU "VALID-SKU" appears 2 times in this area.')
             ->assertSee('SKU "MISSING-SKU" was not found in the product catalogue.')
@@ -1588,7 +1588,7 @@ class AdminProjectResourceTest extends TestCase
         {
             public function filename(Project $project, ProjectRevision $revision, array $areaIds = []): string
             {
-                return 'schedule-PDF-REF-P0.pdf';
+                return 'schedule-PDF-REF-P1.pdf';
             }
 
             public function builder(Project $project, ProjectRevision $revision, string $documentType = 'schedule', array $areaIds = []): object
@@ -1620,7 +1620,7 @@ class AdminProjectResourceTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertDownload('schedule-PDF-REF-P0.pdf');
+            ->assertDownload('schedule-PDF-REF-P1.pdf');
 
         $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 2);
         File::delete($response->baseResponse->getFile()->getPathname());
@@ -1629,12 +1629,12 @@ class AdminProjectResourceTest extends TestCase
             'user_id' => $admin->id,
             'project_id' => $project->id,
             'action_type' => 'schedule_pdf.generated',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
 
         Livewire::test(ProjectHistory::class, ['record' => $project->id])
             ->assertSee('Generated schedule PDF')
-            ->assertSee('schedule-PDF-REF-P0.pdf');
+            ->assertSee('schedule-PDF-REF-P1.pdf');
     }
 
     public function test_project_page_displays_revision_totals(): void
@@ -1774,7 +1774,7 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(OutputProject::class, ['record' => $project->id])
             ->assertSee('Output Project')
             ->assertSee('Open')
-            ->assertSee('P0')
+            ->assertSee('P1')
             ->assertSee('Quote status')
             ->assertSee('Approval Required')
             ->assertSee('Validation')
@@ -1827,6 +1827,8 @@ class AdminProjectResourceTest extends TestCase
 
         $this->assertStringContainsString('Sales Engineer: </span><span class="ref-val">Jamie Engineer</span>', $html);
         $this->assertStringContainsString('Email: </span><span class="ref-val">sales.engineer@example.com</span>', $html);
+        $this->assertStringContainsString('Rev: </span><span class="ref-val">P1</span>', $html);
+        $this->assertStringContainsString('Revision:</span> P1', $html);
         $this->assertStringNotContainsString('Generated: </span><span class="ref-val">', $html);
 
         $this->assertLessThan(strpos($html, '<th class="col-qty">Qty</th>'), strpos($html, '<th class="col-ref">Ref</th>'));
@@ -1999,7 +2001,7 @@ class AdminProjectResourceTest extends TestCase
         {
             public function filename(Project $project, ProjectRevision $revision, array $areaIds = []): string
             {
-                return 'schedule-DS-001-P0.pdf';
+                return 'schedule-DS-001-P1.pdf';
             }
 
             public function builder(Project $project, ProjectRevision $revision, string $documentType = 'schedule', array $areaIds = []): object
@@ -2050,7 +2052,7 @@ class AdminProjectResourceTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertDownload('schedule-DS-001-P0-with-datasheets.pdf');
+            ->assertDownload('schedule-DS-001-P1-with-datasheets.pdf');
 
         $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 3);
         File::delete($response->baseResponse->getFile()->getPathname());
@@ -2111,7 +2113,7 @@ class AdminProjectResourceTest extends TestCase
         {
             public function quoteFilename(Project $project, ProjectRevision $revision, mixed $tender = null, array $areaIds = []): string
             {
-                return 'quote-QDS-001-P0.pdf';
+                return 'quote-QDS-001-P1.pdf';
             }
 
             public function quoteBuilder(Project $project, ProjectRevision $revision): object
@@ -2163,7 +2165,7 @@ class AdminProjectResourceTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertDownload('quote-QDS-001-P0-with-datasheets.pdf');
+            ->assertDownload('quote-QDS-001-P1-with-datasheets.pdf');
 
         $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 3);
         File::delete($response->baseResponse->getFile()->getPathname());
@@ -2196,14 +2198,14 @@ class AdminProjectResourceTest extends TestCase
         $this->assertDatabaseHas(ActivityLog::class, [
             'project_id' => $project->id,
             'action_type' => 'quote_approval.requested',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
 
         $this->actingAs(User::factory()->admin()->create());
 
         Livewire::test(ListActivityLogs::class)
             ->assertSee('Requested quote approval')
-            ->assertSee('P0');
+            ->assertSee('P1');
     }
 
     public function test_any_output_user_can_request_quote_approval_without_validation(): void
@@ -2263,6 +2265,7 @@ class AdminProjectResourceTest extends TestCase
 
         $project = Project::factory()->for($admin)->create([
             'reference_number' => 'CSV-001',
+            'name' => 'CSV Project',
         ]);
         $project->activeRevision->update([
             'validated' => true,
@@ -2289,6 +2292,7 @@ class AdminProjectResourceTest extends TestCase
 
         $response->assertOk();
         $response->assertHeader('content-type', 'text/csv; charset=UTF-8');
+        $response->assertDownload('CSV-001-CSV-Project-TL-LS-P1.csv');
 
         $csv = $response->streamedContent();
 
@@ -2356,7 +2360,7 @@ class AdminProjectResourceTest extends TestCase
         {
             public function quoteFilename(Project $project, ProjectRevision $revision, mixed $tender = null, array $areaIds = []): string
             {
-                return 'quote-QUOTE-REF-P0.pdf';
+                return 'quote-QUOTE-REF-P1.pdf';
             }
 
             public function quoteBuilder(Project $project, ProjectRevision $revision): object
@@ -2393,7 +2397,7 @@ class AdminProjectResourceTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertDownload('quote-QUOTE-REF-P0.pdf');
+            ->assertDownload('quote-QUOTE-REF-P1.pdf');
 
         $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 2);
         File::delete($response->baseResponse->getFile()->getPathname());
@@ -2451,7 +2455,7 @@ class AdminProjectResourceTest extends TestCase
         $this->assertStringContainsString('Line items', $html);
     }
 
-    public function test_p0_schedule_and_quote_hide_revision_and_contractor_metadata(): void
+    public function test_p1_schedule_and_quote_show_revision_and_hide_contractor_metadata(): void
     {
         $user = User::factory()->create(['name' => 'PDF User']);
         $project = Project::factory()->for($user)->create([
@@ -2474,8 +2478,8 @@ class AdminProjectResourceTest extends TestCase
                 'showPrices' => $document['showPrices'],
             ])->render();
 
-            $this->assertStringNotContainsString('Rev:', $html);
-            $this->assertStringNotContainsString('Revision:', $html);
+            $this->assertStringContainsString('Rev: </span><span class="ref-val">P1</span>', $html);
+            $this->assertStringContainsString('Revision:</span> P1', $html);
             $this->assertStringNotContainsString('Contractor:', $html);
             $this->assertStringNotContainsString('Hidden Contractor', $html);
             $this->assertStringContainsString('Project Location:', $html);
@@ -3162,7 +3166,7 @@ class AdminProjectResourceTest extends TestCase
             ->where('action_type', 'revision.created')
             ->first();
 
-        $this->assertSame(1, $revisionLog?->revision_number);
+        $this->assertSame(2, $revisionLog?->revision_number);
     }
 
     public function test_activity_logs_table_shows_the_revision_number(): void
@@ -3186,7 +3190,7 @@ class AdminProjectResourceTest extends TestCase
 
         Livewire::test(ListActivityLogs::class)
             ->assertSee('REF-003')
-            ->assertSee('R3');
+            ->assertSee('P3');
     }
 
     public function test_activity_logs_table_formats_changed_values_for_readability(): void
@@ -3349,7 +3353,7 @@ class AdminProjectResourceTest extends TestCase
 
         Livewire::test(ListActivityLogs::class)
             ->assertSee('Local Projec...')
-            ->assertSee('R2')
+            ->assertSee('P2')
             ->assertDontSee('No project');
     }
 
@@ -3402,11 +3406,11 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('Visible Project')
             ->assertSee('Private')
             ->assertSee('VISIBLE-REF')
-            ->assertSee('R3')
+            ->assertSee('P3')
             ->assertSee('New Customer')
             ->assertDontSee('Hidden Project')
             ->assertDontSee('HIDDEN-REF')
-            ->assertDontSee('R9')
+            ->assertDontSee('P9')
             ->assertDontSee('Other New Customer');
 
         Livewire::test(ListActivityLogs::class)
@@ -3449,7 +3453,7 @@ class AdminProjectResourceTest extends TestCase
             'action_type' => 'revision.approved',
             'user_email_snapshot' => $admin->email,
             'project_name_snapshot' => $project->name,
-            'payload' => ['revision_label' => 'R2'],
+            'payload' => ['revision_label' => 'P2'],
         ]);
 
         ActivityLog::create([

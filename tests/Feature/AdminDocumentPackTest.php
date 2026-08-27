@@ -127,7 +127,7 @@ class AdminDocumentPackTest extends TestCase
             ->assertSeeHtml('aria-label="Add document"')
             ->assertSee('Schedule')
             ->assertSee('Generated')
-            ->assertSee("P0 - 2 SKU's, 8 Items")
+            ->assertSee("P1 - 2 SKU's, 8 Items")
             ->assertSee('Last modified 25/06/26 10:30')
             ->assertDontSee('Select a document...')
             ->assertDontSee('The schedule generated for the revision selected at output time.')
@@ -310,7 +310,7 @@ class AdminDocumentPackTest extends TestCase
         $project = Project::factory()->for($admin)->create();
         $secondRevision = ProjectRevision::create([
             'project_id' => $project->id,
-            'revision_number' => 1,
+            'revision_number' => 2,
             'created_by' => $admin->id,
             'validated' => true,
             'validated_at' => now(),
@@ -392,7 +392,10 @@ class AdminDocumentPackTest extends TestCase
         Storage::fake('local');
 
         $admin = User::factory()->admin()->create();
-        $project = Project::factory()->for($admin)->create(['reference_number' => 'PACK-001']);
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'PACK-001',
+            'name' => 'Warehouse Upgrade',
+        ]);
         $pack = DocumentPack::factory()->for($project)->create([
             'created_by' => $admin->id,
             'name' => 'Tender Pack',
@@ -424,7 +427,7 @@ class AdminDocumentPackTest extends TestCase
         $process->mustRun();
 
         $this->assertSame('2', trim($process->getOutput()));
-        $this->assertSame('PACK-001-Tender-Pack-P0-document-pack.pdf', $generated['filename']);
+        $this->assertSame('PACK-001-Warehouse-Upgrade-TL-DP-P1.pdf', $generated['filename']);
 
         File::delete($generated['path']);
     }
@@ -432,7 +435,10 @@ class AdminDocumentPackTest extends TestCase
     public function test_standard_legal_page_can_be_saved_and_generated_in_a_document_pack(): void
     {
         $admin = User::factory()->admin()->create();
-        $project = Project::factory()->for($admin)->create(['reference_number' => 'LEGAL-001']);
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'LEGAL-001',
+            'name' => 'Office Upgrade',
+        ]);
         $this->actingAs($admin);
 
         $component = Livewire::test(OutputProject::class, ['record' => $project->id])
@@ -456,7 +462,7 @@ class AdminDocumentPackTest extends TestCase
         $process->mustRun();
 
         $this->assertSame('1', trim($process->getOutput()));
-        $this->assertSame('LEGAL-001-Legal-Template-Pack-P0-document-pack.pdf', $generated['filename']);
+        $this->assertSame('LEGAL-001-Office-Upgrade-TL-DP-P1.pdf', $generated['filename']);
 
         File::delete($generated['path']);
     }
@@ -467,7 +473,7 @@ class AdminDocumentPackTest extends TestCase
         $project = Project::factory()->for($admin)->create();
         $secondRevision = ProjectRevision::create([
             'project_id' => $project->id,
-            'revision_number' => 1,
+            'revision_number' => 2,
             'created_by' => $admin->id,
         ]);
         $pack = DocumentPack::factory()->for($project)->create(['created_by' => $admin->id]);
@@ -481,7 +487,8 @@ class AdminDocumentPackTest extends TestCase
             /** @var array<int, int> */
             public array $revisionIds = [];
 
-            public function content(Project $project, ProjectRevision $revision): string
+            /** @param array<int, int> $areaIds */
+            public function content(Project $project, ProjectRevision $revision, array $areaIds = []): string
             {
                 $this->revisionIds[] = $revision->id;
 
@@ -568,7 +575,7 @@ class AdminDocumentPackTest extends TestCase
 
         $this->assertNull($component->instance()->getDocumentPackDownloadUrl());
         $component
-            ->assertSee('Approve the quote for P0 before generating this pack.')
+            ->assertSee('Approve the quote for P1 before generating this pack.')
             ->assertSeeHtml('<button data-testid="generate-document-pack" type="button" disabled');
 
         $project->activeRevision->update([
@@ -586,7 +593,10 @@ class AdminDocumentPackTest extends TestCase
         Storage::fake('local');
 
         $admin = User::factory()->admin()->create();
-        $project = Project::factory()->for($admin)->create(['reference_number' => 'DOWNLOAD-001']);
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'DOWNLOAD-001',
+            'name' => 'School Upgrade',
+        ]);
         $pack = DocumentPack::factory()->for($project)->create([
             'created_by' => $admin->id,
             'name' => 'Customer Pack',
@@ -607,12 +617,12 @@ class AdminDocumentPackTest extends TestCase
             'revision' => $project->active_revision_id,
         ]));
 
-        $response->assertOk()->assertDownload('DOWNLOAD-001-Customer-Pack-P0-document-pack.pdf');
+        $response->assertOk()->assertDownload('DOWNLOAD-001-School-Upgrade-TL-DP-P1.pdf');
 
         $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,
             'action_type' => 'document_pack.generated',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
 
         File::delete($response->baseResponse->getFile()->getPathname());

@@ -270,8 +270,8 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             ]);
 
         $this->instance(ProjectSchedulePdfService::class, $this->fakePdfService(
-            scheduleFilename: 'lighting-schedule-SCH-001-P0-20260612-103000.pdf',
-            quoteFilename: 'lighting-quote-SCH-001-P0-20260612-103000.pdf',
+            scheduleFilename: 'lighting-schedule-SCH-001-P1-20260612-103000.pdf',
+            quoteFilename: 'lighting-quote-SCH-001-P1-20260612-103000.pdf',
             responseBody: 'fake schedule pdf',
         ));
 
@@ -286,17 +286,17 @@ class SalesforceSchedulePdfUploadTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertJsonPath('filename', 'lighting-schedule-SCH-001-P0-20260612-103000.pdf')
+            ->assertJsonPath('filename', 'lighting-schedule-SCH-001-P1-20260612-103000.pdf')
             ->assertJsonPath('notification.title', 'Lighting Schedule uploaded to Salesforce')
-            ->assertJsonPath('notification.body', 'Lighting-Schedule-SCH-001-P0.pdf is now available on the Opportunity.')
+            ->assertJsonPath('notification.body', 'Lighting-Schedule-SCH-001-P1.pdf is now available on the Opportunity.')
             ->assertJsonPath('notification.status', 'success')
             ->assertSessionMissing('filament.notifications');
 
-        $this->assertContentVersionUploadWasSent('Lighting-Schedule-SCH-001-P0.pdf');
+        $this->assertContentVersionUploadWasSent('Lighting-Schedule-SCH-001-P1.pdf');
         $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,
             'action_type' => 'salesforce_pdf.uploaded',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
     }
 
@@ -323,8 +323,8 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         ]);
 
         $this->instance(ProjectSchedulePdfService::class, $this->fakePdfService(
-            scheduleFilename: 'lighting-schedule-QT-001-P0-20260612-103000.pdf',
-            quoteFilename: 'lighting-quote-QT-001-P0-20260612-103000.pdf',
+            scheduleFilename: 'lighting-schedule-QT-001-P1-20260612-103000.pdf',
+            quoteFilename: 'lighting-quote-QT-001-P1-20260612-103000.pdf',
             responseBody: 'fake quote pdf',
         ));
 
@@ -339,22 +339,22 @@ class SalesforceSchedulePdfUploadTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertJsonPath('filename', 'lighting-quote-QT-001-P0-20260612-103000.pdf')
+            ->assertJsonPath('filename', 'lighting-quote-QT-001-P1-20260612-103000.pdf')
             ->assertJsonPath('notification.title', 'Lighting Quote uploaded to Salesforce')
-            ->assertJsonPath('notification.body', 'Lighting-Quote-QT-001-P0.pdf is now available on the Opportunity.')
+            ->assertJsonPath('notification.body', 'Lighting-Quote-QT-001-P1.pdf is now available on the Opportunity.')
             ->assertJsonPath('notification.status', 'success')
             ->assertSessionMissing('filament.notifications');
 
-        $this->assertContentVersionUploadWasSent('Lighting-Quote-QT-001-P0.pdf');
+        $this->assertContentVersionUploadWasSent('Lighting-Quote-QT-001-P1.pdf');
         $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,
             'action_type' => 'quote_pdf.generated',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
         $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,
             'action_type' => 'salesforce_pdf.uploaded',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
     }
 
@@ -411,8 +411,8 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         ]);
 
         $this->instance(ProjectSchedulePdfService::class, $this->fakePdfService(
-            scheduleFilename: 'lighting-schedule-QT-VERSION-P0-20260612-103000.pdf',
-            quoteFilename: 'lighting-quote-QT-VERSION-P0-20260612-103000.pdf',
+            scheduleFilename: 'lighting-schedule-QT-VERSION-P1-20260612-103000.pdf',
+            quoteFilename: 'lighting-quote-QT-VERSION-P1-20260612-103000.pdf',
             responseBody: 'fake quote pdf',
         ));
 
@@ -427,7 +427,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         $this->get(route('projects.pdf.quote', $routeParameters))->assertOk();
         $this->get(route('projects.pdf.quote', $routeParameters))->assertOk();
 
-        $this->assertContentVersionUploadWasSent('Lighting-Quote-QT-VERSION-P0.pdf', 2);
+        $this->assertContentVersionUploadWasSent('Lighting-Quote-QT-VERSION-P1.pdf', 2);
         $this->assertDatabaseCount('salesforce_pdf_uploads', 1);
         $this->assertSame(2, ActivityLog::where('project_id', $project->id)
             ->where('action_type', 'salesforce_pdf.uploaded')
@@ -436,7 +436,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             'project_id' => $project->id,
             'project_revision_id' => $project->active_revision_id,
             'document_type' => 'quote',
-            'filename' => 'Lighting-Quote-QT-VERSION-P0.pdf',
+            'filename' => 'Lighting-Quote-QT-VERSION-P1.pdf',
         ]);
     }
 
@@ -467,8 +467,8 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         ]);
 
         $this->instance(ProjectSchedulePdfService::class, $this->fakePdfService(
-            scheduleFilename: 'lighting-schedule-SCH-SKIP-P0-20260612-103000.pdf',
-            quoteFilename: 'lighting-quote-SCH-SKIP-P0-20260612-103000.pdf',
+            scheduleFilename: 'lighting-schedule-SCH-SKIP-P1-20260612-103000.pdf',
+            quoteFilename: 'lighting-quote-SCH-SKIP-P1-20260612-103000.pdf',
             responseBody: 'fake schedule pdf',
         ));
 
@@ -483,7 +483,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         $this->get(route('projects.pdf.schedule', $routeParameters))->assertOk();
         $this->get(route('projects.pdf.schedule', $routeParameters))->assertOk();
 
-        $this->assertContentVersionUploadWasSent('Lighting-Schedule-SCH-SKIP-P0.pdf', 2);
+        $this->assertContentVersionUploadWasSent('Lighting-Schedule-SCH-SKIP-P1.pdf', 2);
         $this->assertDatabaseCount('salesforce_pdf_uploads', 1);
         $this->assertSame(2, ActivityLog::where('project_id', $project->id)
             ->where('action_type', 'salesforce_pdf.uploaded')
@@ -496,7 +496,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,
             'action_type' => 'salesforce_pdf.uploaded',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
     }
 
@@ -526,8 +526,8 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         ]);
 
         $this->instance(ProjectSchedulePdfService::class, $this->fakePdfService(
-            scheduleFilename: 'lighting-schedule-SCH-CHANGE-P0-20260612-103000.pdf',
-            quoteFilename: 'lighting-quote-SCH-CHANGE-P0-20260612-103000.pdf',
+            scheduleFilename: 'lighting-schedule-SCH-CHANGE-P1-20260612-103000.pdf',
+            quoteFilename: 'lighting-quote-SCH-CHANGE-P1-20260612-103000.pdf',
             responseBody: 'fake schedule pdf',
         ));
 
@@ -545,13 +545,13 @@ class SalesforceSchedulePdfUploadTest extends TestCase
 
         $this->get(route('projects.pdf.schedule', $routeParameters))->assertOk();
 
-        $this->assertContentVersionUploadWasSent('Lighting-Schedule-SCH-CHANGE-P0.pdf', 2);
+        $this->assertContentVersionUploadWasSent('Lighting-Schedule-SCH-CHANGE-P1.pdf', 2);
         $this->assertDatabaseCount('salesforce_pdf_uploads', 1);
         $this->assertDatabaseHas('salesforce_pdf_uploads', [
             'project_id' => $project->id,
             'project_revision_id' => $project->active_revision_id,
             'document_type' => 'schedule',
-            'filename' => 'Lighting-Schedule-SCH-CHANGE-P0.pdf',
+            'filename' => 'Lighting-Schedule-SCH-CHANGE-P1.pdf',
         ]);
     }
 
@@ -569,8 +569,8 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             ]);
 
         $this->instance(ProjectSchedulePdfService::class, $this->fakePdfService(
-            scheduleFilename: 'lighting-schedule-SCH-FAIL-P0-20260612-103000.pdf',
-            quoteFilename: 'lighting-quote-SCH-FAIL-P0-20260612-103000.pdf',
+            scheduleFilename: 'lighting-schedule-SCH-FAIL-P1-20260612-103000.pdf',
+            quoteFilename: 'lighting-quote-SCH-FAIL-P1-20260612-103000.pdf',
             responseBody: 'fake schedule pdf despite upload failure',
         ));
 
@@ -591,7 +591,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertJsonPath('filename', 'lighting-schedule-SCH-FAIL-P0-20260612-103000.pdf')
+            ->assertJsonPath('filename', 'lighting-schedule-SCH-FAIL-P1-20260612-103000.pdf')
             ->assertSessionHas('filament.notifications');
 
         $this->assertNull($response->json('notification'));
@@ -599,7 +599,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,
             'action_type' => 'schedule_pdf.generated',
-            'revision_number' => 0,
+            'revision_number' => 1,
         ]);
     }
 
@@ -619,8 +619,8 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             ]);
 
         $this->instance(ProjectSchedulePdfService::class, $this->fakePdfService(
-            scheduleFilename: 'lighting-schedule-SCH-VIEW-P0-20260612-103000.pdf',
-            quoteFilename: 'lighting-quote-SCH-VIEW-P0-20260612-103000.pdf',
+            scheduleFilename: 'lighting-schedule-SCH-VIEW-P1-20260612-103000.pdf',
+            quoteFilename: 'lighting-quote-SCH-VIEW-P1-20260612-103000.pdf',
             responseBody: 'plain schedule view',
         ));
 
@@ -633,7 +633,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertDownload('lighting-schedule-SCH-VIEW-P0-20260612-103000.pdf')
+            ->assertDownload('lighting-schedule-SCH-VIEW-P1-20260612-103000.pdf')
             ->assertSessionMissing('filament.notifications');
 
         $this->assertDatabaseHas('activity_logs', [
@@ -641,7 +641,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             'action_type' => 'salesforce_pdf.uploaded',
         ]);
 
-        $this->assertContentVersionUploadWasSent('Lighting-Schedule-SCH-VIEW-P0.pdf');
+        $this->assertContentVersionUploadWasSent('Lighting-Schedule-SCH-VIEW-P1.pdf');
     }
 
     public function test_viewing_generated_quote_pdf_does_not_upload_to_salesforce_without_explicit_flag(): void
@@ -667,8 +667,8 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         ]);
 
         $this->instance(ProjectSchedulePdfService::class, $this->fakePdfService(
-            scheduleFilename: 'lighting-schedule-QT-VIEW-P0-20260612-103000.pdf',
-            quoteFilename: 'lighting-quote-QT-VIEW-P0-20260612-103000.pdf',
+            scheduleFilename: 'lighting-schedule-QT-VIEW-P1-20260612-103000.pdf',
+            quoteFilename: 'lighting-quote-QT-VIEW-P1-20260612-103000.pdf',
             responseBody: 'plain quote view',
         ));
 
@@ -681,7 +681,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertDownload('lighting-quote-QT-VIEW-P0-20260612-103000.pdf')
+            ->assertDownload('lighting-quote-QT-VIEW-P1-20260612-103000.pdf')
             ->assertSessionMissing('filament.notifications');
 
         $this->assertDatabaseMissing('activity_logs', [
@@ -692,33 +692,36 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         $this->assertContentVersionUploadWasNotSent();
     }
 
-    public function test_pdf_filenames_include_document_title_reference_revision_and_timestamp(): void
+    public function test_pdf_filenames_follow_the_project_export_naming_standard_without_a_timestamp(): void
     {
         $this->travelTo('2026-06-12 10:30:45');
 
         $project = Project::factory()
             ->for(User::factory())
-            ->create(['reference_number' => 'REF 123']);
+            ->create([
+                'reference_number' => 'REF 123',
+                'name' => 'City Hospital Upgrade',
+            ]);
 
         $service = app(ProjectSchedulePdfService::class);
 
         $this->assertSame(
-            'Lighting-Schedule-REF-123-P0-20260612-103045.pdf',
+            'REF-123-City-Hospital-Upgrade-TL-LS-P1.pdf',
             $service->filename($project, $project->activeRevision),
         );
 
         $this->assertSame(
-            'Lighting-Quote-REF-123-P0-20260612-103045.pdf',
+            'REF-123-City-Hospital-Upgrade-TL-PQ-P1.pdf',
             $service->quoteFilename($project, $project->activeRevision),
         );
 
         $this->assertSame(
-            'Lighting-Schedule-REF-123-P0.pdf',
+            'REF-123-City-Hospital-Upgrade-TL-LS-P1.pdf',
             $service->salesforceScheduleFilename($project, $project->activeRevision),
         );
 
         $this->assertSame(
-            'Lighting-Quote-REF-123-P0.pdf',
+            'REF-123-City-Hospital-Upgrade-TL-PQ-P1.pdf',
             $service->salesforceQuoteFilename($project, $project->activeRevision),
         );
     }

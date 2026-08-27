@@ -32,7 +32,7 @@ class ProjectRevision extends Model
 
     public static function labelForNumber(int $revisionNumber): string
     {
-        return $revisionNumber === 0 ? 'P0' : 'R'.$revisionNumber;
+        return 'P'.$revisionNumber;
     }
 
     public function project(): BelongsTo

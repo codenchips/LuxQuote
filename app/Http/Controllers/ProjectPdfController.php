@@ -9,6 +9,7 @@ use App\Models\ProjectRevision;
 use App\Models\ProjectTender;
 use App\Services\PdfDownloadUrlService;
 use App\Services\ProjectDatasheetPdfService;
+use App\Services\ProjectExportFilenameService;
 use App\Services\ProjectLegalPdfService;
 use App\Services\ProjectSchedulePdfService;
 use App\Services\SalesforcePdfUploadTracker;
@@ -292,16 +293,12 @@ class ProjectPdfController extends Controller
             'Quote PDF requires validation passed and quote approved.',
         );
 
-        $filename = collect([
-            'Lighting Quote Datasheets',
-            $project->reference_number ?? 'proj-'.$project->id,
-            $revision->label(),
-            $areaIds !== [] ? 'by-area' : null,
-            now()->format('Ymd-His'),
-        ])
-            ->filter(fn (?string $part): bool => filled($part))
-            ->map(fn (string $part): string => trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-'))
-            ->implode('-').'.pdf';
+        $filename = app(ProjectExportFilenameService::class)->make(
+            $project,
+            $revision,
+            ProjectExportFilenameService::ProjectQuote,
+            'pdf',
+        );
 
         $datasheetsPdf = app(ProjectDatasheetPdfService::class)->datasheetsPdf(
             project: $project,
@@ -331,14 +328,12 @@ class ProjectPdfController extends Controller
 
         abort_if($tokens === [], 422, 'No quote PDFs were supplied for the ZIP file.');
 
-        $filename = collect([
-            'Lighting Quotes',
-            $project->reference_number ?? 'proj-'.$project->id,
-            $revision->label(),
-            now()->format('Ymd-His'),
-        ])
-            ->map(fn (string $part): string => trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-'))
-            ->implode('-').'.zip';
+        $filename = app(ProjectExportFilenameService::class)->make(
+            $project,
+            $revision,
+            ProjectExportFilenameService::ProjectQuote,
+            'zip',
+        );
 
         return response()->json($downloads->registerZip($tokens, $request->user()->id, $filename));
     }
@@ -390,11 +385,12 @@ class ProjectPdfController extends Controller
             'Priced CSV requires validation passed.',
         );
 
-        $filename = collect([
-            $includePrices ? 'priced-schedule' : 'unpriced-schedule',
-            $project->reference_number ?? 'proj-'.$project->id,
-            $revision->label(),
-        ])->implode('-').'.csv';
+        $filename = app(ProjectExportFilenameService::class)->make(
+            $project,
+            $revision,
+            ProjectExportFilenameService::LightingSchedule,
+            'csv',
+        );
 
         $areas = $revision->areas()
             ->with(['lines' => fn ($query) => $query->orderBy('sort_order')])

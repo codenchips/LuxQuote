@@ -1,6 +1,16 @@
 # Company App — Project Status
 
-_Last updated: 5 August 2026_
+_Last updated: 27 August 2026_
+
+---
+
+## Project Revision and Export Naming — 27 August 2026
+
+- **New revision sequence**: Newly created projects now begin at `P1`; subsequent revisions are labelled `P2`, `P3`, and so on. The former `P0`, `R1`, `R2` sequence is no longer created.
+- **Forward-only rollout**: Existing project and activity-log revision numbers are not rewritten by the deployment migration.
+- **Revision always shown on PDFs**: Quote and Schedule PDFs show the revision from the initial `P1` output onward, including the quote cover reference.
+- **Standard export filenames**: Generated files use `Reference-Project-Name-TL-Type-Revision.ext`. Lighting Schedules use `LS`, Project Quotes use `PQ`, and Document Packs use `DP`.
+- **Timestamp-free output names**: Quote and Schedule PDFs, Salesforce PDF versions, quote datasheet outputs, quote ZIPs, schedule CSVs, and Document Packs no longer include generated date/time suffixes.
 
 ---
 
@@ -898,8 +908,9 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (as of 17 July 2026)
+## Known Gaps / Next Steps (reviewed 27 August 2026)
 
+- [ ] Complete the Project Tenders workflow: create/sync Salesforce `Tender__c` records and add tender-specific quote output and cover sheets
 - [ ] Continue Cover pricing review after beta feedback, especially how Cover values should appear in quote/schedule outputs and approval summaries
 - [ ] Move long-running PDF/document-pack generation toward queued jobs with polling/download links so browser/proxy timeouts and remote datasheet delays do not surface as user-facing 500 errors
 - [ ] Add structured logging around PDF generation with project reference, revision, document type, include-datasheets flag, progress token, qpdf step, datasheet endpoint result, and exception class/message
@@ -909,6 +920,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
 - [ ] Additional document-pack roles/templates (for example case studies) are planned but not yet implemented
+- [ ] Fill remaining automated coverage gaps: product picker UI, revision activation UI, presence heartbeat, and broader validation/PDF browser scenarios
 - [ ] Review the Output page visually in dark mode across desktop widths
 - [ ] Review the Output page in light mode, especially orange actions, tab underline, status chips, and disabled buttons
 - [ ] Check mobile/tablet layout for the top status panel and the two document cards

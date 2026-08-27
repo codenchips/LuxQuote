@@ -281,7 +281,7 @@ class Project extends Model
         static::created(function (Project $project): void {
             $revision = ProjectRevision::create([
                 'project_id' => $project->id,
-                'revision_number' => 0,
+                'revision_number' => 1,
                 'created_by' => $project->user_id,
             ]);
 

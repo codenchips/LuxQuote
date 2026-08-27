@@ -23,7 +23,12 @@ class ProjectSchedulePdfService
      */
     public function filename(Project $project, ProjectRevision $revision, array $areaIds = []): string
     {
-        return $this->documentFilename('Lighting Schedule', $project, $revision, null, $areaIds !== []);
+        return app(ProjectExportFilenameService::class)->make(
+            $project,
+            $revision,
+            ProjectExportFilenameService::LightingSchedule,
+            'pdf',
+        );
     }
 
     /**
@@ -31,7 +36,12 @@ class ProjectSchedulePdfService
      */
     public function quoteFilename(Project $project, ProjectRevision $revision, ?ProjectTender $tender = null, array $areaIds = []): string
     {
-        return $this->documentFilename('Lighting Quote', $project, $revision, $tender?->account_name, $areaIds !== []);
+        return app(ProjectExportFilenameService::class)->make(
+            $project,
+            $revision,
+            ProjectExportFilenameService::ProjectQuote,
+            'pdf',
+        );
     }
 
     /**
@@ -39,7 +49,7 @@ class ProjectSchedulePdfService
      */
     public function salesforceScheduleFilename(Project $project, ProjectRevision $revision, array $areaIds = []): string
     {
-        return $this->stableDocumentFilename('Lighting Schedule', $project, $revision, null, $areaIds !== []);
+        return $this->filename($project, $revision, $areaIds);
     }
 
     /**
@@ -47,7 +57,7 @@ class ProjectSchedulePdfService
      */
     public function salesforceQuoteFilename(Project $project, ProjectRevision $revision, ?ProjectTender $tender = null, array $areaIds = []): string
     {
-        return $this->stableDocumentFilename('Lighting Quote', $project, $revision, $tender?->account_name, $areaIds !== []);
+        return $this->quoteFilename($project, $revision, $tender, $areaIds);
     }
 
     /**
@@ -197,40 +207,6 @@ class ProjectSchedulePdfService
                 $browsershot->noSandbox();
             })
             ->format('A4');
-    }
-
-    private function documentFilename(string $title, Project $project, ProjectRevision $revision, ?string $suffix = null, bool $byArea = false): string
-    {
-        return collect([
-            $title,
-            $project->reference_number ?? 'proj-'.$project->id,
-            $revision->label(),
-            $byArea ? 'by-area' : null,
-            $suffix,
-            now()->format('Ymd-His'),
-        ])
-            ->filter(fn (?string $part): bool => filled($part))
-            ->map(fn (string $part): string => $this->filenamePart($part))
-            ->implode('-').'.pdf';
-    }
-
-    private function stableDocumentFilename(string $title, Project $project, ProjectRevision $revision, ?string $suffix = null, bool $byArea = false): string
-    {
-        return collect([
-            $title,
-            $project->reference_number ?? 'proj-'.$project->id,
-            $revision->label(),
-            $byArea ? 'by-area' : null,
-            $suffix,
-        ])
-            ->filter(fn (?string $part): bool => filled($part))
-            ->map(fn (string $part): string => $this->filenamePart($part))
-            ->implode('-').'.pdf';
-    }
-
-    private function filenamePart(string $part): string
-    {
-        return trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-');
     }
 
     private function prependQuoteCover(string $coverContent, string $quoteContent): string
