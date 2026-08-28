@@ -75,7 +75,8 @@ class AdminPanelProvider extends PanelProvider
             ->plugin(
                 FilamentFullCalendarPlugin::make()
                     ->locale('en-gb')
-                    ->timezone((string) config('app.timezone')),
+                    ->timezone((string) config('app.timezone'))
+                    ->selectable(),
             )
             ->middleware([
                 EncryptCookies::class,

@@ -8,10 +8,27 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use JsonException;
+use Throwable;
 
 class SalesforceService
 {
     private const API_VERSION = 'v65.0';
+
+    /** @var array<int, string> */
+    private const CALENDAR_EDITABLE_FIELDS = [
+        'Subject',
+        'Location',
+        'Type',
+        'StartDateTime',
+        'EndDateTime',
+        'IsAllDayEvent',
+    ];
+
+    /** @var array<int, string> */
+    private const CALENDAR_CREATEABLE_FIELDS = [
+        ...self::CALENDAR_EDITABLE_FIELDS,
+        'OwnerId',
+    ];
 
     private const AUTH_METHOD_CLIENT_CREDENTIALS = 'client_credentials';
 
@@ -291,7 +308,7 @@ class SalesforceService
      * @param  array{token: string, instanceUrl: string}  $auth
      * @return array<string, mixed>|null
      */
-    private function soqlQuery(array $auth, string $soql): ?array
+    private function soqlQuery(array $auth, string $soql, bool $logFailure = true): ?array
     {
         $response = Http::withToken($auth['token'])
             ->acceptJson()
@@ -300,6 +317,10 @@ class SalesforceService
             ]);
 
         if ($response->failed()) {
+            if (! $logFailure) {
+                return null;
+            }
+
             Log::error('Salesforce SOQL query failed', [
                 'status' => $response->status(),
                 'body' => $response->body(),
@@ -976,17 +997,417 @@ class SalesforceService
             $filters[] = "StartDateTime < {$to}";
         }
 
-        $result = $this->soqlQuery(
-            $auth,
-            'SELECT Id, Subject, StartDateTime, EndDateTime, IsAllDayEvent, Location, OwnerId '
-                .'FROM Event WHERE '.implode(' AND ', $filters)." ORDER BY StartDateTime ASC LIMIT {$limit}",
-        );
+        $fieldSets = [
+            ['Id', 'Subject', 'Type', 'StartDateTime', 'EndDateTime', 'IsAllDayEvent', 'Location', 'OwnerId', 'Owner.Name', 'CreatedBy.Name'],
+            ['Id', 'Subject', 'Type', 'StartDateTime', 'EndDateTime', 'IsAllDayEvent', 'Location', 'OwnerId'],
+            ['Id', 'Subject', 'StartDateTime', 'EndDateTime', 'IsAllDayEvent', 'Location', 'OwnerId'],
+            ['Id', 'Subject', 'StartDateTime', 'EndDateTime', 'IsAllDayEvent', 'OwnerId'],
+        ];
+        $result = null;
+        $fallbackLevel = null;
+
+        foreach ($fieldSets as $index => $fields) {
+            $result = $this->soqlQuery(
+                $auth,
+                'SELECT '.implode(', ', $fields).' FROM Event WHERE '.implode(' AND ', $filters)." ORDER BY StartDateTime ASC LIMIT {$limit}",
+                logFailure: $index === array_key_last($fieldSets),
+            );
+
+            if ($result !== null) {
+                $fallbackLevel = $index;
+
+                break;
+            }
+        }
 
         if ($result === null) {
             return ['success' => false, 'records' => [], 'errors' => ['Calendar booking query failed']];
         }
 
+        if ($fallbackLevel > 0) {
+            Log::warning('Salesforce calendar bookings loaded without some optional fields.', [
+                'fallback_level' => $fallbackLevel,
+                'calendar_id' => $calendarId,
+            ]);
+        }
+
         return ['success' => true, 'records' => $result['records'] ?? []];
+    }
+
+    /**
+     * @return array{success: bool, options: array<string, string>, updateable: array<string, bool>, createable: array<string, bool>, errors?: array<int, string>}
+     */
+    public function fetchEventTypeOptions(): array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return ['success' => false, 'options' => [], 'updateable' => [], 'createable' => [], 'errors' => ['Authentication failed']];
+        }
+
+        $describe = $this->eventDescribeUsingAuth($auth);
+
+        if ($describe === null) {
+            return ['success' => false, 'options' => [], 'updateable' => [], 'createable' => [], 'errors' => ['Could not load Salesforce event field permissions']];
+        }
+
+        $fields = collect($describe['fields'] ?? []);
+        $typeField = $fields
+            ->first(fn (mixed $field): bool => is_array($field) && ($field['name'] ?? null) === 'Type');
+
+        $options = collect(is_array($typeField) ? ($typeField['picklistValues'] ?? []) : [])
+            ->filter(fn (mixed $option): bool => is_array($option) && ($option['active'] ?? false) && filled($option['value'] ?? null))
+            ->mapWithKeys(fn (array $option): array => [
+                (string) $option['value'] => filled($option['label'] ?? null)
+                    ? (string) $option['label']
+                    : (string) $option['value'],
+            ])
+            ->all();
+        $updateable = $fields
+            ->filter(fn (mixed $field): bool => is_array($field) && in_array($field['name'] ?? null, self::CALENDAR_EDITABLE_FIELDS, true))
+            ->mapWithKeys(fn (array $field): array => [(string) $field['name'] => (bool) ($field['updateable'] ?? false)])
+            ->all();
+        $createable = $fields
+            ->filter(fn (mixed $field): bool => is_array($field) && in_array($field['name'] ?? null, self::CALENDAR_CREATEABLE_FIELDS, true))
+            ->mapWithKeys(fn (array $field): array => [(string) $field['name'] => (bool) ($field['createable'] ?? false)])
+            ->all();
+
+        return ['success' => true, 'options' => $options, 'updateable' => $updateable, 'createable' => $createable];
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array{success: bool, eventId?: string, message?: string}
+     */
+    public function createCalendarBooking(string $calendarId, array $attributes): array
+    {
+        if (app(SalesforcePushControl::class)->disabled()) {
+            return ['success' => false, 'message' => 'Salesforce pushes are currently paused. The event has not been created.'];
+        }
+
+        if (! preg_match('/^[A-Za-z0-9]{15,18}$/', $calendarId)) {
+            return ['success' => false, 'message' => 'The configured Salesforce calendar is invalid.'];
+        }
+
+        $payload = array_intersect_key($attributes, array_flip(self::CALENDAR_EDITABLE_FIELDS));
+        $requiredFields = ['Subject', 'StartDateTime', 'EndDateTime', 'IsAllDayEvent'];
+
+        if (blank($payload['Subject'] ?? null) || collect($requiredFields)->contains(fn (string $field): bool => ! array_key_exists($field, $payload))) {
+            return ['success' => false, 'message' => 'The event subject, dates, and times are required.'];
+        }
+
+        $payload['OwnerId'] = $calendarId;
+
+        try {
+            $auth = $this->authenticate();
+
+            if ($auth === null) {
+                return ['success' => false, 'message' => 'Salesforce authentication failed. The event has not been created.'];
+            }
+
+            $escapedCalendarId = $this->soqlEscape($calendarId);
+            $calendar = $this->soqlQuery(
+                $auth,
+                "SELECT Id FROM Calendar WHERE Id = '{$escapedCalendarId}' AND Type = 'Public' LIMIT 1",
+            );
+
+            if ($calendar === null || empty($calendar['records'])) {
+                return [
+                    'success' => false,
+                    'message' => 'The configured Salesforce public calendar could not be found or accessed. The event has not been created.',
+                ];
+            }
+
+            $describe = $this->eventDescribeUsingAuth($auth);
+
+            if ($describe !== null) {
+                $createable = collect($describe['fields'] ?? [])
+                    ->filter(fn (mixed $field): bool => is_array($field) && array_key_exists((string) ($field['name'] ?? ''), $payload))
+                    ->mapWithKeys(fn (array $field): array => [(string) $field['name'] => (bool) ($field['createable'] ?? false)])
+                    ->all();
+                $blockedFields = collect(array_keys($payload))
+                    ->reject(fn (string $field): bool => $createable[$field] ?? false)
+                    ->values()
+                    ->all();
+
+                if ($blockedFields !== []) {
+                    $blockedLabels = array_map($this->calendarEventFieldLabel(...), $blockedFields);
+
+                    return [
+                        'success' => false,
+                        'message' => 'Salesforce does not permit event creation with: '.implode(', ', $blockedLabels).'.',
+                    ];
+                }
+            }
+
+            $response = Http::withToken($auth['token'])
+                ->acceptJson()
+                ->post("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Event', $payload);
+
+            if ($response->failed()) {
+                Log::error('Salesforce calendar event creation failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                    'calendar_id' => $calendarId,
+                ]);
+
+                return ['success' => false, 'message' => $this->calendarEventCreationErrorMessage($response->json())];
+            }
+
+            return ['success' => true, 'eventId' => (string) $response->json('id')];
+        } catch (Throwable $exception) {
+            Log::error('Salesforce calendar event creation request failed', [
+                'calendar_id' => $calendarId,
+                'exception' => $exception,
+            ]);
+
+            return ['success' => false, 'message' => 'Salesforce could not be reached. The event has not been created.'];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array{success: bool, eventId?: string, message?: string}
+     */
+    public function updateCalendarBooking(string $calendarId, string $eventId, array $attributes): array
+    {
+        if (app(SalesforcePushControl::class)->disabled()) {
+            return ['success' => false, 'message' => 'Salesforce pushes are currently paused.'];
+        }
+
+        if (! preg_match('/^[A-Za-z0-9]{15,18}$/', $calendarId) || ! preg_match('/^[A-Za-z0-9]{15,18}$/', $eventId)) {
+            return ['success' => false, 'message' => 'Invalid Salesforce calendar or event ID.'];
+        }
+
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return ['success' => false, 'message' => 'Salesforce authentication failed.'];
+        }
+
+        $escapedCalendarId = $this->soqlEscape($calendarId);
+        $escapedEventId = $this->soqlEscape($eventId);
+        $event = $this->soqlQuery(
+            $auth,
+            "SELECT Id FROM Event WHERE Id = '{$escapedEventId}' AND OwnerId = '{$escapedCalendarId}' LIMIT 1",
+        );
+
+        if ($event === null || empty($event['records'])) {
+            return ['success' => false, 'message' => 'The event was not found on the configured Salesforce calendar.'];
+        }
+
+        $payload = array_intersect_key($attributes, array_flip(self::CALENDAR_EDITABLE_FIELDS));
+
+        if ($payload === []) {
+            return ['success' => false, 'message' => 'No supported event changes were supplied.'];
+        }
+
+        $describe = $this->eventDescribeUsingAuth($auth);
+
+        if ($describe !== null) {
+            $updateable = collect($describe['fields'] ?? [])
+                ->filter(fn (mixed $field): bool => is_array($field) && array_key_exists((string) ($field['name'] ?? ''), $payload))
+                ->mapWithKeys(fn (array $field): array => [(string) $field['name'] => (bool) ($field['updateable'] ?? false)])
+                ->all();
+            $blockedFields = collect(array_keys($payload))
+                ->reject(fn (string $field): bool => $updateable[$field] ?? false)
+                ->values()
+                ->all();
+
+            if ($blockedFields !== []) {
+                $blockedLabels = array_map($this->calendarEventFieldLabel(...), $blockedFields);
+
+                return [
+                    'success' => false,
+                    'message' => 'Salesforce does not permit updates to: '.implode(', ', $blockedLabels).'.',
+                ];
+            }
+        }
+
+        $response = Http::withToken($auth['token'])
+            ->acceptJson()
+            ->patch("{$auth['instanceUrl']}/services/data/".self::API_VERSION."/sobjects/Event/{$eventId}", $payload);
+
+        if ($response->failed()) {
+            Log::error('Salesforce calendar event update failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'calendar_id' => $calendarId,
+                'event_id' => $eventId,
+            ]);
+
+            return ['success' => false, 'message' => $this->calendarEventUpdateErrorMessage($response->json())];
+        }
+
+        return ['success' => true, 'eventId' => $eventId];
+    }
+
+    /**
+     * @return array{success: bool, eventId?: string, message?: string}
+     */
+    public function deleteCalendarBooking(string $calendarId, string $eventId): array
+    {
+        if (app(SalesforcePushControl::class)->disabled()) {
+            return ['success' => false, 'message' => 'Salesforce pushes are currently paused. The event has not been removed.'];
+        }
+
+        if (! preg_match('/^[A-Za-z0-9]{15,18}$/', $calendarId) || ! preg_match('/^[A-Za-z0-9]{15,18}$/', $eventId)) {
+            return ['success' => false, 'message' => 'The selected Salesforce calendar event is invalid.'];
+        }
+
+        try {
+            $auth = $this->authenticate();
+
+            if ($auth === null) {
+                return ['success' => false, 'message' => 'Salesforce authentication failed. The event has not been removed.'];
+            }
+
+            $escapedCalendarId = $this->soqlEscape($calendarId);
+            $escapedEventId = $this->soqlEscape($eventId);
+            $event = $this->soqlQuery(
+                $auth,
+                "SELECT Id FROM Event WHERE Id = '{$escapedEventId}' AND OwnerId = '{$escapedCalendarId}' LIMIT 1",
+            );
+
+            if ($event === null || empty($event['records'])) {
+                return [
+                    'success' => false,
+                    'message' => 'The event was not found on the configured Salesforce calendar, or Salesforce did not allow it to be read. It has not been removed.',
+                ];
+            }
+
+            $response = Http::withToken($auth['token'])
+                ->acceptJson()
+                ->delete("{$auth['instanceUrl']}/services/data/".self::API_VERSION."/sobjects/Event/{$eventId}");
+
+            if ($response->successful()) {
+                return ['success' => true, 'eventId' => $eventId];
+            }
+
+            $errors = $response->json();
+
+            if ($this->salesforceErrorCode($errors) === 'ENTITY_IS_DELETED') {
+                return ['success' => true, 'eventId' => $eventId];
+            }
+
+            Log::error('Salesforce calendar event deletion failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'calendar_id' => $calendarId,
+                'event_id' => $eventId,
+            ]);
+
+            return ['success' => false, 'message' => $this->calendarEventDeletionErrorMessage($errors)];
+        } catch (Throwable $exception) {
+            Log::error('Salesforce calendar event deletion request failed', [
+                'calendar_id' => $calendarId,
+                'event_id' => $eventId,
+                'exception' => $exception,
+            ]);
+
+            return ['success' => false, 'message' => 'Salesforce could not be reached. The event has not been removed.'];
+        }
+    }
+
+    /**
+     * @param  array{token: string, instanceUrl: string}  $auth
+     * @return array<string, mixed>|null
+     */
+    private function eventDescribeUsingAuth(array $auth): ?array
+    {
+        $cacheKey = 'salesforce.event-describe.'.hash('sha256', implode('|', [
+            $auth['instanceUrl'],
+            (string) config('services.salesforce.client_id'),
+            (string) config('services.salesforce.jwt_subject'),
+        ]));
+        $cached = Cache::get($cacheKey);
+
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $response = Http::withToken($auth['token'])
+            ->acceptJson()
+            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Event/describe');
+
+        if ($response->failed()) {
+            Log::warning('Salesforce Event describe failed; calendar will use conservative fallbacks.', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            return null;
+        }
+
+        $describe = $response->json();
+
+        if (! is_array($describe)) {
+            return null;
+        }
+
+        Cache::put($cacheKey, $describe, now()->addMinutes(10));
+
+        return $describe;
+    }
+
+    private function calendarEventUpdateErrorMessage(mixed $errors): string
+    {
+        $error = is_array($errors) && is_array($errors[0] ?? null) ? $errors[0] : [];
+        $errorCode = (string) ($error['errorCode'] ?? '');
+
+        return match ($errorCode) {
+            'INSUFFICIENT_ACCESS_OR_READONLY',
+            'INVALID_CROSS_REFERENCE_KEY' => 'Salesforce does not permit the integration user to update this event.',
+            'INVALID_FIELD',
+            'INVALID_FIELD_FOR_INSERT_UPDATE' => 'Salesforce does not permit one or more of the changed event fields to be updated.',
+            'FIELD_INTEGRITY_EXCEPTION' => 'Salesforce rejected the event dates or times. Check that the end is after the start.',
+            'ENTITY_IS_DELETED' => 'This Salesforce event no longer exists.',
+            default => $this->salesforceErrorMessage($errors, 'Salesforce calendar event update failed'),
+        };
+    }
+
+    private function calendarEventCreationErrorMessage(mixed $errors): string
+    {
+        return match ($this->salesforceErrorCode($errors)) {
+            'INSUFFICIENT_ACCESS_OR_READONLY',
+            'INVALID_CROSS_REFERENCE_KEY' => 'Salesforce does not permit the integration user to create events on this calendar.',
+            'INVALID_FIELD',
+            'INVALID_FIELD_FOR_INSERT_UPDATE' => 'Salesforce does not permit one or more event fields to be set during creation.',
+            'FIELD_INTEGRITY_EXCEPTION',
+            'REQUIRED_FIELD_MISSING' => 'Salesforce rejected the event details. Check the subject, dates, and times.',
+            default => 'Salesforce could not create this event. The event has not been created.',
+        };
+    }
+
+    private function calendarEventDeletionErrorMessage(mixed $errors): string
+    {
+        return match ($this->salesforceErrorCode($errors)) {
+            'INSUFFICIENT_ACCESS_OR_READONLY',
+            'INVALID_CROSS_REFERENCE_KEY',
+            'DELETE_FAILED' => 'Salesforce does not permit the integration user to remove this event. The event has not been removed.',
+            default => 'Salesforce could not remove this event. The event has not been removed.',
+        };
+    }
+
+    private function salesforceErrorCode(mixed $errors): string
+    {
+        return is_array($errors) && is_array($errors[0] ?? null)
+            ? (string) ($errors[0]['errorCode'] ?? '')
+            : '';
+    }
+
+    private function calendarEventFieldLabel(string $field): string
+    {
+        return match ($field) {
+            'Subject' => 'Subject',
+            'Location' => 'Location',
+            'Type' => 'Type',
+            'StartDateTime' => 'Start date/time',
+            'EndDateTime' => 'End date/time',
+            'IsAllDayEvent' => 'All-day event',
+            'OwnerId' => 'Calendar owner',
+            default => $field,
+        };
     }
 
     /**

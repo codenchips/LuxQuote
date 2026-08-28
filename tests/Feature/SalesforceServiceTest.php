@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\SalesforceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -270,10 +271,591 @@ class SalesforceServiceTest extends TestCase
             return $request->method() === 'GET'
                 && str_contains($request->url(), '/services/data/v65.0/query/')
                 && str_contains($query, "OwnerId = '023000000000001AAA'")
+                && str_contains($query, 'Owner.Name')
+                && str_contains($query, 'CreatedBy.Name')
+                && str_contains($query, 'Subject, Type, StartDateTime')
                 && str_contains($query, 'EndDateTime >= 2026-08-31T23:00:00Z')
                 && str_contains($query, 'StartDateTime < 2026-09-30T22:59:59Z')
                 && str_contains($query, 'ORDER BY StartDateTime ASC LIMIT 25');
         });
+    }
+
+    public function test_fetch_event_type_options_returns_active_salesforce_picklist_values(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/sobjects/Event/describe')) {
+                return Http::response([
+                    'fields' => [[
+                        'name' => 'Type',
+                        'updateable' => true,
+                        'createable' => true,
+                        'picklistValues' => [
+                            ['active' => true, 'label' => 'Meeting', 'value' => 'Meeting'],
+                            ['active' => true, 'label' => 'Other', 'value' => 'Other'],
+                            ['active' => false, 'label' => 'Legacy', 'value' => 'Legacy'],
+                        ],
+                    ]],
+                ]);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $result = app(SalesforceService::class)->fetchEventTypeOptions();
+
+        $this->assertTrue($result['success']);
+        $this->assertSame([
+            'Meeting' => 'Meeting',
+            'Other' => 'Other',
+        ], $result['options']);
+        $this->assertTrue($result['updateable']['Type']);
+        $this->assertTrue($result['createable']['Type']);
+    }
+
+    public function test_fetch_calendar_bookings_falls_back_when_optional_fields_are_not_readable(): void
+    {
+        $calendarQueries = [];
+
+        Http::fake(function (Request $request) use (&$calendarQueries) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            $query = (string) ($request->data()['q'] ?? '');
+            $calendarQueries[] = $query;
+
+            if (str_contains($query, 'Owner.Name') || str_contains($query, 'Subject, Type,')) {
+                return Http::response([[
+                    'message' => 'No such column',
+                    'errorCode' => 'INVALID_FIELD',
+                ]], 400);
+            }
+
+            return Http::response([
+                'records' => [[
+                    'Id' => '00U000000000001AAA',
+                    'Subject' => 'Readable visit',
+                    'StartDateTime' => '2026-09-04T09:00:00.000+0000',
+                    'EndDateTime' => '2026-09-04T10:00:00.000+0000',
+                    'IsAllDayEvent' => false,
+                    'Location' => 'Boardroom',
+                    'OwnerId' => '023000000000001AAA',
+                ]],
+            ]);
+        });
+
+        $result = app(SalesforceService::class)->fetchCalendarBookings(
+            '023000000000001AAA',
+            '2026-09-01T00:00:00Z',
+            '2026-10-01T00:00:00Z',
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('Readable visit', $result['records'][0]['Subject']);
+        $this->assertCount(3, $calendarQueries);
+    }
+
+    public function test_update_calendar_booking_reports_non_updateable_fields_without_patching(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response(['records' => [['Id' => '00U000000000001AAA']]]);
+            }
+
+            if (str_contains($request->url(), '/sobjects/Event/describe')) {
+                return Http::response([
+                    'fields' => [[
+                        'name' => 'Location',
+                        'updateable' => false,
+                    ]],
+                ]);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $result = app(SalesforceService::class)->updateCalendarBooking(
+            '023000000000001AAA',
+            '00U000000000001AAA',
+            ['Location' => 'Showroom'],
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('Salesforce does not permit updates to: Location.', $result['message']);
+        Http::assertNotSent(fn (Request $request): bool => $request->method() === 'PATCH');
+    }
+
+    public function test_create_calendar_booking_verifies_public_calendar_and_creates_event(): void
+    {
+        $createableFields = [
+            'Subject',
+            'Location',
+            'Type',
+            'StartDateTime',
+            'EndDateTime',
+            'IsAllDayEvent',
+            'OwnerId',
+        ];
+
+        Http::fake(function (Request $request) use ($createableFields) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response(['records' => [['Id' => '023000000000001AAA']]]);
+            }
+
+            if (str_contains($request->url(), '/sobjects/Event/describe')) {
+                return Http::response([
+                    'fields' => array_map(
+                        fn (string $field): array => ['name' => $field, 'createable' => true],
+                        $createableFields,
+                    ),
+                ]);
+            }
+
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/sobjects/Event')) {
+                return Http::response([
+                    'id' => '00U000000000NEWAAA',
+                    'success' => true,
+                    'errors' => [],
+                ], 201);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $result = app(SalesforceService::class)->createCalendarBooking(
+            '023000000000001AAA',
+            [
+                'Subject' => 'Customer visit',
+                'Location' => 'Boardroom',
+                'Type' => 'Meeting',
+                'StartDateTime' => '2026-09-04T08:15:00Z',
+                'EndDateTime' => '2026-09-04T10:00:00Z',
+                'IsAllDayEvent' => false,
+                'CreatedById' => '005000000000001AAA',
+            ],
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('00U000000000NEWAAA', $result['eventId']);
+
+        Http::assertSent(function (Request $request): bool {
+            $query = (string) ($request->data()['q'] ?? '');
+
+            return $request->method() === 'GET'
+                && str_contains($request->url(), '/services/data/v65.0/query/')
+                && str_contains($query, "Id = '023000000000001AAA'")
+                && str_contains($query, "Type = 'Public'");
+        });
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && str_ends_with($request->url(), '/sobjects/Event')
+            && $request->data() === [
+                'Subject' => 'Customer visit',
+                'Location' => 'Boardroom',
+                'Type' => 'Meeting',
+                'StartDateTime' => '2026-09-04T08:15:00Z',
+                'EndDateTime' => '2026-09-04T10:00:00Z',
+                'IsAllDayEvent' => false,
+                'OwnerId' => '023000000000001AAA',
+            ]);
+    }
+
+    public function test_create_calendar_booking_rejects_inaccessible_public_calendar_without_posting(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            return Http::response(['records' => []]);
+        });
+
+        $result = app(SalesforceService::class)->createCalendarBooking(
+            '023000000000001AAA',
+            [
+                'Subject' => 'Should not be created',
+                'StartDateTime' => '2026-09-04T08:15:00Z',
+                'EndDateTime' => '2026-09-04T10:00:00Z',
+                'IsAllDayEvent' => false,
+            ],
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('has not been created', $result['message']);
+        Http::assertNotSent(fn (Request $request): bool => $request->method() === 'POST'
+            && str_ends_with($request->url(), '/sobjects/Event'));
+    }
+
+    public function test_create_calendar_booking_reports_non_createable_fields_without_posting(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response(['records' => [['Id' => '023000000000001AAA']]]);
+            }
+
+            if (str_contains($request->url(), '/sobjects/Event/describe')) {
+                return Http::response([
+                    'fields' => [
+                        ['name' => 'Subject', 'createable' => true],
+                        ['name' => 'StartDateTime', 'createable' => true],
+                        ['name' => 'EndDateTime', 'createable' => true],
+                        ['name' => 'IsAllDayEvent', 'createable' => true],
+                        ['name' => 'OwnerId', 'createable' => false],
+                    ],
+                ]);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $result = app(SalesforceService::class)->createCalendarBooking(
+            '023000000000001AAA',
+            [
+                'Subject' => 'Customer visit',
+                'StartDateTime' => '2026-09-04T08:15:00Z',
+                'EndDateTime' => '2026-09-04T10:00:00Z',
+                'IsAllDayEvent' => false,
+            ],
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('Salesforce does not permit event creation with: Calendar owner.', $result['message']);
+        Http::assertNotSent(fn (Request $request): bool => $request->method() === 'POST'
+            && str_ends_with($request->url(), '/sobjects/Event'));
+    }
+
+    public function test_create_calendar_booking_returns_friendly_message_for_salesforce_permission_failure(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response(['records' => [['Id' => '023000000000001AAA']]]);
+            }
+
+            if (str_contains($request->url(), '/sobjects/Event/describe')) {
+                return Http::response([], 403);
+            }
+
+            return Http::response([[
+                'message' => 'insufficient access rights on object id',
+                'errorCode' => 'INSUFFICIENT_ACCESS_OR_READONLY',
+            ]], 403);
+        });
+
+        $result = app(SalesforceService::class)->createCalendarBooking(
+            '023000000000001AAA',
+            [
+                'Subject' => 'Customer visit',
+                'StartDateTime' => '2026-09-04T08:15:00Z',
+                'EndDateTime' => '2026-09-04T10:00:00Z',
+                'IsAllDayEvent' => false,
+            ],
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertSame(
+            'Salesforce does not permit the integration user to create events on this calendar.',
+            $result['message'],
+        );
+    }
+
+    public function test_update_calendar_booking_returns_friendly_message_for_salesforce_permission_failure(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response(['records' => [['Id' => '00U000000000001AAA']]]);
+            }
+
+            if (str_contains($request->url(), '/sobjects/Event/describe')) {
+                return Http::response([], 403);
+            }
+
+            if ($request->method() === 'PATCH') {
+                return Http::response([[
+                    'message' => 'insufficient access rights on object id',
+                    'errorCode' => 'INSUFFICIENT_ACCESS_OR_READONLY',
+                ]], 403);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $result = app(SalesforceService::class)->updateCalendarBooking(
+            '023000000000001AAA',
+            '00U000000000001AAA',
+            ['Subject' => 'Updated visit'],
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('Salesforce does not permit the integration user to update this event.', $result['message']);
+    }
+
+    public function test_update_calendar_booking_verifies_calendar_ownership_and_allows_only_editable_fields(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response(['records' => [['Id' => '00U000000000001AAA']]]);
+            }
+
+            if ($request->method() === 'PATCH' && str_contains($request->url(), '/sobjects/Event/00U000000000001AAA')) {
+                return Http::response(null, 204);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $result = app(SalesforceService::class)->updateCalendarBooking(
+            '023000000000001AAA',
+            '00U000000000001AAA',
+            [
+                'Subject' => 'Updated visit',
+                'Location' => 'Boardroom',
+                'Type' => 'Meeting',
+                'StartDateTime' => '2026-09-04T09:00:00Z',
+                'EndDateTime' => '2026-09-04T10:00:00Z',
+                'IsAllDayEvent' => false,
+                'OwnerId' => '005000000000001AAA',
+                'CreatedById' => '005000000000002AAA',
+            ],
+        );
+
+        $this->assertTrue($result['success']);
+
+        Http::assertSent(function (Request $request): bool {
+            $query = (string) ($request->data()['q'] ?? '');
+
+            return $request->method() === 'GET'
+                && str_contains($request->url(), '/services/data/v65.0/query/')
+                && str_contains($query, "Id = '00U000000000001AAA'")
+                && str_contains($query, "OwnerId = '023000000000001AAA'");
+        });
+        Http::assertSent(function (Request $request): bool {
+            if ($request->method() !== 'PATCH') {
+                return false;
+            }
+
+            return $request->data() === [
+                'Subject' => 'Updated visit',
+                'Location' => 'Boardroom',
+                'Type' => 'Meeting',
+                'StartDateTime' => '2026-09-04T09:00:00Z',
+                'EndDateTime' => '2026-09-04T10:00:00Z',
+                'IsAllDayEvent' => false,
+            ];
+        });
+    }
+
+    public function test_update_calendar_booking_rejects_event_from_another_calendar(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            return Http::response(['records' => []]);
+        });
+
+        $result = app(SalesforceService::class)->updateCalendarBooking(
+            '023000000000001AAA',
+            '00U000000000001AAA',
+            ['Subject' => 'Should not update'],
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('The event was not found on the configured Salesforce calendar.', $result['message']);
+        Http::assertNotSent(fn (Request $request): bool => $request->method() === 'PATCH');
+    }
+
+    public function test_delete_calendar_booking_verifies_calendar_ownership_and_deletes_event(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response(['records' => [['Id' => '00U000000000001AAA']]]);
+            }
+
+            if ($request->method() === 'DELETE' && str_contains($request->url(), '/sobjects/Event/00U000000000001AAA')) {
+                return Http::response(null, 204);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $result = app(SalesforceService::class)->deleteCalendarBooking(
+            '023000000000001AAA',
+            '00U000000000001AAA',
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('00U000000000001AAA', $result['eventId']);
+
+        Http::assertSent(function (Request $request): bool {
+            $query = (string) ($request->data()['q'] ?? '');
+
+            return $request->method() === 'GET'
+                && str_contains($request->url(), '/services/data/v65.0/query/')
+                && str_contains($query, "Id = '00U000000000001AAA'")
+                && str_contains($query, "OwnerId = '023000000000001AAA'");
+        });
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+            && str_contains($request->url(), '/services/data/v65.0/sobjects/Event/00U000000000001AAA'));
+    }
+
+    public function test_delete_calendar_booking_rejects_event_from_another_calendar(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            return Http::response(['records' => []]);
+        });
+
+        $result = app(SalesforceService::class)->deleteCalendarBooking(
+            '023000000000001AAA',
+            '00U000000000001AAA',
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('has not been removed', $result['message']);
+        Http::assertNotSent(fn (Request $request): bool => $request->method() === 'DELETE');
+    }
+
+    public function test_delete_calendar_booking_returns_friendly_message_for_salesforce_permission_failure(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response(['records' => [['Id' => '00U000000000001AAA']]]);
+            }
+
+            return Http::response([[
+                'message' => 'insufficient access rights on object id',
+                'errorCode' => 'INSUFFICIENT_ACCESS_OR_READONLY',
+            ]], 403);
+        });
+
+        $result = app(SalesforceService::class)->deleteCalendarBooking(
+            '023000000000001AAA',
+            '00U000000000001AAA',
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertSame(
+            'Salesforce does not permit the integration user to remove this event. The event has not been removed.',
+            $result['message'],
+        );
+    }
+
+    public function test_delete_calendar_booking_handles_connection_failure_without_throwing(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response(['records' => [['Id' => '00U000000000001AAA']]]);
+            }
+
+            throw new ConnectionException('Salesforce timed out.');
+        });
+
+        $result = app(SalesforceService::class)->deleteCalendarBooking(
+            '023000000000001AAA',
+            '00U000000000001AAA',
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('Salesforce could not be reached. The event has not been removed.', $result['message']);
     }
 
     public function test_jwt_bearer_authenticates_and_returns_options(): void

@@ -107,6 +107,10 @@ class ActivityLogsTable
 
                         'project.deleted' => 'Permanently <strong>deleted</strong> the project',
 
+                        'calendar.created',
+                        'calendar.updated',
+                        'calendar.deleted' => self::calendarActionText($record->action_type, $payload),
+
                         'revision.created' => 'Created a new snapshot: <strong>Revision #'.e((string) ($payload['revision_number'] ?? '?')).'</strong>',
 
                         'revision.approved' => 'Approved and locked <strong>'.e((string) ($payload['revision_label'] ?? 'revision')).'</strong>',
@@ -367,6 +371,9 @@ class ActivityLogsTable
         return [
             'area.created' => 'Area Created',
             'area.deleted' => 'Area Deleted',
+            'calendar.created' => 'Calendar Event Created',
+            'calendar.updated' => 'Calendar Event Updated',
+            'calendar.deleted' => 'Calendar Event Deleted',
             'project.created' => 'Project Created',
             'project.details_saved' => 'Project Details Saved',
             'project.updated' => 'Project Updated',
@@ -453,6 +460,25 @@ class ActivityLogsTable
         }
 
         return (string) str($value)->replace('_', ' ')->headline();
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private static function calendarActionText(string $actionType, array $payload): string
+    {
+        [$action, $actionClass] = match ($actionType) {
+            'calendar.created' => ['Created', 'text-emerald-600 dark:text-emerald-400'],
+            'calendar.updated' => ['Updated', 'text-sky-600 dark:text-sky-300'],
+            'calendar.deleted' => ['Deleted', 'text-rose-600 dark:text-rose-400'],
+            default => ['Changed', 'text-gray-800 dark:text-gray-100'],
+        };
+        $subject = e((string) ($payload['subject'] ?? 'Room booking'));
+        $dates = e((string) ($payload['dates'] ?? 'Date unavailable'));
+        $times = e((string) ($payload['times'] ?? 'Time unavailable'));
+        $action = self::actionSpan($action, $actionClass);
+
+        return "{$action} - <strong>{$subject}</strong> - {$dates} / {$times}";
     }
 
     /**
@@ -586,6 +612,10 @@ class ActivityLogsTable
 
     private static function referenceLabel(ActivityLog|ActivityLogArchive $record): string
     {
+        if (str_starts_with($record->action_type, 'calendar.')) {
+            return 'Calendar';
+        }
+
         $reference = $record->project?->reference_number;
 
         if (filled($reference)) {
@@ -663,6 +693,10 @@ class ActivityLogsTable
 
     private static function actionToneClass(string $actionType): string
     {
+        if (str_starts_with($actionType, 'calendar.')) {
+            return 'text-gray-800 dark:text-gray-100';
+        }
+
         if (str_contains($actionType, 'deleted')
             || str_contains($actionType, 'unapproved')
             || str_contains($actionType, 'undone')

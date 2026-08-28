@@ -29,6 +29,9 @@ class AdminPermissionGateTest extends TestCase
         $this->assertTrue($user->can('output.manage-document-packs'));
         $this->assertTrue($user->can('output.produce-document-packs'));
         $this->assertTrue($user->can('output.history.view'));
+        $this->assertTrue($user->can('calendar.update'));
+        $this->assertTrue($user->can('calendar.create'));
+        $this->assertTrue($user->can('calendar.delete'));
         $this->assertFalse($user->can('pricing.view'));
 
         $this->assertTrue($sales->can('pricing.view'));
@@ -37,6 +40,9 @@ class AdminPermissionGateTest extends TestCase
         $this->assertTrue($sales->can('output.history.view'));
         $this->assertFalse($sales->can('projects.create'));
         $this->assertFalse($sales->can('validation.update-lines'));
+        $this->assertTrue($sales->can('calendar.update'));
+        $this->assertTrue($sales->can('calendar.create'));
+        $this->assertTrue($sales->can('calendar.delete'));
 
         $this->assertTrue($technical->can('projects.update-lines'));
         $this->assertTrue($technical->can('projects.manage-tenders'));
@@ -46,6 +52,9 @@ class AdminPermissionGateTest extends TestCase
         $this->assertFalse($technical->can('output.produce-priced-schedule'));
         $this->assertTrue($technical->can('output.produce-document-packs'));
         $this->assertTrue($technical->can('output.history.view'));
+        $this->assertTrue($technical->can('calendar.update'));
+        $this->assertTrue($technical->can('calendar.create'));
+        $this->assertTrue($technical->can('calendar.delete'));
 
         $this->assertTrue($manager->can('projects.create'));
         $this->assertTrue($manager->can('projects.update-lines'));
@@ -56,6 +65,9 @@ class AdminPermissionGateTest extends TestCase
         $this->assertTrue($manager->can('output.manage-document-packs'));
         $this->assertTrue($manager->can('output.history.view'));
         $this->assertTrue($manager->can('salesforce.view'));
+        $this->assertTrue($manager->can('calendar.update'));
+        $this->assertTrue($manager->can('calendar.create'));
+        $this->assertTrue($manager->can('calendar.delete'));
         $this->assertFalse($manager->can('salesforce.manage-push'));
     }
 

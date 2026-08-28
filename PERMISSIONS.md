@@ -119,6 +119,9 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Import / fetch products | x |  |  |  |  |
 | Manage special order codes | x |  |  |  |  |
 | View company calendar | x | x | x | x | x |
+| Create company calendar events | x | x | x | x | x |
+| Update company calendar events | x | x | x | x | x |
+| Delete company calendar events | x | x | x | x | x |
 | View Salesforce projects list page | x |  |  |  | x |
 | Manage Salesforce push switch | x |  |  |  |  |
 | View users list page | x |  |  |  |  |
@@ -183,7 +186,17 @@ Users with `salesforce.view` can still search and import Salesforce projects. Us
 
 ## Calendar
 
-The standalone Calendar page is controlled by `calendar.view`. Every default permission group receives this capability, while custom groups can omit it. It reads room bookings from the configured Salesforce Visits public calendar and displays them in month, week, and day views. The page does not yet create, update, or delete Salesforce events.
+The standalone Calendar page is controlled by `calendar.view`. Every default permission group receives this capability, while custom groups can omit it. It reads room bookings from the configured Salesforce Visits public calendar and displays them in month, week, and day views.
+
+Creating an event requires `calendar.create`. Clicking or dragging across empty calendar slots opens a create modal pre-filled with the selected date and time; a single timed-slot click defaults to a one-hour event. Salesforce field createability is checked where metadata is available, and the server always assigns the event to the configured Visits public calendar.
+
+Updating an existing event requires `calendar.update`. The modal keeps Salesforce Owner and Created By read-only, validates that the event still belongs to the configured Visits calendar, and allows changes to Subject, Location, Type, dates, times, and all-day status.
+
+Deleting an event requires the separate `calendar.delete` permission. The event modal shows a red Remove event action only to permitted users and requires a second explicit confirmation. Immediately before deleting, the server verifies that the event still belongs to the configured Visits public calendar. Missing Salesforce delete rights, stale or inaccessible records, paused Salesforce pushes, and transport failures leave the event intact and return a user-friendly error.
+
+Salesforce field permissions are treated defensively. Calendar reads retry without optional Owner/Created By relationships, Type, or Location when those fields are unavailable, while malformed individual records are skipped without losing valid events. Event describe metadata makes non-updateable fields read-only in the modal. If metadata is unavailable, Type changes are disabled and other edits use Salesforce as the final authorization check; permission-related API failures are shown as user-friendly messages.
+
+Successful calendar creates, updates, and deletions are appended to the global activity history as `calendar.created`, `calendar.updated`, and `calendar.deleted`. Each entry snapshots the acting user, calendar name and ID, Salesforce event ID, subject, dates, and times. History rows use `Calendar` as their Reference and display `Action - Subject - Dates / Times`, with Created in green, Updated in blue, and Deleted in red. Failed Salesforce actions are not recorded as completed calendar activity.
 
 ## Special Order Codes
 

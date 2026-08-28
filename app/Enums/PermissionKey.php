@@ -35,6 +35,9 @@ enum PermissionKey: string
     case ProductsImport = 'products.import';
     case SpecialsManage = 'specials.manage';
     case CalendarView = 'calendar.view';
+    case CalendarCreate = 'calendar.create';
+    case CalendarUpdate = 'calendar.update';
+    case CalendarDelete = 'calendar.delete';
     case SalesforceView = 'salesforce.view';
     case SalesforceManagePush = 'salesforce.manage-push';
     case UsersView = 'users.view';
@@ -78,6 +81,9 @@ enum PermissionKey: string
             self::ProductsImport => 'Import / fetch products',
             self::SpecialsManage => 'Manage special order codes',
             self::CalendarView => 'View company calendar',
+            self::CalendarCreate => 'Create company calendar events',
+            self::CalendarUpdate => 'Update company calendar events',
+            self::CalendarDelete => 'Delete company calendar events',
             self::SalesforceView => 'View Salesforce projects list page',
             self::SalesforceManagePush => 'Manage Salesforce push switch',
             self::UsersView => 'View users list page',
@@ -127,7 +133,10 @@ enum PermissionKey: string
             self::ProductsImport,
             self::SpecialsManage => 'Products',
 
-            self::CalendarView => 'Calendar',
+            self::CalendarView,
+            self::CalendarCreate,
+            self::CalendarUpdate,
+            self::CalendarDelete => 'Calendar',
             self::SalesforceView => 'Salesforce',
             self::SalesforceManagePush => 'Salesforce',
             self::ActivityLogView => 'History',
@@ -152,6 +161,9 @@ enum PermissionKey: string
             self::SpecialsManage => 'Allows managing special order codes that affect project entry, validation, and PDF outputs.',
             self::OutputHistoryView => 'Allows viewing and regenerating previously generated project quote and schedule outputs.',
             self::SalesforceManagePush => 'Allows pausing and resuming outbound Salesforce writes while keeping Salesforce project import/search available.',
+            self::CalendarCreate => 'Allows creating events on the configured Salesforce public calendar.',
+            self::CalendarUpdate => 'Allows updating events on the configured Salesforce public calendar.',
+            self::CalendarDelete => 'Allows permanently removing events from the configured Salesforce public calendar.',
             self::TeamsManage => 'Allows creating, editing, deleting, and assigning users to teams.',
             self::PermissionsManage => 'Allows managing permission groups and viewing the permission catalogue.',
             default => $this->label(),
@@ -187,6 +199,9 @@ enum PermissionKey: string
                     self::OutputProduceDocumentPacks,
                     self::OutputHistoryView,
                     self::CalendarView,
+                    self::CalendarCreate,
+                    self::CalendarUpdate,
+                    self::CalendarDelete,
                 ],
             ],
             'sales' => [
@@ -208,6 +223,9 @@ enum PermissionKey: string
                     self::PricingUpdate,
                     self::CoverUpdate,
                     self::CalendarView,
+                    self::CalendarCreate,
+                    self::CalendarUpdate,
+                    self::CalendarDelete,
                 ],
             ],
             'technical' => [
@@ -230,6 +248,9 @@ enum PermissionKey: string
                     self::OutputProduceDocumentPacks,
                     self::OutputHistoryView,
                     self::CalendarView,
+                    self::CalendarCreate,
+                    self::CalendarUpdate,
+                    self::CalendarDelete,
                 ],
             ],
             'manager' => [
@@ -265,6 +286,9 @@ enum PermissionKey: string
                     self::CoverUpdate,
                     self::ProductsView,
                     self::CalendarView,
+                    self::CalendarCreate,
+                    self::CalendarUpdate,
+                    self::CalendarDelete,
                     self::SalesforceView,
                 ],
             ],
