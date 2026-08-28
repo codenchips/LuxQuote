@@ -14,6 +14,56 @@ class SalesforceCalendarWidgetTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_month_view_displays_labels_for_up_to_three_events_per_day(): void
+    {
+        $widget = app(CalendarWidget::class);
+
+        $this->assertSame(3, $widget->config()['dayMaxEvents']);
+        $this->assertStringContainsString("view.type === 'dayGridMonth'", $widget->eventContent());
+        $this->assertStringContainsString('`${event.title} · ${event.extendedProps.location}`', $widget->eventContent());
+    }
+
+    public function test_time_grid_is_limited_to_business_visit_hours_by_default(): void
+    {
+        config(['calendar.show_full_days' => false]);
+
+        $calendarConfig = app(CalendarWidget::class)->config();
+
+        $this->assertSame('06:00:00', $calendarConfig['slotMinTime']);
+        $this->assertSame('20:00:00', $calendarConfig['slotMaxTime']);
+        $this->assertSame('06:00:00', $calendarConfig['scrollTime']);
+    }
+
+    public function test_time_grid_can_show_full_days_from_configuration(): void
+    {
+        config(['calendar.show_full_days' => true]);
+
+        $calendarConfig = app(CalendarWidget::class)->config();
+
+        $this->assertSame('00:00:00', $calendarConfig['slotMinTime']);
+        $this->assertSame('24:00:00', $calendarConfig['slotMaxTime']);
+        $this->assertSame('08:00:00', $calendarConfig['scrollTime']);
+    }
+
+    public function test_month_view_hides_weekends_by_default(): void
+    {
+        config(['calendar.show_weekends' => false]);
+
+        $calendarConfig = app(CalendarWidget::class)->config();
+
+        $this->assertFalse($calendarConfig['views']['dayGridMonth']['weekends']);
+        $this->assertArrayNotHasKey('weekends', $calendarConfig);
+    }
+
+    public function test_month_view_can_show_weekends_from_configuration(): void
+    {
+        config(['calendar.show_weekends' => true]);
+
+        $calendarConfig = app(CalendarWidget::class)->config();
+
+        $this->assertTrue($calendarConfig['views']['dayGridMonth']['weekends']);
+    }
+
     public function test_widget_maps_timed_and_all_day_salesforce_bookings(): void
     {
         $fake = new class extends SalesforceService
@@ -69,16 +119,15 @@ class SalesforceCalendarWidgetTest extends TestCase
             'to' => '2026-02-01T00:00:00Z',
             'limit' => 200,
         ], $fake->arguments);
-        $this->assertCount(3, $events);
+        $this->assertCount(2, $events);
         $this->assertSame('EO - Technical training Group B', $events[0]['title']);
         $this->assertSame('Boardroom', $events[0]['extendedProps']['location']);
         $this->assertSame('2026-01-19T08:30:00+00:00', $events[0]['start']);
         $this->assertSame('2026-01-19T12:00:00+00:00', $events[0]['end']);
         $this->assertFalse($events[0]['allDay']);
-        $this->assertSame('2026-01-20T08:00:00+00:00', $events[1]['start']);
-        $this->assertSame('2026-01-20T17:00:00+00:00', $events[1]['end']);
-        $this->assertSame('2026-01-21T08:00:00+00:00', $events[2]['start']);
-        $this->assertSame('2026-01-21T17:00:00+00:00', $events[2]['end']);
+        $this->assertTrue($events[1]['allDay']);
+        $this->assertSame('2026-01-20', $events[1]['start']);
+        $this->assertSame('2026-01-22', $events[1]['end']);
     }
 
     public function test_widget_rejects_direct_event_fetch_without_calendar_permission(): void

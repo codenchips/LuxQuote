@@ -38,16 +38,27 @@ class CalendarWidget extends FullCalendarWidget
      */
     public function config(): array
     {
+        $showFullDays = (bool) config('calendar.show_full_days', false);
+        $showWeekends = (bool) config('calendar.show_weekends', false);
+
         return [
             'initialView' => 'dayGridMonth',
             'firstDay' => 1,
             'nowIndicator' => true,
-            'dayMaxEvents' => true,
+            'dayMaxEvents' => 3,
+            'allDaySlot' => true,
             'eventDisplay' => 'block',
             'displayEventEnd' => true,
             'expandRows' => true,
             'height' => 'auto',
-            'scrollTime' => '08:00:00',
+            'slotMinTime' => $showFullDays ? '00:00:00' : '06:00:00',
+            'slotMaxTime' => $showFullDays ? '24:00:00' : '20:00:00',
+            'scrollTime' => $showFullDays ? '08:00:00' : '06:00:00',
+            'views' => [
+                'dayGridMonth' => [
+                    'weekends' => $showWeekends,
+                ],
+            ],
             'headerToolbar' => [
                 'left' => 'prev,next today',
                 'center' => 'title',
@@ -73,8 +84,20 @@ class CalendarWidget extends FullCalendarWidget
             function({ event, timeText, view }) {
                 const content = document.createElement('div')
 
+                if (event.allDay) {
+                    content.className = 'lux-calendar-event-all-day'
+                    content.textContent = event.extendedProps.location
+                        ? `${event.title} · ${event.extendedProps.location}`
+                        : event.title
+
+                    return { domNodes: [content] }
+                }
+
                 if (view.type === 'dayGridMonth') {
                     content.className = 'lux-calendar-event-month'
+                    content.textContent = event.extendedProps.location
+                        ? `${event.title} · ${event.extendedProps.location}`
+                        : event.title
 
                     return { domNodes: [content] }
                 }
@@ -141,19 +164,13 @@ class CalendarWidget extends FullCalendarWidget
         $timezone = (string) config('app.timezone');
         $firstDay = CarbonImmutable::parse(substr((string) $booking['StartDateTime'], 0, 10), $timezone)->startOfDay();
         $lastDay = CarbonImmutable::parse(substr((string) $booking['EndDateTime'], 0, 10), $timezone)->startOfDay();
-        $events = [];
 
-        for ($day = $firstDay; $day->lessThanOrEqualTo($lastDay); $day = $day->addDay()) {
-            $date = $day->format('Y-m-d');
-            $events[] = [
-                ...$this->eventBase("{$id}-{$date}", $subject, $location),
-                'groupId' => $id,
-                'start' => $day->setTime(8, 0)->toIso8601String(),
-                'end' => $day->setTime(17, 0)->toIso8601String(),
-            ];
-        }
-
-        return $events;
+        return [[
+            ...$this->eventBase($id, $subject, $location),
+            'allDay' => true,
+            'start' => $firstDay->format('Y-m-d'),
+            'end' => $lastDay->addDay()->format('Y-m-d'),
+        ]];
     }
 
     /**
