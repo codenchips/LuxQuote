@@ -49,10 +49,21 @@ Users are assigned to one permission group on the User create/edit form. The leg
 
 ## Filament UI
 
-The Users navigation group contains:
+The left navigation groups permission-controlled features as follows:
 
-- `Users`: create/edit users and assign them to a group.
-- `Groups`: create/edit permission groups and assign permissions.
+- `Salesforce`
+  - `Projects`: the Salesforce opportunity/project list (`salesforce.view`). This is separate from the main LuxQuote Projects resource.
+  - `Visits`: the Salesforce public calendar interface (`calendar.view`).
+- `Admin`
+  - `History`: the global activity log (`activity-log.view`).
+  - `Specials`: special order code management (`specials.manage`).
+  - `Products`: the product catalogue (`products.view`).
+- `Users`
+  - `Users`: create/edit users and assign them to a group.
+  - `Groups`: create/edit permission groups and assign permissions.
+  - `Teams`: create/edit teams and manage their membership (`teams.manage`).
+
+Navigation placement does not grant access; each page and resource keeps its existing server-side permission guard.
 
 The `Permissions` resource still exists, but it is hidden from the left navigation with:
 
@@ -186,7 +197,7 @@ Users with `salesforce.view` can still search and import Salesforce projects. Us
 
 ## Calendar
 
-The standalone Calendar page is controlled by `calendar.view`. Every default permission group receives this capability, while custom groups can omit it. It reads room bookings from the configured Salesforce Visits public calendar and displays them in month, week, and day views.
+The **Salesforce → Visits** page is controlled by `calendar.view`. Every default permission group receives this capability, while custom groups can omit it. It reads room bookings from the configured Salesforce Visits public calendar and displays them in month, week, and day views.
 
 Creating an event requires `calendar.create`. Clicking or dragging across empty calendar slots opens a create modal pre-filled with the selected date and time; a single timed-slot click defaults to a one-hour event. Salesforce field createability is checked where metadata is available, and the server always assigns the event to the configured Visits public calendar.
 
@@ -194,7 +205,7 @@ Updating an existing event requires `calendar.update`. The modal keeps Salesforc
 
 Deleting an event requires the separate `calendar.delete` permission. The event modal shows a red Remove event action only to permitted users and requires a second explicit confirmation. Immediately before deleting, the server verifies that the event still belongs to the configured Visits public calendar. Missing Salesforce delete rights, stale or inaccessible records, paused Salesforce pushes, and transport failures leave the event intact and return a user-friendly error.
 
-Salesforce field permissions are treated defensively. Calendar reads retry without optional Owner/Created By relationships, Type, or Location when those fields are unavailable, while malformed individual records are skipped without losing valid events. Event describe metadata makes non-updateable fields read-only in the modal. If metadata is unavailable, Type changes are disabled and other edits use Salesforce as the final authorization check; permission-related API failures are shown as user-friendly messages.
+Salesforce field permissions and transport failures are treated defensively. Calendar reads retry without optional Owner/Created By relationships, Type, or Location when those fields are unavailable, while malformed individual records are skipped without losing valid events. Event describe metadata makes non-updateable fields read-only in the modal. If metadata or Salesforce connectivity is unavailable, Type changes are disabled, lists fall back to an empty state with one notification, and other edits use Salesforce as the final authorization check. Failed create/update/delete requests keep the action open, return a user-friendly message, and do not record completed activity.
 
 Successful calendar creates, updates, and deletions are appended to the global activity history as `calendar.created`, `calendar.updated`, and `calendar.deleted`. Each entry snapshots the acting user, calendar name and ID, Salesforce event ID, subject, dates, and times. History rows use `Calendar` as their Reference and display `Action - Subject - Dates / Times`, with Created in green, Updated in blue, and Deleted in red. Failed Salesforce actions are not recorded as completed calendar activity.
 

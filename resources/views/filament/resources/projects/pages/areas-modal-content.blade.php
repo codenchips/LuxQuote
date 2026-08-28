@@ -1,3 +1,5 @@
+@php($readOnly = $readOnly ?? false)
+
 <div class="space-y-4" x-data="{ confirmDeleteAreaId: null, confirmDeleteAreaName: '' }">
     <p class="text-sm text-gray-500 dark:text-gray-400">
         Define the rooms, floors, and areas for this project.

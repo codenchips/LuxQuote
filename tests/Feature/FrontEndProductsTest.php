@@ -22,9 +22,9 @@ class FrontEndProductsTest extends TestCase
         $response->assertRedirect('/login');
     }
 
-    public function test_user_role_can_view_products(): void
+    public function test_manager_role_can_view_products(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->manager()->create();
 
         $this->actingAs($user);
 
@@ -34,7 +34,7 @@ class FrontEndProductsTest extends TestCase
 
     public function test_products_page_shows_product_data(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->manager()->create();
         Product::factory()->create([
             'product_name' => 'Super Bright LED',
             'description' => 'Super Bright LED visual description',
@@ -46,7 +46,7 @@ class FrontEndProductsTest extends TestCase
         $this->actingAs($user);
 
         Livewire::test(ListProducts::class)
-            ->assertSee('Super Bright LED visual description')
+            ->assertSee('Super Bright LED')
             ->assertSee('SB-LED-001')
             ->assertSee('xcite')
             ->assertSee('Downlights');

@@ -46,6 +46,11 @@ class AdminPanelProvider extends PanelProvider
             ->breadcrumbs(false)
             ->sidebarWidth('13rem')
             ->sidebarCollapsibleOnDesktop()
+            ->navigationGroups([
+                'Salesforce',
+                'Admin',
+                'Users',
+            ])
             ->maxContentWidth(Width::Full)
             ->renderHook(
                 PanelsRenderHook::BODY_START,

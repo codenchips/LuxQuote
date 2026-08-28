@@ -359,6 +359,32 @@ class SalesforceCalendarWidgetTest extends TestCase
         $this->assertDatabaseMissing('activity_logs', ['action_type' => 'calendar.updated']);
     }
 
+    public function test_unexpected_event_update_failure_is_reported_without_closing_modal(): void
+    {
+        $this->app->instance(SalesforceService::class, new class extends SalesforceService
+        {
+            public function fetchEventTypeOptions(): array
+            {
+                return ['success' => false, 'options' => []];
+            }
+
+            public function updateCalendarBooking(string $calendarId, string $eventId, array $attributes): array
+            {
+                throw new \RuntimeException('Salesforce timed out.');
+            }
+        });
+        $this->actingAs(User::factory()->create());
+
+        Livewire::test(CalendarWidget::class)
+            ->call('onEventClick', $this->calendarEvent())
+            ->fillForm(['subject' => 'Update that will time out'])
+            ->callMountedAction()
+            ->assertActionMounted('view')
+            ->assertNotified('Event could not be updated');
+
+        $this->assertDatabaseMissing('activity_logs', ['action_type' => 'calendar.updated']);
+    }
+
     public function test_salesforce_field_permissions_make_only_affected_fields_read_only(): void
     {
         $this->app->instance(SalesforceService::class, new class extends SalesforceService
@@ -449,6 +475,29 @@ class SalesforceCalendarWidgetTest extends TestCase
         );
     }
 
+    public function test_modal_uses_safe_fallback_when_salesforce_metadata_request_throws(): void
+    {
+        $this->app->instance(SalesforceService::class, new class extends SalesforceService
+        {
+            public function fetchEventTypeOptions(): array
+            {
+                throw new \RuntimeException('Salesforce timed out.');
+            }
+        });
+        $this->actingAs(User::factory()->create());
+
+        $component = Livewire::test(CalendarWidget::class)
+            ->call('onEventClick', $this->calendarEvent())
+            ->assertActionMounted('view')
+            ->assertFormFieldEnabled('subject')
+            ->assertFormFieldDisabled('type');
+
+        $this->assertSame(
+            'Salesforce field permissions could not be checked. Type changes are unavailable, but other edits can still be attempted safely.',
+            (string) $component->instance()->getMountedAction()?->getModalDescription(),
+        );
+    }
+
     public function test_widget_notifies_user_when_calendar_cannot_be_read(): void
     {
         $this->app->instance(SalesforceService::class, new class extends SalesforceService
@@ -464,6 +513,31 @@ class SalesforceCalendarWidgetTest extends TestCase
                     'records' => [],
                     'errors' => ['Calendar access denied'],
                 ];
+            }
+        });
+        $this->actingAs(User::factory()->create());
+
+        Livewire::test(CalendarWidget::class)
+            ->call('fetchEvents', [
+                'start' => '2026-01-01T00:00:00+00:00',
+                'end' => '2026-02-01T00:00:00+00:00',
+                'timezone' => 'Europe/London',
+            ])
+            ->assertSet('calendarLoadFailureNotified', true)
+            ->assertNotified('Calendar events could not be loaded');
+    }
+
+    public function test_widget_reports_unexpected_calendar_read_failure_without_throwing(): void
+    {
+        $this->app->instance(SalesforceService::class, new class extends SalesforceService
+        {
+            public function fetchCalendarBookings(
+                string $calendarId,
+                string $from,
+                ?string $to = null,
+                int $limit = 100,
+            ): array {
+                throw new \RuntimeException('Salesforce timed out.');
             }
         });
         $this->actingAs(User::factory()->create());

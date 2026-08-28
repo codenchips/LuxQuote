@@ -35,4 +35,10 @@ class BadgeStyleTest extends TestCase
         $this->assertSame('lux-badge-tamlite', BadgeStyle::classes('Tamlite'));
         $this->assertSame('lux-badge-xcite', BadgeStyle::classes('xcite'));
     }
+
+    public function test_design_complete_badges_use_the_success_palette(): void
+    {
+        $this->assertSame('lux-badge-success', BadgeStyle::classes('Design Complete'));
+        $this->assertSame(BadgeStyle::filamentColor('Approved'), BadgeStyle::filamentColor('Design Complete'));
+    }
 }

@@ -35,7 +35,7 @@
                         </td>
                     @endif
                     <td class="min-w-0 px-3 py-3">
-                        <a href="{{ $row['projectUrl'] }}" class="block truncate font-medium text-primary-600 hover:underline dark:text-primary-400" title="{{ $row['project'] }}">
+                        <a href="{{ $row['projectUrl'] }}" class="block truncate font-medium text-gray-900 hover:underline dark:text-white" title="{{ $row['project'] }}">
                             {{ $row['project'] }}
                         </a>
                     </td>

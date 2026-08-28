@@ -236,8 +236,6 @@ class Dashboard extends BaseDashboard
             'revision' => $project->activeRevision?->label() ?? ProjectRevision::labelForNumber((int) $project->revision),
             'status' => $project->status?->label() ?? (string) $project->status,
             'statusClasses' => BadgeStyle::classes($project->status?->label() ?? $project->status),
-            'visibility' => $project->visibility?->label() ?? (string) $project->visibility,
-            'visibilityClasses' => BadgeStyle::classes($project->visibility?->label() ?? $project->visibility),
             'lastAccessed' => $this->formatDateTime($lastAccessed),
         ];
     }

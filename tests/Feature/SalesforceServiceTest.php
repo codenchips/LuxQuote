@@ -236,6 +236,31 @@ class SalesforceServiceTest extends TestCase
             && ($request->data()['q'] ?? null) === "SELECT Id, Name, Type FROM Calendar WHERE Type = 'Public' ORDER BY Name ASC LIMIT 25");
     }
 
+    public function test_fetch_public_calendars_handles_authentication_connection_failure_without_throwing(): void
+    {
+        Http::fake(fn (): never => throw new ConnectionException('Salesforce timed out.'));
+
+        $result = app(SalesforceService::class)->fetchPublicCalendars(25);
+
+        $this->assertFalse($result['success']);
+        $this->assertSame([], $result['records']);
+        $this->assertSame(['Authentication failed'], $result['errors']);
+    }
+
+    public function test_fetch_public_calendars_rejects_incomplete_authentication_response(): void
+    {
+        Http::fake(Http::response([
+            'access_token' => 'token-without-an-instance-url',
+            'expires_in' => 3600,
+        ]));
+
+        $result = app(SalesforceService::class)->fetchPublicCalendars(25);
+
+        $this->assertFalse($result['success']);
+        $this->assertSame([], $result['records']);
+        $this->assertSame(['Authentication failed'], $result['errors']);
+    }
+
     public function test_fetch_calendar_bookings_queries_events_owned_by_the_calendar(): void
     {
         Http::fake(function (Request $request) {
@@ -642,6 +667,38 @@ class SalesforceServiceTest extends TestCase
 
         $this->assertFalse($result['success']);
         $this->assertSame('Salesforce does not permit the integration user to update this event.', $result['message']);
+    }
+
+    public function test_update_calendar_booking_handles_connection_failure_without_throwing(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            if (str_contains($request->url(), '/services/data/v65.0/query/')) {
+                return Http::response(['records' => [['Id' => '00U000000000001AAA']]]);
+            }
+
+            if (str_contains($request->url(), '/sobjects/Event/describe')) {
+                return Http::response([], 403);
+            }
+
+            throw new ConnectionException('Salesforce timed out.');
+        });
+
+        $result = app(SalesforceService::class)->updateCalendarBooking(
+            '023000000000001AAA',
+            '00U000000000001AAA',
+            ['Subject' => 'Updated visit'],
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('Salesforce could not be reached. The event has not been updated.', $result['message']);
     }
 
     public function test_update_calendar_booking_verifies_calendar_ownership_and_allows_only_editable_fields(): void

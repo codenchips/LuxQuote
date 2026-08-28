@@ -76,6 +76,53 @@ docker compose exec laravel.test php artisan optimize:clear
 docker compose exec laravel.test php artisan config:show app.timezone
 ```
 
+## Salesforce Visits Calendar Release Checklist
+
+The Visits interface reads and mutates Salesforce `Event` records owned by a public Salesforce `Calendar`. Before the first production deployment, confirm the production integration user can:
+
+- read the `Calendar` object and see the intended public calendar
+- read, create, edit, and delete `Event` records on that calendar
+- read the core Event fields `Id`, `Subject`, `StartDateTime`, `EndDateTime`, `IsAllDayEvent`, and `OwnerId`
+- create/update the fields required by the UI: `Subject`, `Location`, `Type`, `StartDateTime`, `EndDateTime`, and `IsAllDayEvent`
+- set `OwnerId` to the public calendar when creating an Event
+
+`Owner.Name`, `CreatedBy.Name`, `Type`, and `Location` reads are optional. LuxQuote retries event reads without unavailable optional fields and keeps affected form controls read-only when describe metadata reports narrower access. The Salesforce public calendar sharing level must still allow the intended create/update/delete operations.
+
+Production `.env` must include:
+
+```dotenv
+SALESFORCE_VISITS_CALENDAR_ID=023_PRODUCTION_CALENDAR_ID
+SALESFORCE_VISITS_CALENDAR_NAME=Visits
+CALENDAR_SHOW_FULL_DAYS=false
+CALENDAR_SHOW_WEEKENDS=false
+```
+
+Do not copy a sandbox Calendar ID into production. Calendar IDs are org-specific. List the calendars visible to the production integration user and copy the production Visits ID:
+
+```bash
+cd /home/tamliteco/luxquote.app
+docker compose exec -T laravel.test php artisan salesforce:calendars
+```
+
+The normal production deploy runs the four forward-only calendar permission migrations, builds the FullCalendar assets, and clears/rebuilds configuration caches. After deployment, verify the effective non-secret settings and migration status:
+
+```bash
+docker compose exec -T laravel.test php artisan config:show services.salesforce.visits_calendar_id
+docker compose exec -T laravel.test php artisan config:show calendar
+docker compose exec -T laravel.test php artisan migrate:status
+docker compose exec -T laravel.test php artisan salesforce:calendars 023_PRODUCTION_CALENDAR_ID --from=2026-09-01 --to=2026-09-30
+```
+
+Complete one controlled browser smoke test with a disposable booking:
+
+1. Confirm **Salesforce → Visits** loads month, week, and day views without an error notification.
+2. Create a short test Event, then edit its Subject/date/time.
+3. Delete the test Event through the confirmation dialog.
+4. Confirm History contains green Created, blue Updated, and red Deleted rows with `Calendar` as Reference.
+5. Confirm the disposable Event no longer exists in Salesforce.
+
+If reads work but mutations fail, do not broaden LuxQuote permissions first. Check Salesforce Event object permissions, field-level access, public calendar sharing, and whether outbound Salesforce pushes are paused. The UI leaves failed actions open, shows a safe error, and does not write a completed calendar activity entry.
+
 ## App Version Configuration
 
 The visible app version is read from the tracked `VERSION` file by default and shown in the expanded left sidebar. Leave `APP_VERSION` unset in production unless you deliberately need to pin or override the displayed version for an environment.

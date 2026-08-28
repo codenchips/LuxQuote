@@ -9,6 +9,7 @@ use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class ActivityLogResource extends Resource
 {
@@ -16,9 +17,11 @@ class ActivityLogResource extends Resource
 
     protected static ?string $navigationLabel = 'History';
 
+    protected static string|UnitEnum|null $navigationGroup = 'Admin';
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentList;
 
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 1;
 
     public static function canViewAny(): bool
     {

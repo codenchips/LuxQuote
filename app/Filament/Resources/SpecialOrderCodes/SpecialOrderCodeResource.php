@@ -14,6 +14,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use UnitEnum;
 
 class SpecialOrderCodeResource extends Resource
 {
@@ -21,9 +22,11 @@ class SpecialOrderCodeResource extends Resource
 
     protected static ?string $navigationLabel = 'Specials';
 
+    protected static string|UnitEnum|null $navigationGroup = 'Admin';
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedSparkles;
 
-    protected static ?int $navigationSort = 3;
+    protected static ?int $navigationSort = 2;
 
     public static function canViewAny(): bool
     {

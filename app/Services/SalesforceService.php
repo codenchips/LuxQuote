@@ -76,11 +76,19 @@ class SalesforceService
             ];
         }
 
-        $response = Http::asForm()->post($tokenUrl, [
-            'grant_type' => 'client_credentials',
-            'client_id' => config('services.salesforce.client_id'),
-            'client_secret' => config('services.salesforce.client_secret'),
-        ]);
+        try {
+            $response = Http::asForm()->post($tokenUrl, [
+                'grant_type' => 'client_credentials',
+                'client_id' => config('services.salesforce.client_id'),
+                'client_secret' => config('services.salesforce.client_secret'),
+            ]);
+        } catch (Throwable $exception) {
+            Log::error('Salesforce authentication request failed', [
+                'exception' => $exception,
+            ]);
+
+            return null;
+        }
 
         if ($response->failed()) {
             Log::error('Salesforce authentication failed', [
@@ -92,9 +100,15 @@ class SalesforceService
         }
 
         $auth = [
-            'token' => (string) $response->json('access_token'),
+            'token' => trim((string) $response->json('access_token')),
             'instanceUrl' => rtrim((string) $response->json('instance_url'), '/'),
         ];
+
+        if (blank($auth['token']) || blank($auth['instanceUrl'])) {
+            Log::error('Salesforce authentication returned an incomplete response.');
+
+            return null;
+        }
 
         Cache::put($cacheKey, $auth, $this->authCacheSeconds((int) $response->json('expires_in', self::AUTH_CACHE_DEFAULT_SECONDS)));
 
@@ -142,10 +156,18 @@ class SalesforceService
             return null;
         }
 
-        $response = Http::asForm()->post($tokenUrl, [
-            'grant_type' => self::JWT_BEARER_GRANT_TYPE,
-            'assertion' => $assertion,
-        ]);
+        try {
+            $response = Http::asForm()->post($tokenUrl, [
+                'grant_type' => self::JWT_BEARER_GRANT_TYPE,
+                'assertion' => $assertion,
+            ]);
+        } catch (Throwable $exception) {
+            Log::error('Salesforce JWT authentication request failed', [
+                'exception' => $exception,
+            ]);
+
+            return null;
+        }
 
         if ($response->failed()) {
             Log::error('Salesforce JWT authentication failed', [
@@ -157,9 +179,15 @@ class SalesforceService
         }
 
         $auth = [
-            'token' => (string) $response->json('access_token'),
+            'token' => trim((string) $response->json('access_token')),
             'instanceUrl' => rtrim((string) $response->json('instance_url'), '/'),
         ];
+
+        if (blank($auth['token']) || blank($auth['instanceUrl'])) {
+            Log::error('Salesforce JWT authentication returned an incomplete response.');
+
+            return null;
+        }
 
         Cache::put($cacheKey, $auth, $this->authCacheSeconds((int) $response->json('expires_in', self::AUTH_CACHE_DEFAULT_SECONDS)));
 
@@ -310,11 +338,22 @@ class SalesforceService
      */
     private function soqlQuery(array $auth, string $soql, bool $logFailure = true): ?array
     {
-        $response = Http::withToken($auth['token'])
-            ->acceptJson()
-            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/query/', [
-                'q' => $soql,
-            ]);
+        try {
+            $response = Http::withToken($auth['token'])
+                ->acceptJson()
+                ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/query/', [
+                    'q' => $soql,
+                ]);
+        } catch (Throwable $exception) {
+            if ($logFailure) {
+                Log::error('Salesforce SOQL query request failed', [
+                    'soql' => $soql,
+                    'exception' => $exception,
+                ]);
+            }
+
+            return null;
+        }
 
         if ($response->failed()) {
             if (! $logFailure) {
@@ -1179,6 +1218,25 @@ class SalesforceService
             return ['success' => false, 'message' => 'Invalid Salesforce calendar or event ID.'];
         }
 
+        try {
+            return $this->performCalendarBookingUpdate($calendarId, $eventId, $attributes);
+        } catch (Throwable $exception) {
+            Log::error('Salesforce calendar event update request failed', [
+                'calendar_id' => $calendarId,
+                'event_id' => $eventId,
+                'exception' => $exception,
+            ]);
+
+            return ['success' => false, 'message' => 'Salesforce could not be reached. The event has not been updated.'];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array{success: bool, eventId?: string, message?: string}
+     */
+    private function performCalendarBookingUpdate(string $calendarId, string $eventId, array $attributes): array
+    {
         $auth = $this->authenticate();
 
         if ($auth === null) {
@@ -1326,9 +1384,17 @@ class SalesforceService
             return $cached;
         }
 
-        $response = Http::withToken($auth['token'])
-            ->acceptJson()
-            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Event/describe');
+        try {
+            $response = Http::withToken($auth['token'])
+                ->acceptJson()
+                ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Event/describe');
+        } catch (Throwable $exception) {
+            Log::warning('Salesforce Event describe request failed; calendar will use conservative fallbacks.', [
+                'exception' => $exception,
+            ]);
+
+            return null;
+        }
 
         if ($response->failed()) {
             Log::warning('Salesforce Event describe failed; calendar will use conservative fallbacks.', [

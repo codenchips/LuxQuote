@@ -14,6 +14,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use UnitEnum;
 
 class TeamResource extends Resource
 {
@@ -21,9 +22,11 @@ class TeamResource extends Resource
 
     protected static ?string $navigationLabel = 'Teams';
 
+    protected static string|UnitEnum|null $navigationGroup = 'Users';
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUserGroup;
 
-    protected static ?int $navigationSort = 99;
+    protected static ?int $navigationSort = 5;
 
     public static function canViewAny(): bool
     {

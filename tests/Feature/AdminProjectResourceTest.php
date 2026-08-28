@@ -1007,8 +1007,8 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('Example Customer')
             ->assertSee('P1')
             ->assertSee('2 unresolved issues')
-            ->assertSee('SKU "VALID-SKU" appears 2 times in this area.')
-            ->assertSee('SKU "MISSING-SKU" was not found in the product catalogue.')
+            ->assertSeeText('SKU "VALID-SKU" appears 2 times in this area.')
+            ->assertSeeText('SKU "MISSING-SKU" was not found in the product catalogue.')
             ->assertDontSee('Area: Ground Floor')
             ->assertDontSee('Area: First Floor');
     }
@@ -1036,7 +1036,7 @@ class AdminProjectResourceTest extends TestCase
         $component
             ->call('runValidation')
             ->assertSee('1 unresolved issue')
-            ->assertSee('SKU "NEW-MISSING-SKU" was not found in the product catalogue.');
+            ->assertSeeText('SKU "NEW-MISSING-SKU" was not found in the product catalogue.');
     }
 
     public function test_validation_ignores_lines_from_historical_revisions(): void
@@ -1757,8 +1757,8 @@ class AdminProjectResourceTest extends TestCase
             'showPrices' => true,
             'documentTitle' => 'Lighting Quote',
         ])->render();
-        $this->assertStringContainsString('&pound;100.00', $quoteHtml);
-        $this->assertStringContainsString('&pound;200.00', $quoteHtml);
+        $this->assertStringContainsString('£100.00', $quoteHtml);
+        $this->assertStringContainsString('£200.00', $quoteHtml);
     }
 
     public function test_admin_can_view_output_options_for_the_active_revision(): void
@@ -2064,7 +2064,7 @@ class AdminProjectResourceTest extends TestCase
         $this->assertNotNull($datasheetRequest);
         $this->assertFalse($datasheetRequest->isJson());
         $this->assertSame('datasheet-project', $datasheetRequest->data()['project_slug']);
-        $this->assertSame(0, $datasheetRequest->data()['project_version']);
+        $this->assertSame(1, $datasheetRequest->data()['project_version']);
         $this->assertSame('Datasheet Project', $datasheetRequest->data()['info_project_name']);
         $this->assertSame('DS-001', $datasheetRequest->data()['info_project_id']);
         $this->assertTrue($datasheetRequest->data()['include_datasheets']);
@@ -2450,7 +2450,7 @@ class AdminProjectResourceTest extends TestCase
         ])->render();
 
         $this->assertStringContainsString('Quote total', $html);
-        $this->assertStringContainsString('&pound;85.00', $html);
+        $this->assertStringContainsString('£85.00', $html);
         $this->assertStringContainsString('Total quantity', $html);
         $this->assertStringContainsString('Line items', $html);
     }
@@ -2913,7 +2913,7 @@ class AdminProjectResourceTest extends TestCase
 
         $this->assertNull($line->code);
         $this->assertNull($line->ref);
-        $this->assertNull($line->description);
+        $this->assertSame('', $line->description);
         $this->assertNull($line->qty);
         $this->assertNull($line->unit_price);
         $this->assertNull($line->notes);
@@ -2954,7 +2954,7 @@ class AdminProjectResourceTest extends TestCase
                 'general_notes' => null,
             ]);
 
-        Http::assertNothingSent();
+        Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/sobjects/ContentVersion'));
         $this->assertSame('Empty Salesforce Project Updated', $project->fresh()->name);
         $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,

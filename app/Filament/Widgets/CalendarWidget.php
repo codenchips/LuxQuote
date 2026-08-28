@@ -47,10 +47,18 @@ class CalendarWidget extends FullCalendarWidget
     {
         abort_unless(auth()->user()?->can('calendar.view'), 403);
 
-        $calendarId = (string) config('services.salesforce.visits_calendar_id');
-        $from = CarbonImmutable::parse($info['start'])->utc()->format('Y-m-d\TH:i:s\Z');
-        $to = CarbonImmutable::parse($info['end'])->utc()->format('Y-m-d\TH:i:s\Z');
-        $response = app(SalesforceService::class)->fetchCalendarBookings($calendarId, $from, $to, 200);
+        try {
+            $calendarId = (string) config('services.salesforce.visits_calendar_id');
+            $from = CarbonImmutable::parse($info['start'])->utc()->format('Y-m-d\TH:i:s\Z');
+            $to = CarbonImmutable::parse($info['end'])->utc()->format('Y-m-d\TH:i:s\Z');
+            $response = app(SalesforceService::class)->fetchCalendarBookings($calendarId, $from, $to, 200);
+        } catch (Throwable $exception) {
+            Log::error('Unexpected calendar event loading failure', [
+                'exception' => $exception,
+            ]);
+
+            $response = ['success' => false];
+        }
 
         if (! ($response['success'] ?? false)) {
             if (! $this->calendarLoadFailureNotified) {
@@ -343,11 +351,23 @@ class CalendarWidget extends FullCalendarWidget
                     return;
                 }
 
-                $result = app(SalesforceService::class)->updateCalendarBooking(
-                    (string) config('services.salesforce.visits_calendar_id'),
-                    $eventId,
-                    $payload,
-                );
+                try {
+                    $result = app(SalesforceService::class)->updateCalendarBooking(
+                        (string) config('services.salesforce.visits_calendar_id'),
+                        $eventId,
+                        $payload,
+                    );
+                } catch (Throwable $exception) {
+                    Log::error('Unexpected calendar event update failure', [
+                        'event_id' => $eventId,
+                        'exception' => $exception,
+                    ]);
+
+                    $result = [
+                        'success' => false,
+                        'message' => 'Salesforce could not be reached. The event has not been updated.',
+                    ];
+                }
 
                 if (! ($result['success'] ?? false)) {
                     Notification::make()
@@ -606,7 +626,16 @@ class CalendarWidget extends FullCalendarWidget
         $this->eventMetadataAvailable = false;
         $this->eventMetadataWarning = null;
 
-        $response = app(SalesforceService::class)->fetchEventTypeOptions();
+        try {
+            $response = app(SalesforceService::class)->fetchEventTypeOptions();
+        } catch (Throwable $exception) {
+            Log::warning('Calendar event metadata could not be loaded.', [
+                'operation' => $operation,
+                'exception' => $exception,
+            ]);
+
+            $response = ['success' => false, 'options' => []];
+        }
         $this->eventTypeOptions = (array) ($response['options'] ?? []);
         $permissionKey = $operation === 'create' ? 'createable' : 'updateable';
 
@@ -921,9 +950,6 @@ class CalendarWidget extends FullCalendarWidget
         ]];
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     /**
      * @param  array<string, mixed>  $extendedProps
      * @return array<string, mixed>

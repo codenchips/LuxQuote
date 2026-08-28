@@ -1,6 +1,21 @@
 # Company App — Project Status
 
-_Last updated: 27 August 2026_
+_Last updated: 28 August 2026_
+
+---
+
+## Salesforce Visits Calendar, Navigation, and Dashboard — 28 August 2026
+
+- **Public Visits calendar integration**: LuxQuote now reads Salesforce `Event` records owned by the configured public `Calendar`, rather than user calendars. `salesforce:calendars` lists accessible public calendars and can list a selected calendar's bookings over a date range.
+- **FullCalendar interface**: The **Salesforce → Visits** page opens in month view with month/week/day switching, previous/next/today controls, and a compact date navigator. Month view hides weekends by default and shows up to three labelled events per day; week/day views default to 06:00–20:00. `CALENDAR_SHOW_WEEKENDS` and `CALENDAR_SHOW_FULL_DAYS` restore the wider views when required.
+- **Event presentation**: Timed bookings block their actual period. All-day and multi-day bookings use FullCalendar's dedicated all-day lane and span their dates. Event text shows Subject and Location where space permits, with a larger readable font and pointer cursor.
+- **Event details and editing**: Clicking an event opens a modal for Subject, Location, Type, dates, times, all-day status, Owner, and Created By. Owner and Created By are always read-only. Dates use date pickers; times use 24-hour 15-minute choices and are disabled for all-day events.
+- **Create/update/delete actions**: Empty-slot selection opens the create modal with the selected date/time. Updates and deletions verify that the Salesforce Event still belongs to the configured Visits calendar; deletion has a second confirmation step. `calendar.view`, `calendar.create`, `calendar.update`, and `calendar.delete` are separate server-enforced permissions.
+- **Permission-aware Salesforce fallback**: Event describe metadata controls which fields are editable/createable. Optional Type, Location, Owner, and Created By reads degrade safely when live field access is narrower. Authentication, transport, describe, read, create, update, and delete failures return user-facing errors without recording false success activity.
+- **Calendar activity history**: Successful creates, updates, and deletes write `calendar.created`, `calendar.updated`, or `calendar.deleted`. History shows `Calendar` as Reference and `Created|Updated|Deleted - Subject - Dates / Times`; Created is green, Updated blue, and Deleted red.
+- **Navigation reorganised**: The left sidebar now groups Salesforce Projects and Visits under **Salesforce**; History, Specials, and Products under **Admin**; and Users, Groups, and Teams under **Users**. The main LuxQuote Projects item remains ungrouped beneath Dashboard.
+- **Dashboard polish**: Dashboard project links use white row text in dark mode, Design Complete uses a green badge, and the wider Status column prevents badge collisions. Visibility was removed from the two project summary tables while the underlying project visibility filtering remains enforced.
+- **Hardening verification**: Calendar/Salesforce fallbacks now catch unexpected metadata, authentication, SOQL, Event describe, list, and update transport exceptions. Failed mutations keep the modal open, leave Salesforce unchanged, and do not write completed activity rows.
 
 ---
 
@@ -69,7 +84,7 @@ _Last updated: 27 August 2026_
 ## Salesforce Quote and Schedule PDF Versioning — 23 July 2026
 
 - **Schedules upload on every generation**: Generating a Schedule PDF for a Salesforce-backed project now uploads it automatically while outbound Salesforce pushes are enabled. The explicit upload query flag is no longer required for Schedules.
-- **One Salesforce file per document and revision**: Downloaded Quotes and Schedules keep their existing timestamped filenames, while Salesforce receives stable filenames such as `Lighting-Quote-22600-R3.pdf` and `Lighting-Schedule-22600-R3.pdf`. Salesforce therefore creates new `ContentVersion` records on the same `ContentDocument` rather than accumulating timestamped files for that revision.
+- **One Salesforce file per document and revision**: As superseded by the 27 August naming standard, downloaded and Salesforce Quote/Schedule files now share the stable `Reference-Project-Name-TL-Type-Pn` filename pattern without timestamps. Salesforce therefore creates new `ContentVersion` records on the same `ContentDocument` rather than accumulating new files for that revision.
 - **No delete-before-upload risk**: Older Quote and Schedule versions remain available in Salesforce file version history, while only the current file for each document type and revision is shown normally. Existing historical timestamped duplicates are not deleted automatically.
 - **Quote trigger and approval rules preserved**: Quote upload still requires the existing approved Quote generation flow and explicit upload request, but every requested upload now creates a Salesforce file version under the stable per-revision filename.
 - **Immediate upload confirmation**: Successful Quote and Schedule uploads return notification metadata with the prepared PDF response. The existing PDF-generation JavaScript displays a Filament success card immediately after opening or downloading the PDF; failed uploads retain their danger notification and never show a false success card.
@@ -89,7 +104,7 @@ _Last updated: 27 August 2026_
 
 ## Friday UI Polish and Deploy Recovery — 17 July 2026
 
-- **Project owner name in project headers**: Project, Validation, Output, and Project History pages now show the resolved project owner full name in brackets after the revision label, for example `P0 (Jamie Engineer)`. Salesforce projects use a cached Opportunity owner lookup; local projects fall back to matching `owner_email` to a local user.
+- **Project owner name in project headers**: Project, Validation, Output, and Project History pages now show the resolved project owner full name in brackets after the revision label, for example `P1 (Jamie Engineer)`. Salesforce projects use a cached Opportunity owner lookup; local projects fall back to matching `owner_email` to a local user.
 - **Cover creation defaults adjusted**: Enabling Cover on a project now defaults Cover 1, Cover 2, and Cover 3 to `5.00`, `5.00`, and `0.00`. Salesforce-derived Cover still enables deducted Cover and uses the Salesforce Cover value for Cover 1.
 - **Validation page final polish**: Validation issue rows now use issue-type icons, compact issue-type badges, aligned price/Cover fields, a softer flag action, disabled flag placeholders for already-flagged issues, and check icons for validated rows.
 - **Activity log readability and copying**: Project creation and detail-change log lines now include the project name, project detail changes describe what changed from old value to new value, long action text is truncated in the table, and clicking an action line copies the full action text to the clipboard.
@@ -309,7 +324,7 @@ Known app setting keys:
 - `ProjectLine::approver()` — BelongsTo User via `approved_by`
 - `Project::documentPacks()` is a HasMany relationship to project-level named packs, ordered by name
 - `DocumentPack::items()` returns the ordered pack contents; deleting a pack removes its uploaded files
-- A new Project auto-creates revision #0 on creation (model boot hook) and a default area. Revision #0 displays as **P0**; subsequent revisions display as **R1**, **R2**, and so on
+- A new Project auto-creates revision #1 on creation (model boot hook) and a default area. Revisions display as **P1**, **P2**, **P3**, and so on. Existing pre-rollout projects retain their stored numbers.
 - `ProjectArea` has computed accessors: `line_total_qty` and `line_total` (qty × unit_price sum)
 - `Product.description` is copied directly from the current product API `description` field, with no site-specific manipulation. `Product.v_description` mirrors that same API description for compatibility with existing display helpers.
 - `ProjectLine.product_id` is nullable origin tracking for product-backed lines; `code` stores the copied SKU and `description` stores the copied product display description used for schedule/PDF output
@@ -344,8 +359,9 @@ Known app setting keys:
 | `/pdf-downloads/{token}/{filename?}` | `ProjectPdfController::download` | Authenticated, user-scoped prepared PDF download/open URL for browser-generated outputs |
 | `/projects/{project}/document-packs/{documentPack}` | `DocumentPackController` | Authenticated combined-PDF download for a selected revision |
 | `/users` | `UserResource` | Admin-only create/edit/list |
-| `/activity-logs` | `ActivityLogResource` | Admin-only history table |
-| `/salesforce` | `Salesforce` page | Admin-only Salesforce Opportunities table |
+| `/activity-logs` | `ActivityLogResource` | Permission-controlled global history table |
+| `/salesforce` | `Salesforce` page | Permission-controlled Salesforce Opportunities table; labelled **Projects** inside the Salesforce navigation group |
+| `/calendar` | `Calendar` page | Permission-controlled Salesforce Visits public-calendar interface |
 
 **Project visibility scoping** — `ProjectResource::getEloquentQuery()` restricts non-admin users to projects where `visibility = open` OR `user_id = auth user`.
 
@@ -376,7 +392,7 @@ Lines can be dragged between areas; the `sortLine(lineId, position, targetAreaId
 
 ### Revision Management
 
-The initial project state is stored as revision number `0` and labelled **P0** (pre-revision). Creating the first revision produces **R1**, followed by **R2**, **R3**, etc. Display code must use `ProjectRevision::label()` / `labelForNumber()` rather than prepending `R` directly.
+New projects start at revision number `1`, labelled **P1**. Creating revisions produces **P2**, **P3**, and so on. Existing pre-rollout projects are not renumbered. Display code must use `ProjectRevision::label()` / `labelForNumber()` rather than building labels directly.
 
 A **Revisions** header button opens a modal listing all revisions. From there users can:
 - **Select** any revision — activates it by updating `projects.active_revision_id`, updates the project `revision` number, and refreshes `$viewingRevisionId`
@@ -697,7 +713,7 @@ The admin-only history table is available at `/activity-logs` via `ActivityLogRe
 Columns:
 - **Who** — current user name when available, falling back to `user_email_snapshot`
 - **Reference** — Salesforce/project reference number when available; local projects without a reference show an abbreviated project name
-- **Rev** — stored `revision_number`, formatted through the shared revision label helper as `P0`, `R1`, `R2`, etc.; older rows may show `—`
+- **Rev** — stored `revision_number`, formatted through the shared revision label helper as `P1`, `P2`, `P3`, etc.; older rows may show `—`
 - **Action Performed** — formatted from `action_type` and `payload`
 - **Date & Time** — `created_at`
 
@@ -733,7 +749,7 @@ Authentication supports both **OAuth2 Client Credentials** and **OAuth2 JWT Bear
 
 Successful bearer-token responses are cached for their reported lifetime, minus a 60-second safety buffer, so normal Salesforce reads and writes do not request a fresh OAuth token for every service call.
 
-Salesforce PDF uploads are tracked per project, revision, and document type. Schedule PDFs upload automatically on every generation for Salesforce-backed projects while pushes are enabled; Quote uploads retain the existing approved-generation and explicit-request rules. Downloaded filenames remain timestamped, but Salesforce receives stable project-and-revision filenames so every upload creates a new version of the matching Quote or Schedule `ContentDocument`.
+Salesforce PDF uploads are tracked per project, revision, and document type. Schedule PDFs upload automatically on every generation for Salesforce-backed projects while pushes are enabled; Quote uploads retain the existing approved-generation and explicit-request rules. Downloaded and Salesforce filenames use the same timestamp-free `Reference-Project-Name-TL-Type-Pn` pattern, so every Salesforce upload creates a new version of the matching Quote or Schedule `ContentDocument`.
 
 Successful Quote and Schedule PDF uploads from prepared download routes are recorded in activity history and return notification metadata to the browser, which displays an immediate Filament success card after the PDF is opened or downloaded. This avoids delayed session notifications appearing on an unrelated later request. Upload failures still send a danger notification and do not return success metadata.
 
@@ -979,8 +995,8 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Features completed — 23 June 2026
 
-- **P0 revision model**: New projects now begin at revision number `0`, displayed as **P0**. The first user-created revision is **R1**, followed by R2, R3, etc. Shared label helpers prevent UI, activity-log, filename, and export code from manually prepending `R`.
-- **P0 PDF metadata**: Quote and schedule PDFs omit all revision labels while at P0, use **Project Location**, and no longer display Contractor.
+- **Historical revision model (superseded 27 August 2026)**: This release introduced the former `P0`, `R1`, `R2` sequence. New projects now use `P1`, `P2`, `P3`; existing stored projects were deliberately not rewritten.
+- **PDF metadata**: Quote and schedule PDFs use **Project Location**, do not display Contractor, and now show the revision from `P1` onward.
 - **Document packs**: Projects can store multiple named, ordered packs containing uploaded Custom PDFs, the standard legal template, and revision-generated Quote/Schedule PDFs. Legacy saved Cover/Legal items remain supported, but the current new-document dropdown no longer offers them.
 - **Revision-aware generation**: Generated pack documents use the revision chosen at download time; project-level uploaded PDFs remain unchanged between revisions.
 - **Quote approval safety**: Packs containing a Quote show why generation is blocked and disable the Generate action until the selected revision is validated and approved. Permission and approval checks are repeated by the download controller/service.
@@ -1038,7 +1054,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Features completed — 2 June 2026
 
-- **Schedule PDF generation**: A printable A4 lighting schedule can now be downloaded for any project revision via a **Schedule PDF** button in the ViewProject header. The PDF is generated server-side using `spatie/laravel-pdf` (Browsershot / headless Chrome) with `->noSandbox()` for Docker compatibility. Output includes a branded Tamlite header, project meta grid, per-area line tables (code, ref, description, qty, optional unit price/line total, datasheet icon), compact area subtotals, a grand total box, and a quote/general notes block. Line notes render as a full-width `Note:` row below the relevant line. Filenames include the document title, project reference, shared revision label (`P0`/`R1`/...), and timestamp. Non-admin users are auth-scoped (Open projects or their own only). Full implementation details in the [PDF Generation](#pdf-generation) section below.
+- **Schedule PDF generation**: A printable A4 lighting schedule can be downloaded for any project revision via a **Schedule PDF** button in the ViewProject header. The PDF is generated server-side using `spatie/laravel-pdf` (Browsershot / headless Chrome) with `->noSandbox()` for Docker compatibility. Output includes a branded Tamlite header, project meta grid, per-area line tables (code, ref, description, qty, optional unit price/line total, datasheet icon), compact area subtotals, a grand total box, and a quote/general notes block. Line notes render as a full-width `Note:` row below the relevant line. Filenames now use the timestamp-free `Reference-Project-Name-TL-LS-Pn.pdf` standard. Non-admin users are auth-scoped (Open projects or their own only). Full implementation details are in the [PDF Generation](#pdf-generation) section below.
 
 - **Native TOTP two-factor authentication**: Filament 5's built-in MFA support enabled — no external plugins. Users can set up and manage 2FA (QR code + recovery codes) directly from their profile page. On next login, users who have 2FA enabled are challenged before access is granted.
 - **2FA columns on `users` table**: Migration `2026_06_02_074020_add_two_factor_authentication_to_users_table` adds `app_authentication_secret` (encrypted TOTP secret) and `app_authentication_recovery_codes` (encrypted JSON array). Both columns are encrypted at rest via Laravel's built-in encryption and are hidden from model serialization.
@@ -1094,7 +1110,7 @@ Blank lines with no SKU render empty schedule cells so placeholder rows do not s
 - Non-admins may only download PDFs for **Open** projects or projects they own
 - A `?revision=X` query parameter selects any revision; defaults to `active_revision_id`
 - The ViewProject **Schedule PDF** button automatically passes the currently-viewed `$viewingRevisionId`
-- P0 PDFs omit `Rev:` / `Revision`; R1+ PDFs use `ProjectRevision::label()`
+- Quote and Schedule PDFs always show `ProjectRevision::label()`, beginning at `P1` for newly-created projects
 - Schedule and quote metadata uses **Project Location** and does not display Contractor
 - Document-pack routes additionally require `output.produce-document-packs`; generated item roles enforce their own Quote/Unpriced permissions
 

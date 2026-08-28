@@ -18,7 +18,7 @@ class BadgeStyle
 
         return match ($label) {
             'admin' => Color::hex('#B91C1C'),
-            'approved', 'open' => Color::hex('#059669'),
+            'approved', 'design complete', 'open' => Color::hex('#059669'),
             'approval requested', 'quoted' => Color::hex('#D97706'),
             'details' => Color::hex('#0B86C8'),
             'design' => Color::hex('#7C3AED'),
@@ -42,7 +42,7 @@ class BadgeStyle
 
         return match ($label) {
             'admin' => 'lux-badge-danger',
-            'approved', 'open' => 'lux-badge-success',
+            'approved', 'design complete', 'open' => 'lux-badge-success',
             'approval requested', 'quotation', 'quoted' => 'lux-badge-warning',
             'details', 'in progress', 'sales' => 'lux-badge-info',
             'design' => 'lux-badge-purple',

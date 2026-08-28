@@ -14,18 +14,21 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Pagination\LengthAwarePaginator;
+use UnitEnum;
 
 class Salesforce extends Page implements HasTable
 {
     use InteractsWithTable;
 
-    protected static ?string $navigationLabel = 'Salesforce';
+    protected static ?string $navigationLabel = 'Projects';
+
+    protected static string|UnitEnum|null $navigationGroup = 'Salesforce';
 
     protected static ?string $title = 'Salesforce Projects';
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCloud;
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 1;
 
     protected string $view = 'filament.pages.salesforce';
 
