@@ -969,11 +969,11 @@ class SalesforceService
         $limit = max(1, min(200, $limit));
         $filters = [
             "OwnerId = '".$this->soqlEscape($calendarId)."'",
-            "StartDateTime >= {$from}",
+            "EndDateTime >= {$from}",
         ];
 
         if (filled($to)) {
-            $filters[] = "StartDateTime <= {$to}";
+            $filters[] = "StartDateTime < {$to}";
         }
 
         $result = $this->soqlQuery(

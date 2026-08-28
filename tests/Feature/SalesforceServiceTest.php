@@ -270,8 +270,8 @@ class SalesforceServiceTest extends TestCase
             return $request->method() === 'GET'
                 && str_contains($request->url(), '/services/data/v65.0/query/')
                 && str_contains($query, "OwnerId = '023000000000001AAA'")
-                && str_contains($query, 'StartDateTime >= 2026-08-31T23:00:00Z')
-                && str_contains($query, 'StartDateTime <= 2026-09-30T22:59:59Z')
+                && str_contains($query, 'EndDateTime >= 2026-08-31T23:00:00Z')
+                && str_contains($query, 'StartDateTime < 2026-09-30T22:59:59Z')
                 && str_contains($query, 'ORDER BY StartDateTime ASC LIMIT 25');
         });
     }

@@ -232,3 +232,52 @@
 .filament-fullcalendar .fc-col-header-cell-cushion {
     color: #f8fafc;
 }
+
+.dark .lux-calendar-select option {
+    background: #18181b;
+    color: #f8fafc;
+}
+
+.filament-fullcalendar .lux-calendar-booking {
+    border-color: #d97706;
+    background: #f59e0b;
+    color: #18181b;
+}
+
+.filament-fullcalendar .lux-calendar-booking:hover {
+    border-color: #f59e0b;
+    background: #fbbf24;
+}
+
+.lux-calendar-event-month {
+    min-height: 0.65rem;
+    width: 100%;
+}
+
+.lux-calendar-event-details {
+    min-width: 0;
+    padding: 0.25rem 0.375rem;
+    line-height: 1.2;
+}
+
+.lux-calendar-event-time {
+    font-size: 0.6875rem;
+    font-weight: 700;
+}
+
+.lux-calendar-event-subject {
+    margin-top: 0.125rem;
+    overflow: hidden;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+}
+
+.lux-calendar-event-location {
+    margin-top: 0.1875rem;
+    overflow: hidden;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    opacity: 0.8;
+    text-overflow: ellipsis;
+}

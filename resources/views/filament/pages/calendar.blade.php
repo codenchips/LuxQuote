@@ -81,7 +81,7 @@
                 </button>
 
                 <select
-                    class="min-w-0 rounded-lg border-0 bg-gray-50 px-2 py-1.5 text-sm font-medium text-gray-950 ring-1 ring-inset ring-gray-950/10 focus:ring-2 focus:ring-primary-600 dark:bg-white/5 dark:text-white dark:ring-white/10"
+                    class="lux-calendar-select min-w-0 rounded-lg border-0 bg-gray-50 px-2 py-1.5 text-sm font-medium text-gray-950 ring-1 ring-inset ring-gray-950/10 focus:ring-2 focus:ring-primary-600 dark:bg-white/5 dark:text-white dark:ring-white/10"
                     :value="cursor.getMonth()"
                     @change="changeMonth($event.target.value)"
                     aria-label="Month"
@@ -92,7 +92,7 @@
                 </select>
 
                 <select
-                    class="rounded-lg border-0 bg-gray-50 px-2 py-1.5 text-sm font-medium text-gray-950 ring-1 ring-inset ring-gray-950/10 focus:ring-2 focus:ring-primary-600 dark:bg-white/5 dark:text-white dark:ring-white/10"
+                    class="lux-calendar-select rounded-lg border-0 bg-gray-50 px-2 py-1.5 text-sm font-medium text-gray-950 ring-1 ring-inset ring-gray-950/10 focus:ring-2 focus:ring-primary-600 dark:bg-white/5 dark:text-white dark:ring-white/10"
                     :value="cursor.getFullYear()"
                     @change="changeYear($event.target.value)"
                     aria-label="Year"

@@ -183,7 +183,7 @@ Users with `salesforce.view` can still search and import Salesforce projects. Us
 
 ## Calendar
 
-The standalone Calendar page is controlled by `calendar.view`. Every default permission group receives this capability, while custom groups can omit it. The first version provides month, week, and day calendar navigation without loading or mutating Salesforce events.
+The standalone Calendar page is controlled by `calendar.view`. Every default permission group receives this capability, while custom groups can omit it. It reads room bookings from the configured Salesforce Visits public calendar and displays them in month, week, and day views. The page does not yet create, update, or delete Salesforce events.
 
 ## Special Order Codes
 

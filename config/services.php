@@ -44,6 +44,7 @@ return [
         'jwt_audience' => env('SALESFORCE_JWT_AUDIENCE', env('SALESFORCE_BASE_URL')),
         'jwt_private_key' => env('SALESFORCE_JWT_PRIVATE_KEY'),
         'jwt_private_key_path' => env('SALESFORCE_JWT_PRIVATE_KEY_PATH'),
+        'visits_calendar_id' => env('SALESFORCE_VISITS_CALENDAR_ID', '023J7000000YLWi'),
     ],
 
     'datasheets' => [
