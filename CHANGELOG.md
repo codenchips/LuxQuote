@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.5 - 2026-09-01
+
+Version: `0.2.4` -> `0.2.5`
+
+Changes included:
+
+- Version-only deploy; no application commits found between production and main.
+
 ## 0.2.4 - 2026-09-01
 
 Version: `0.2.3` -> `0.2.4`
