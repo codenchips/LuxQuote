@@ -7,7 +7,7 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin${PATH:
 APP_DIR="${APP_DIR:-/home/tamliteco/luxquote.app}"
 BACKUP_DIR="${BACKUP_DIR:-$APP_DIR/backups}"
 THREE_HOURLY_RETENTION_MINUTES="${THREE_HOURLY_RETENTION_MINUTES:-2880}"
-DAILY_RETENTION_MINUTES="${DAILY_RETENTION_MINUTES:-10080}"
+DAILY_RETENTION_MINUTES="${DAILY_RETENTION_MINUTES:-20160}"
 
 timestamp() {
     date '+%Y-%m-%d %H:%M:%S'
@@ -104,7 +104,7 @@ main() {
         -delete
 
     log "Backup completed: $three_hourly_backup ($(stat -c '%s' "$three_hourly_backup") bytes compressed)."
-    log 'Retention complete: three-hourly backups kept for 48 hours; one daily backup kept for 7 days.'
+    log 'Retention complete: three-hourly backups kept for 48 hours; one daily backup kept for 14 days.'
 }
 
 main "$@"
