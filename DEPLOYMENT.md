@@ -361,12 +361,15 @@ scripts/emergency-reset-webhook.cgi
 
 Install it manually into the cPanel CGI directory only when the emergency web trigger is required. Keep the live reset secret out of git. Either set `LUXQUOTE_RESET_KEY` in the CGI environment, or replace the `CHANGE_ME_ON_THE_SERVER` placeholder only in the deployed CGI copy.
 
-The CGI confirmation page shows the newest `backups/*.sql.gz` file, including its modified date/time and size. It requires the operator to type `dean`, then choose one of:
+The CGI confirmation page labels the existing `dean` confirmation value as **Auth key** and lists every valid, non-symlinked `.sql.gz` archive in the app `backups` directory, newest first with its modified date/time and size. It offers three explicit operations:
 
-- Restart containers only; do not restore the database.
-- Restart containers and restore the latest backup if recovery is still unhealthy.
+- Reset the app without touching the database.
+- Restore the selected database backup without resetting the app.
+- Reset the app, then restore the selected database backup.
 
-The CGI calls `emergency_recover.sh` with `LUXQUOTE_AUTO_DB_RESTORE=0` or `1`. `emergency_recover.sh` preserves Docker volumes and only attempts a DB restore when that flag is enabled and the post-recreate health check still fails.
+Restore operations require an archive selection and validate its filename, location, and gzip integrity before running. The selected archive is passed to `luxquote_restore_to_last_deploy.sh`, which temporarily enables Laravel maintenance mode without resetting containers, restores into the database configured by the MySQL container, reapplies pending forward migrations, clears Laravel caches, and restores the app's previous maintenance state even if the import fails. The CGI serializes operations with a lock, preserves the five-minute cooldown, performs a final public HTTP health check after restores, and displays the escaped command output and final exit status in the browser.
+
+The reset-only path calls `emergency_recover.sh` with `LUXQUOTE_AUTO_DB_RESTORE=0`, so it never invokes the recovery script's automatic database fallback. The combined path also disables that automatic fallback, runs the reset first, and then restores exactly the archive selected by the operator.
 
 After copying the CGI file, ensure ownership and mode match the host cPanel setup:
 

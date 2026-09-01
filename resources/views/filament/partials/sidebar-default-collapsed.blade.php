@@ -1,7 +1,15 @@
-<script>
-    if (localStorage.getItem('luxquoteSidebarDefaultApplied') !== '1') {
+@php
+    $shouldCollapseSidebar = filament()->auth()->check()
+        && ! session()->has('luxquote.sidebar-default-collapsed');
+
+    if ($shouldCollapseSidebar) {
+        session()->put('luxquote.sidebar-default-collapsed', true);
+    }
+@endphp
+
+@if ($shouldCollapseSidebar)
+    <script>
         localStorage.setItem('isOpen', 'false')
         localStorage.setItem('isOpenDesktop', 'false')
-        localStorage.setItem('luxquoteSidebarDefaultApplied', '1')
-    }
-</script>
+    </script>
+@endif

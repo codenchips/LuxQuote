@@ -38,6 +38,41 @@ class AuthenticationTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_sidebar_defaults_to_collapsed_once_per_authenticated_session(): void
+    {
+        $user = User::factory()->create();
+
+        $firstResponse = $this->actingAs($user)->get('/');
+
+        $firstResponse
+            ->assertSuccessful()
+            ->assertSee("localStorage.setItem('isOpenDesktop', 'false')", escape: false);
+
+        $this->assertTrue(session()->get('luxquote.sidebar-default-collapsed'));
+
+        $this->get('/')
+            ->assertSuccessful()
+            ->assertDontSee("localStorage.setItem('isOpenDesktop', 'false')", escape: false);
+
+        $this->post('/logout')->assertRedirect();
+
+        $this->assertFalse(session()->has('luxquote.sidebar-default-collapsed'));
+
+        $this->actingAs($user)
+            ->get('/')
+            ->assertSuccessful()
+            ->assertSee("localStorage.setItem('isOpenDesktop', 'false')", escape: false);
+    }
+
+    public function test_sidebar_default_is_not_applied_to_guests(): void
+    {
+        $this->get('/login')
+            ->assertSuccessful()
+            ->assertDontSee("localStorage.setItem('isOpenDesktop', 'false')", escape: false);
+
+        $this->assertFalse(session()->has('luxquote.sidebar-default-collapsed'));
+    }
+
     public function test_authenticated_user_is_redirected_from_login(): void
     {
         $user = User::factory()->create();

@@ -2,8 +2,10 @@
 
 namespace App\Filament\Resources\PermissionGroups\Schemas;
 
+use App\Enums\LandingPage;
 use App\Models\PermissionGroup;
 use Filament\Forms\Components\CheckboxList;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
@@ -36,6 +38,14 @@ class PermissionGroupForm
                             ->dehydrated(fn (?PermissionGroup $record): bool => ! (bool) $record?->is_system),
                         Textarea::make('description')
                             ->rows(3)
+                            ->columnSpanFull(),
+                        Select::make('default_landing_page')
+                            ->label('Landing page')
+                            ->options(LandingPage::groupedOptions())
+                            ->default(LandingPage::Dashboard->value)
+                            ->required()
+                            ->native(false)
+                            ->helperText('Users in this group will open here after login. Dashboard is used if they do not have access to the selected page.')
                             ->columnSpanFull(),
                     ])
                     ->columns(2),

@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Enums\PermissionKey;
+use App\Http\Responses\LoginResponse;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectArea;
@@ -14,6 +15,7 @@ use App\Observers\ProjectLineObserver;
 use App\Observers\ProjectObserver;
 use App\Observers\SpecialOrderCodeObserver;
 use App\Services\SalesforceService;
+use Filament\Auth\Http\Responses\Contracts\LoginResponse as LoginResponseContract;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -32,6 +34,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->bind(LoginResponseContract::class, LoginResponse::class);
         $this->app->singleton(SalesforceService::class);
     }
 

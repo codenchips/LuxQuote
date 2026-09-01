@@ -34,7 +34,7 @@ Default system groups are created by the permissions migration:
 - `technical`
 - `manager`
 
-Admins can create additional groups in the Filament Users area and choose from the fixed permission catalogue.
+Admins can create additional groups in the Filament Users area and choose from the fixed permission catalogue. Each group also has a default landing page selected from every top-level sidebar destination: Dashboard, Projects, Salesforce Projects, Visits, History, Specials, Products, Users, Groups, or Teams. Existing and newly created groups default to Dashboard. After a normal login, the group setting controls the destination; an inaccessible selection safely falls back to Dashboard, while a valid intended URL from before login remains respected.
 
 ### Users
 

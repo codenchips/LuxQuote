@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Enums\LandingPage;
 use App\Filament\Resources\PermissionGroups\Pages\CreatePermissionGroup;
+use App\Filament\Resources\PermissionGroups\Pages\EditPermissionGroup;
 use App\Filament\Resources\PermissionGroups\Pages\ListPermissionGroups;
 use App\Filament\Resources\Permissions\Pages\ListPermissions;
 use App\Filament\Resources\Permissions\PermissionResource;
@@ -48,6 +50,7 @@ class AdminPermissionResourceTest extends TestCase
                 'name' => 'Estimators',
                 'slug' => 'estimators',
                 'description' => 'Estimator access',
+                'default_landing_page' => LandingPage::Projects->value,
                 'permissions' => $permissions,
             ])
             ->call('create')
@@ -57,6 +60,24 @@ class AdminPermissionResourceTest extends TestCase
         $permissionKeys = $group->permissions()->pluck('key')->sort()->values()->all();
 
         $this->assertSame(['projects.create', 'projects.view'], $permissionKeys);
+        $this->assertSame(LandingPage::Projects, $group->default_landing_page);
+    }
+
+    public function test_admin_can_update_a_group_landing_page(): void
+    {
+        $admin = $this->adminUser();
+        $group = PermissionGroup::where('slug', 'user')->firstOrFail();
+
+        $this->actingAs($admin);
+
+        Livewire::test(EditPermissionGroup::class, ['record' => $group->getRouteKey()])
+            ->fillForm([
+                'default_landing_page' => LandingPage::Visits->value,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(LandingPage::Visits, $group->fresh()->default_landing_page);
     }
 
     public function test_admin_can_assign_user_to_group(): void
