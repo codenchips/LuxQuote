@@ -76,6 +76,24 @@ docker compose exec laravel.test php artisan optimize:clear
 docker compose exec laravel.test php artisan config:show app.timezone
 ```
 
+## Production 0.2.5 Release Record
+
+Version `0.2.5` is the production-visible release containing the feature work prepared after `0.2.3`. The `0.2.5` commit followed a one-time reconciliation of divergent `main` and `production` release-history commits; it did not duplicate migrations or application changes. A manual database backup did not cause that Git divergence because backup archives are outside the tracked release history.
+
+This release deploys these forward-only migrations:
+
+- `2026_08_05_095813_add_currency_to_projects_table`
+- `2026_08_27_092936_change_default_project_revision_to_one`
+- `2026_08_27_162004_add_calendar_view_permission`
+- `2026_08_28_114940_add_calendar_update_permission`
+- `2026_08_28_135337_add_calendar_delete_permission`
+- `2026_08_28_140716_add_calendar_create_permission`
+- `2026_09_01_091754_add_default_landing_page_to_permission_groups_table`
+
+They add project currency, change only the default revision for future projects, add the four Calendar capabilities to permission groups, and add the group landing-page setting. They do not rewrite existing project revision sequences or restore/reset the database.
+
+The first Docker image build after an older build cache has expired can spend several minutes printing package installation output from `docker/8.5/Dockerfile`. That output is expected during `docker compose up -d --build` and is not, by itself, a runner loop. Do not start a second deployment while the first workflow is still running. The existing persistent `luxquote-production` runner does not need to be recreated for this release when it remains online and its logs end with `Listening for Jobs`.
+
 ## Salesforce Visits Calendar Release Checklist
 
 The Visits interface reads and mutates Salesforce `Event` records owned by a public Salesforce `Calendar`. Before the first production deployment, confirm the production integration user can:
@@ -359,7 +377,13 @@ A reference CGI wrapper is stored at:
 scripts/emergency-reset-webhook.cgi
 ```
 
-Install it manually into the cPanel CGI directory only when the emergency web trigger is required. Keep the live reset secret out of git. Either set `LUXQUOTE_RESET_KEY` in the CGI environment, or replace the `CHANGE_ME_ON_THE_SERVER` placeholder only in the deployed CGI copy.
+The live production copy is outside the application checkout:
+
+```text
+/home/tamliteco/quote/cgi-bin/reset-app.cgi
+```
+
+It is not copied or replaced by the normal GitHub deployment. Install updates manually and preserve the live Auth key, which must remain outside git. The repository template accepts `LUXQUOTE_RESET_KEY` from the CGI environment or a server-only replacement for `CHANGE_ME_ON_THE_SERVER`.
 
 The CGI confirmation page labels the existing `dean` confirmation value as **Auth key** and lists every valid, non-symlinked `.sql.gz` archive in the app `backups` directory, newest first with its modified date/time and size. It offers three explicit operations:
 
@@ -371,14 +395,47 @@ Restore operations require an archive selection and validate its filename, locat
 
 The reset-only path calls `emergency_recover.sh` with `LUXQUOTE_AUTO_DB_RESTORE=0`, so it never invokes the recovery script's automatic database fallback. The combined path also disables that automatic fallback, runs the reset first, and then restores exactly the archive selected by the operator.
 
-After copying the CGI file, ensure ownership and mode match the host cPanel setup:
+After copying the CGI file, ensure ownership and its deliberately restrictive executable mode match the live host setup:
 
 ```bash
-chown tamliteco:tamliteco /path/to/cgi-bin/reset-app.cgi
-chmod 755 /path/to/cgi-bin/reset-app.cgi
+chown tamliteco:tamliteco /home/tamliteco/quote/cgi-bin/reset-app.cgi
+chmod 700 /home/tamliteco/quote/cgi-bin/reset-app.cgi
 ```
 
 Do not expose the CGI URL without the secret key. The script also enforces a five-minute cooldown with `/tmp/luxquote_reset.lock`.
+
+## Automated Database Backups
+
+The production backup job is checked in as `scripts/backup-production-database.sh`. It dumps the database configured by the Docker `mysql` service using `--single-transaction`, includes routines and triggers, compresses the stream, and verifies gzip integrity before publishing the archive in:
+
+```text
+/home/tamliteco/luxquote.app/backups
+```
+
+The script creates two filename classes:
+
+- `luxquote-db-3hourly-YYYYMMDD-HHMMSS.sql.gz`, retained for 48 hours.
+- `luxquote-db-daily-YYYYMMDD.sql.gz`, the first successful backup of that calendar day, retained for 14 days.
+
+The daily archive is a hard link to the underlying backup data. Removing the expired three-hourly filename does not remove the data while the daily filename still exists; disk space is released only after the final hard link expires. The script uses `flock` to skip overlapping invocations, `umask 077` for private files, a temporary archive plus atomic move, and container-provided database credentials rather than hard-coded values.
+
+Install this root cron entry to run at 14 minutes past every third hour and send output to syslog under `luxquote-db-backup`:
+
+```cron
+14 */3 * * * /home/tamliteco/luxquote.app/scripts/backup-production-database.sh 2>&1 | /usr/bin/logger -t luxquote-db-backup
+```
+
+The previous `/root/backup-luxquote-db.sh` cron entry should be removed after this checked-in job is installed, avoiding duplicate dumps. Verify the job without restoring anything:
+
+```bash
+cd /home/tamliteco/luxquote.app
+bash scripts/backup-production-database.sh
+ls -liht backups/luxquote-db-*.sql.gz
+gzip -t backups/luxquote-db-3hourly-*.sql.gz
+journalctl -t luxquote-db-backup --since today
+```
+
+The backup command is read-only with respect to MySQL. A restore is destructive because it replaces current database state and must only be run after explicitly selecting and confirming the intended archive.
 
 ## Docker Disk Cleanup
 

@@ -6,7 +6,13 @@ Version: `0.2.4` -> `0.2.5`
 
 Changes included:
 
-- Version-only deploy; no application commits found between production and main.
+- Production deployment of the application changes prepared in `0.2.4` after reconciling the previously divergent `main` and `production` histories.
+- The `0.2.5` commit itself changes only `VERSION` and this changelog; no second copy of the migrations or application changes was introduced.
+- Added group-controlled post-login landing pages with access-checked Dashboard fallback and preserved intended URLs.
+- Made the Filament sidebar start collapsed for each authenticated session.
+- Added production database automation: compressed three-hourly backups retained for 48 hours and one daily backup retained for 14 days.
+- Expanded emergency recovery to select a backup and choose reset-only, restore-only, or reset-and-restore, with validation, locking, maintenance mode, and visible results.
+- Added deploy-owned Laravel maintenance mode around the database snapshot, code update, build, and forward migrations, including workflow cleanup after cancellation or failure.
 
 ## 0.2.4 - 2026-09-01
 
@@ -14,20 +20,18 @@ Version: `0.2.3` -> `0.2.4`
 
 Changes included:
 
-- `a577877` Release v0.2.3: Paste Technical does not default existing SKU's
-- `a2495b3` Euro switch added
-- `31c8aec` Updated docs
-- `3b893a5` creating new revision resets design complete to in progress
-- `8466b87` Revision number update R0 = P1.  Filenaming standards compliant
-- `8c65d45` Calendar CLI queries OK
-- `1a8791e` Calendar Part 1
-- `bd08850` Calendar get visits V1
-- `f4a87c7` Celendar events wip
-- `2d96f65` Calendar R1
-- `46e11e6` Updated docs and tests
-- `e76f193` backup and restore stuff
-- `94b459f` 3 hourly backpus oevr 2 days, daily over 2 weeks
-- `b5a067a` maintenance mode
+- Added GBP/EUR project display selection across project screens, validation, activity text, and generated documents; this is display-only and performs no currency conversion.
+- Changed new-project revision numbering from `P0, R1, R2...` to `P1, P2, P3...` without rewriting existing projects.
+- Made revision labels visible from `P1` on Quote and Schedule output and standardised timestamp-free exported filenames as `Reference-Project-Name-TL-Type-Pn` (`LS`, `PQ`, or `DP`).
+- Reset **Design Complete** projects to **In Progress** when a new editable revision is created.
+- Added the Salesforce public **Visits** calendar CLI and FullCalendar month/week/day interface, compact date navigator, business-hour/weekend defaults, all-day lanes, multi-day spans, and readable event styling.
+- Added permission-controlled Salesforce Event viewing, creation, editing, and confirmed deletion with field-level metadata checks and graceful fallbacks for differing live Salesforce access.
+- Added Calendar activity history with `Calendar` as Reference and green Created, blue Updated, and red Deleted action labels.
+- Reorganised sidebar navigation into Salesforce, Admin, and Users sections; moved Products, Specials, History, Teams, and Visits to their requested groups.
+- Polished Dashboard project tables with white project text, a roomier green Design Complete badge, and removal of the redundant Visibility column.
+- Fixed Document Pack generated items so every Quote/Schedule uses the revision selected when generation starts.
+- Added focused Calendar, Salesforce service, permissions, navigation, dashboard, authentication, output, revision, and filename regression coverage.
+- Added the backup, emergency recovery, login default, and deployment-maintenance work described in `0.2.5`; `0.2.5` is the production-visible version after branch-history reconciliation.
 
 ## 0.2.3 - 2026-08-04
 

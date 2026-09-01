@@ -1,6 +1,21 @@
 # Company App — Project Status
 
-_Last updated: 28 August 2026_
+_Last updated: 1 September 2026_
+
+---
+
+## Production Release, Login Defaults, and Recovery — 1 September 2026
+
+- **Release deployed**: The feature set developed after `0.2.3` is live. The production and main branches were reconciled before deployment; the resulting visible version is `0.2.5`. The `0.2.5` commit itself is version/changelog-only and contains the same application feature set prepared as `0.2.4`.
+- **Sidebar starts collapsed**: The Filament sidebar now defaults to its compact collapsed state on the first authenticated page load of a session. Users can still expand it normally.
+- **Group-controlled landing pages**: Permission Groups now have a **Default landing page** selector covering all top-level destinations. Login redirects to the selected page only when that user can access it; inaccessible, missing, or stale selections fall back safely to Dashboard. Laravel's intended URL still takes precedence when login followed a direct protected link.
+- **Forward-only landing-page migration**: `permission_groups.default_landing_page` has a safe `dashboard` default and does not rewrite project or business data. Existing and new groups therefore use Dashboard until an administrator chooses another destination.
+- **Automated database backups**: `scripts/backup-production-database.sh` creates a gzip-compressed, transaction-consistent MySQL dump every three hours. Three-hourly files are retained for 48 hours and the first successful backup of each day also receives an independent daily filename retained for 14 days. The daily name is a hard link, so deleting its three-hourly name does not remove the retained backup data.
+- **Backup safety**: The job reads database credentials from the MySQL container, writes through a private temporary file, verifies gzip integrity before publishing, uses `flock` to prevent overlapping runs, and restricts new files with `umask 077`. Production cron runs it at 14 minutes past every third hour.
+- **Emergency recovery UI**: The checked-in CGI template can list valid backup archives and perform one of three explicit operations: reset containers without touching MySQL, restore only the selected database archive, or reset then restore the selected archive. Restores validate the filename and gzip stream, run under maintenance mode, apply pending forward migrations, clear caches, preserve pre-existing maintenance state, and display escaped command output plus the final status.
+- **Recovery secret remains server-only**: The live CGI is `/home/tamliteco/quote/cgi-bin/reset-app.cgi`, outside the application checkout. Deployment does not overwrite it. Its existing hard-coded Auth key remains only in the live mode-`700` copy; the repository template contains no production secret.
+- **Maintenance-aware deployments**: Production now enters Laravel maintenance mode before its pre-deploy database snapshot and leaves it before the final public smoke check. A deploy-owned marker and an always-run workflow cleanup recover from interrupted jobs without disabling maintenance mode that an operator enabled manually.
+- **Deployment migration safety**: Normal releases continue to use forward-only `php artisan migrate --force --no-interaction`. The deployment records protected-table counts and keeps pre-deploy rollback backups; it never performs a routine wipe, refresh, or full database replacement.
 
 ---
 
