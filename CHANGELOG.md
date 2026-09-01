@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.4 - 2026-09-01
+
+Version: `0.2.3` -> `0.2.4`
+
+Changes included:
+
+- `a577877` Release v0.2.3: Paste Technical does not default existing SKU's
+- `a2495b3` Euro switch added
+- `31c8aec` Updated docs
+- `3b893a5` creating new revision resets design complete to in progress
+- `8466b87` Revision number update R0 = P1.  Filenaming standards compliant
+- `8c65d45` Calendar CLI queries OK
+- `1a8791e` Calendar Part 1
+- `bd08850` Calendar get visits V1
+- `f4a87c7` Celendar events wip
+- `2d96f65` Calendar R1
+- `46e11e6` Updated docs and tests
+- `e76f193` backup and restore stuff
+- `94b459f` 3 hourly backpus oevr 2 days, daily over 2 weeks
+- `b5a067a` maintenance mode
+
 ## 0.2.3 - 2026-08-04
 
 Version: `0.2.2` -> `0.2.3`
