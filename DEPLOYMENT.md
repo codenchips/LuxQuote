@@ -740,6 +740,7 @@ The local `./deploy-production` helper bumps the tracked app version in `VERSION
 The deploy script:
 
 - starts Docker services so the database is available
+- enables Laravel maintenance mode before taking the pre-deploy backups, preventing user writes after the rollback snapshot point; users receive Laravel's HTTP 503 maintenance response during the deployment
 - creates a compressed full pre-deploy MySQL backup in `/home/tamliteco/luxquote.app/backups`
 - creates a single rolling data-only backup of protected business tables at `backups/latest-protected-data-restore.sql.gz` and records their pre-deploy row counts
 - writes `backups/deploy-manifest-pending.env` after the backup is created, recording the previous commit and the backup paths for emergency rollback if the deploy fails mid-run
@@ -754,12 +755,15 @@ The deploy script:
 - runs all pending migrations with `php artisan migrate --force --no-interaction`, then prints `migrate:status` in the deploy log
 - checks protected business table row counts after migrations; if all previously-populated protected tables are empty, it restores the data-only backup into the migrated schema and fails the deploy so the incident is visible
 - clears/rebuilds Laravel caches
+- disables maintenance mode before the public smoke check; an exit trap also attempts to return the app to normal mode if any deploy step fails unexpectedly
 - smoke-checks `https://quote.tamlite.co.uk`
 - writes `backups/deploy-manifest-latest.env` after a successful smoke check, then removes the pending manifest
 - prunes Docker build cache older than 24 hours
 - prunes DB backups older than 14 days
 
 The deploy data-loss guard is intentionally conservative. It only auto-restores when protected business data has catastrophically disappeared from every previously-populated protected table. If only some protected tables look emptied, the deploy stops and leaves the full backup plus `backups/latest-protected-data-restore.sql.gz` in place for manual inspection rather than risking duplicate or mixed-state rows. The rolling data-only restore file is replaced on each deploy, so only one `latest-protected-data-restore.sql.gz` should exist at a time. If the migrated-schema data restore fails, the deploy log explains that the new migrations likely changed table or column structures in a way that needs a custom manual recovery from the full backup. The protected table list can be overridden with `PROTECTED_DATA_TABLES`; automatic catastrophic restore can be disabled with `RESTORE_ON_CATASTROPHIC_DATA_LOSS=false`.
+
+The GitHub workflow fetches the incoming `production` revision and executes that revision's deploy script from a temporary file. This ensures deployment-safety improvements in a release, including maintenance mode, are active for that same release without checking out the new application code before the pre-deploy backup. The script writes `storage/framework/luxquote-deploy-maintenance` only when it owns the maintenance state. An `if: always()` GitHub cleanup step uses that marker to recover from abrupt deploy interruption without clearing maintenance mode that was enabled manually. If the site was already manually placed in maintenance mode before the deploy began, the script preserves that state and skips the public smoke check rather than unexpectedly bringing the site online.
 
 ### Production Rollback
 

@@ -23,7 +23,32 @@ jobs:
         run: |
           set -euo pipefail
           cd /home/tamliteco/luxquote.app
-          APP_DIR=/home/tamliteco/luxquote.app DEPLOY_BRANCH=production PUBLIC_URL="$PUBLIC_URL" bash scripts/deploy-production.sh
+          git config --global --add safe.directory /home/tamliteco/luxquote.app
+          git fetch origin production
+
+          incoming_deploy_script="$(mktemp /tmp/luxquote-deploy-production-XXXXXX.sh)"
+          trap 'rm -f -- "$incoming_deploy_script"' EXIT
+          git show origin/production:scripts/deploy-production.sh > "$incoming_deploy_script"
+
+          APP_DIR=/home/tamliteco/luxquote.app DEPLOY_BRANCH=production PUBLIC_URL="$PUBLIC_URL" bash "$incoming_deploy_script"
+
+      - name: Ensure deploy maintenance mode is cleared
+        if: always()
+        run: |
+          set -euo pipefail
+          cd /home/tamliteco/luxquote.app
+
+          maintenance_marker="storage/framework/luxquote-deploy-maintenance"
+
+          if [ ! -f "$maintenance_marker" ]; then
+            echo 'No deploy-owned maintenance marker remains.'
+            exit 0
+          fi
+
+          echo 'Deploy-owned maintenance marker found; returning Laravel to normal mode.'
+          docker compose up -d laravel.test
+          docker compose exec -T laravel.test php artisan up --no-interaction
+          rm -f "$maintenance_marker"
 
       - name: Check persistent runner migration
         if: success()

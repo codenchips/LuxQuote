@@ -8,6 +8,9 @@ PUBLIC_URL="${PUBLIC_URL:-https://quote.tamlite.co.uk}"
 BACKUP_DIR="${BACKUP_DIR:-$APP_DIR/backups}"
 PROTECTED_DATA_TABLES="${PROTECTED_DATA_TABLES:-users products teams projects project_revisions project_areas project_lines project_tenders document_packs document_pack_items team_user activity_logs salesforce_pdf_uploads}"
 RESTORE_ON_CATASTROPHIC_DATA_LOSS="${RESTORE_ON_CATASTROPHIC_DATA_LOSS:-true}"
+MAINTENANCE_MARKER="$APP_DIR/storage/framework/luxquote-deploy-maintenance"
+MAINTENANCE_MODE_ENABLED_BY_DEPLOY=false
+MAINTENANCE_MODE_WAS_ACTIVE=false
 
 timestamp() {
     date +"%Y-%m-%d %H:%M:%S"
@@ -16,6 +19,52 @@ timestamp() {
 log() {
     printf '[%s] %s\n' "$(timestamp)" "$*"
 }
+
+restore_maintenance_state() {
+    local deploy_status="$1"
+
+    trap - EXIT
+
+    if [ "$MAINTENANCE_MODE_ENABLED_BY_DEPLOY" = true ]; then
+        log "Deploy exited before maintenance mode was cleared; returning the application to normal mode"
+
+        if docker compose exec -T laravel.test php artisan up --no-interaction; then
+            rm -f "$MAINTENANCE_MARKER"
+            MAINTENANCE_MODE_ENABLED_BY_DEPLOY=false
+        else
+            log "ERROR: Laravel maintenance mode could not be cleared automatically."
+            deploy_status=1
+        fi
+    fi
+
+    exit "$deploy_status"
+}
+
+enable_maintenance_mode() {
+    if docker compose exec -T laravel.test test -f storage/framework/down; then
+        MAINTENANCE_MODE_WAS_ACTIVE=true
+        log "Laravel was already in maintenance mode; preserving that state"
+        return
+    fi
+
+    log "Enabling Laravel maintenance mode"
+    touch "$MAINTENANCE_MARKER"
+    MAINTENANCE_MODE_ENABLED_BY_DEPLOY=true
+    docker compose exec -T laravel.test php artisan down --retry=60 --refresh=15 --no-interaction
+}
+
+disable_maintenance_mode() {
+    if [ "$MAINTENANCE_MODE_ENABLED_BY_DEPLOY" != true ]; then
+        return
+    fi
+
+    log "Disabling Laravel maintenance mode"
+    docker compose exec -T laravel.test php artisan up --no-interaction
+    rm -f "$MAINTENANCE_MARKER"
+    MAINTENANCE_MODE_ENABLED_BY_DEPLOY=false
+}
+
+trap 'restore_maintenance_state $?' EXIT
 
 manifest_var() {
     local path="$1"
@@ -173,6 +222,8 @@ for attempt in {1..60}; do
     sleep 2
 done
 
+enable_maintenance_mode
+
 log "Backing up database"
 mkdir -p "$BACKUP_DIR"
 backup_timestamp="$(date +%Y%m%d-%H%M%S)"
@@ -311,8 +362,14 @@ docker compose exec laravel.test php artisan config:cache
 docker compose exec laravel.test php artisan route:cache
 docker compose exec laravel.test php artisan view:cache
 
-log "Smoke checking $PUBLIC_URL"
-curl --fail --silent --show-error --location --max-time 20 "$PUBLIC_URL" >/dev/null
+disable_maintenance_mode
+
+if [ "$MAINTENANCE_MODE_WAS_ACTIVE" = true ]; then
+    log "Skipping public smoke check because maintenance mode was active before this deploy"
+else
+    log "Smoke checking $PUBLIC_URL"
+    curl --fail --silent --show-error --location --max-time 20 "$PUBLIC_URL" >/dev/null
+fi
 
 log "Writing successful deploy rollback manifest"
 write_deploy_manifest "$manifest_latest" "success" "$deployed_commit"
