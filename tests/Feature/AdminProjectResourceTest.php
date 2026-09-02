@@ -20,6 +20,7 @@ use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
+use App\Models\ProjectTender;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\ProjectSchedulePdfService;
@@ -1782,6 +1783,7 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('All outputs include links to product datasheets.')
             ->assertSee('Generate a document')
             ->assertSee('Quote PDF')
+            ->assertSee('Include legal page')
             ->assertSee('Schedule PDF')
             ->assertSee('Download as CSV')
             ->assertSee(e(route('projects.pdf.schedule', [
@@ -1793,6 +1795,117 @@ class AdminProjectResourceTest extends TestCase
                 'project' => $project,
                 'revision' => $project->active_revision_id,
             ]), false);
+    }
+
+    public function test_quote_output_skips_the_tender_dialog_when_the_project_has_no_tenders(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->assertSee('x-on:click="generateQuote()"', false)
+            ->assertDontSee('Choose Tenders')
+            ->assertDontSee('Include Cover sheet to Customer');
+    }
+
+    public function test_quote_output_shows_the_tender_dialog_when_the_project_has_tenders(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        ProjectTender::create([
+            'project_id' => $project->id,
+            'salesforce_account_id' => '001000000000001AAA',
+            'account_name' => 'Example Contractor',
+            'is_primary' => true,
+            'created_by_id' => $admin->id,
+        ]);
+
+        Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->assertSee('Choose Tenders')
+            ->assertSee('Example Contractor');
+    }
+
+    public function test_quote_cover_is_disabled_server_side_when_the_project_has_no_tenders(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'reference_number' => 'NO-TENDER-COVER',
+        ]);
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        $pdfService = new class extends ProjectSchedulePdfService
+        {
+            public bool $includeCover = true;
+
+            public function quoteFilename(Project $project, ProjectRevision $revision, mixed $tender = null, array $areaIds = []): string
+            {
+                return 'no-tender-cover.pdf';
+            }
+
+            public function quoteContent(Project $project, ProjectRevision $revision, mixed $tender = null, bool $includeCover = true, array $areaIds = []): string
+            {
+                $this->includeCover = $includeCover;
+
+                return AdminProjectResourceTest::pdfFixtureContent();
+            }
+        };
+
+        $this->instance(ProjectSchedulePdfService::class, $pdfService);
+
+        $response = $this->postJson(route('projects.pdf.quote.prepare', [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+        ]), [
+            'include_cover' => true,
+        ]);
+
+        $response->assertOk();
+        $this->assertFalse($pdfService->includeCover);
+        $this->assertDatabaseHas(ActivityLog::class, [
+            'project_id' => $project->id,
+            'action_type' => 'quote_pdf.generated',
+        ]);
+        $this->assertFalse((bool) ActivityLog::query()
+            ->where('project_id', $project->id)
+            ->where('action_type', 'quote_pdf.generated')
+            ->latest('id')
+            ->value('payload->include_cover'));
+
+        $tender = ProjectTender::create([
+            'project_id' => $project->id,
+            'salesforce_account_id' => '001000000000002AAA',
+            'account_name' => 'Cover Contractor',
+            'is_primary' => true,
+            'created_by_id' => $admin->id,
+        ]);
+
+        $response = $this->postJson(route('projects.pdf.quote.prepare', [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+        ]), [
+            'include_cover' => true,
+            'tender_id' => $tender->id,
+        ]);
+
+        $response->assertOk();
+        $this->assertTrue($pdfService->includeCover);
     }
 
     public function test_pdf_template_shows_sales_engineer_and_line_columns_in_requested_order(): void
@@ -1918,13 +2031,16 @@ class AdminProjectResourceTest extends TestCase
         $component = Livewire::test(OutputProject::class, ['record' => $project->id]);
 
         $this->assertStringNotContainsString('include_datasheets', $component->instance()->getSchedulePdfUrl());
+        $this->assertStringNotContainsString('include_legal_page', $component->instance()->getQuotePdfUrl());
 
         $component
             ->set('includeScheduleDatasheets', true)
-            ->set('includeQuoteDatasheets', true);
+            ->set('includeQuoteDatasheets', true)
+            ->set('includeQuoteLegalPage', false);
 
         $this->assertStringContainsString('include_datasheets=1', $component->instance()->getSchedulePdfUrl());
         $this->assertStringContainsString('include_datasheets=1', $component->instance()->getQuotePdfUrl());
+        $this->assertStringContainsString('include_legal_page=0', $component->instance()->getQuotePdfUrl());
     }
 
     public function test_pdf_progress_endpoint_returns_only_the_authenticated_users_progress(): void
@@ -2169,6 +2285,34 @@ class AdminProjectResourceTest extends TestCase
 
         $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 3);
         File::delete($response->baseResponse->getFile()->getPathname());
+
+        $response = $this->get(route('projects.pdf.quote', [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+            'include_datasheets' => true,
+            'include_legal_page' => false,
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertDownload('quote-QDS-001-P1-with-datasheets.pdf');
+
+        $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 2);
+        File::delete($response->baseResponse->getFile()->getPathname());
+
+        $latestQuoteLog = ActivityLog::query()
+            ->where('project_id', $project->id)
+            ->where('action_type', 'quote_pdf.generated')
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertFalse($latestQuoteLog->payload['include_legal_page']);
+
+        $historyRows = Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->instance()
+            ->outputHistoryRows();
+
+        $this->assertStringContainsString('include_legal_page=0', $historyRows[0]['regenerate_url']);
 
         $this->assertSame(ProjectStatus::Quoted, $project->fresh()->status);
     }

@@ -74,6 +74,8 @@ class OutputProject extends ViewRecord
 
     public bool $includeQuoteDatasheets = false;
 
+    public bool $includeQuoteLegalPage = true;
+
     public bool $includeScheduleDatasheets = false;
 
     public string $outputHistorySearch = '';
@@ -152,6 +154,10 @@ class OutputProject extends ViewRecord
 
         if ($this->includeQuoteDatasheets) {
             $parameters['include_datasheets'] = true;
+        }
+
+        if (! $this->includeQuoteLegalPage) {
+            $parameters['include_legal_page'] = false;
         }
 
         return route('projects.pdf.quote', $parameters);
@@ -1010,6 +1016,10 @@ class OutputProject extends ViewRecord
 
             if (array_key_exists('include_cover', $payload)) {
                 $parameters['include_cover'] = (bool) $payload['include_cover'];
+            }
+
+            if (array_key_exists('include_legal_page', $payload)) {
+                $parameters['include_legal_page'] = (bool) $payload['include_legal_page'];
             }
 
             return route('projects.pdf.quote', $parameters);

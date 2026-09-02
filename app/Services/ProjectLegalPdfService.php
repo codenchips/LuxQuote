@@ -6,9 +6,34 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Symfony\Component\Process\Process;
+use Throwable;
 
 class ProjectLegalPdfService
 {
+    /**
+     * @return array{path: string, filename: string}
+     */
+    public function storeWithoutLegalPage(string $documentContent, string $filename): array
+    {
+        $outputDirectory = storage_path('app/private/legal-merge-outputs');
+        $documentPath = $outputDirectory.'/'.Str::uuid().'.pdf';
+        File::ensureDirectoryExists($outputDirectory);
+        File::put($documentPath, $documentContent);
+
+        try {
+            $this->assertValidPdf($documentPath, 'The generated document PDF could not be prepared.');
+
+            return [
+                'path' => $documentPath,
+                'filename' => $filename,
+            ];
+        } catch (Throwable $exception) {
+            File::delete($documentPath);
+
+            throw $exception;
+        }
+    }
+
     /**
      * @return array{path: string, filename: string}
      */

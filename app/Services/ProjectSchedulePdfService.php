@@ -178,7 +178,7 @@ class ProjectSchedulePdfService
     {
         $quoteContent = $this->contentFromBuilder($this->quoteBuilder($project, $revision, $areaIds));
 
-        if (! $includeCover) {
+        if (! $includeCover || ($tender === null && ! $project->tenders()->exists())) {
             return $quoteContent;
         }
 

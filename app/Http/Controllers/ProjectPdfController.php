@@ -138,13 +138,17 @@ class ProjectPdfController extends Controller
         );
 
         $pdf = app(ProjectSchedulePdfService::class);
+        $tender = $this->resolveQuoteTender($request, $project);
+        $includeCover = $this->shouldIncludeQuoteCover($request, $tender);
+        $includeLegalPage = $request->boolean('include_legal_page', true);
         $salesforceNotification = null;
         $quotePdf = $this->quotePdf(
             request: $request,
             project: $project,
             revision: $revision,
-            tender: $tender = $this->resolveQuoteTender($request, $project),
-            includeCover: $includeCover = $request->boolean('include_cover', true),
+            tender: $tender,
+            includeCover: $includeCover,
+            includeLegalPage: $includeLegalPage,
             areaIds: $areaIds,
         );
 
@@ -166,6 +170,7 @@ class ProjectPdfController extends Controller
                         $includeCover,
                         $includeCover ? $tender : null,
                         $areaIds,
+                        $includeLegalPage,
                     ),
                 );
             }
@@ -184,6 +189,7 @@ class ProjectPdfController extends Controller
                     areaIds: $areaIds,
                     tender: $tender,
                     includeCover: $includeCover,
+                    includeLegalPage: $includeLegalPage,
                 ) + [
                     'filename' => $quotePdf['pdf']['filename'],
                 ],
@@ -217,13 +223,15 @@ class ProjectPdfController extends Controller
         );
 
         $tender = $this->resolveQuoteTender($request, $project);
-        $includeCover = $request->boolean('include_cover', $tender !== null);
+        $includeCover = $this->shouldIncludeQuoteCover($request, $tender);
+        $includeLegalPage = $request->boolean('include_legal_page', true);
         $quotePdf = $this->quotePdf(
             request: $request,
             project: $project,
             revision: $revision,
             tender: $tender,
             includeCover: $includeCover,
+            includeLegalPage: $includeLegalPage,
             preparedDatasheetsPath: $this->preparedDatasheetsPath($request, $downloads),
             areaIds: $areaIds,
         );
@@ -247,6 +255,7 @@ class ProjectPdfController extends Controller
                     $includeCover,
                     $includeCover ? $tender : null,
                     $areaIds,
+                    $includeLegalPage,
                 ),
             );
         }
@@ -265,6 +274,7 @@ class ProjectPdfController extends Controller
                 areaIds: $areaIds,
                 tender: $tender,
                 includeCover: $includeCover,
+                includeLegalPage: $includeLegalPage,
             ) + [
                 'filename' => $quotePdf['pdf']['filename'],
                 'tender' => $tender?->account_name,
@@ -517,6 +527,12 @@ class ProjectPdfController extends Controller
         return $project->tenders()->findOrFail($tenderId);
     }
 
+    private function shouldIncludeQuoteCover(Request $request, ?ProjectTender $tender): bool
+    {
+        return $tender instanceof ProjectTender
+            && $request->boolean('include_cover', true);
+    }
+
     private function quoteSalesforceDocumentType(?ProjectTender $tender, bool $includeCover): string
     {
         if (! $includeCover || ! $tender instanceof ProjectTender) {
@@ -535,15 +551,17 @@ class ProjectPdfController extends Controller
         ProjectRevision $revision,
         ?ProjectTender $tender,
         bool $includeCover,
+        bool $includeLegalPage,
         ?string $preparedDatasheetsPath = null,
         array $areaIds = [],
     ): array {
         $pdf = app(ProjectSchedulePdfService::class);
         $filename = $pdf->quoteFilename($project, $revision, $includeCover ? $tender : null, $areaIds);
-        $legalPdf = $this->legalPdf(
-            pdfContent: fn (): string => $pdf->quoteContent($project, $revision, $tender, $includeCover, $areaIds),
-            filename: $filename,
-        );
+        $quoteContent = $pdf->quoteContent($project, $revision, $tender, $includeCover, $areaIds);
+        $legalPdfService = app(ProjectLegalPdfService::class);
+        $legalPdf = $includeLegalPage
+            ? $legalPdfService->appendLegalPage($quoteContent, $filename)
+            : $legalPdfService->storeWithoutLegalPage($quoteContent, $filename);
 
         try {
             $filename = $legalPdf['filename'];
@@ -761,7 +779,7 @@ class ProjectPdfController extends Controller
     }
 
     /**
-     * @return array{filename: string, revision_id: int, revision_number: int, revision_label: string, include_datasheets: bool, area_ids: array<int, int>, area_count: int|null, area_scope: string, tender_id?: int|null, tender_account_name?: string|null, include_cover?: bool}
+     * @return array{filename: string, revision_id: int, revision_number: int, revision_label: string, include_datasheets: bool, area_ids: array<int, int>, area_count: int|null, area_scope: string, tender_id?: int|null, tender_account_name?: string|null, include_cover?: bool, include_legal_page?: bool}
      */
     private function pdfActivityPayload(
         string $filename,
@@ -770,6 +788,7 @@ class ProjectPdfController extends Controller
         array $areaIds,
         ?ProjectTender $tender = null,
         ?bool $includeCover = null,
+        ?bool $includeLegalPage = null,
     ): array {
         $payload = [
             'filename' => $filename,
@@ -786,6 +805,10 @@ class ProjectPdfController extends Controller
             $payload['tender_id'] = $tender?->id;
             $payload['tender_account_name'] = $tender?->account_name;
             $payload['include_cover'] = (bool) $includeCover;
+        }
+
+        if ($includeLegalPage !== null) {
+            $payload['include_legal_page'] = $includeLegalPage;
         }
 
         return $payload;

@@ -25,6 +25,7 @@ class SalesforcePdfUploadTracker
         bool $includeCover = true,
         ?ProjectTender $tender = null,
         array $areaIds = [],
+        bool $includeLegalPage = true,
     ): string {
         $areasQuery = ProjectArea::where('project_revision_id', $revision->id)
             ->with(['lines' => fn ($query) => $query->orderBy('sort_order')])
@@ -37,15 +38,16 @@ class SalesforcePdfUploadTracker
         $areas = $areasQuery->get();
 
         $payload = [
-            'version' => 5,
+            'version' => 6,
             'document_type' => $documentType,
             'show_prices' => $showPrices,
             'include_datasheets' => $includeDatasheets,
             'include_cover' => $documentType === 'quote' ? $includeCover : false,
+            'include_legal_page' => $includeLegalPage,
             'area_ids' => $areaIds,
             'template_hash' => $this->templateHash(),
             'quote_cover_template_hash' => $documentType === 'quote' && $includeCover ? $this->quoteCoverTemplateHash() : null,
-            'legal_page_hash' => $this->legalPageHash(),
+            'legal_page_hash' => $includeLegalPage ? $this->legalPageHash() : null,
             'project' => [
                 'id' => $project->id,
                 'name' => $project->name,

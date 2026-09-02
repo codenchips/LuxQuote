@@ -18,8 +18,10 @@
         $canManageDocumentPacks = $this->canManageDocumentPacks();
         $canViewOutputHistory = $this->canViewOutputHistory();
         $includeQuoteDatasheets = $this->includeQuoteDatasheets;
+        $includeQuoteLegalPage = $this->includeQuoteLegalPage;
         $includeScheduleDatasheets = $this->includeScheduleDatasheets;
         $quoteTenderOptions = $canProduceQuote ? $this->quoteTenderOptions() : [];
+        $hasQuoteTenders = $quoteTenderOptions !== [];
         $outputAreaOptions = ($canProduceQuote || $canProduceUnpricedSchedule) ? $this->outputAreaOptions() : [];
         $schedulePdfUrl = $canProduceUnpricedSchedule ? $this->getSchedulePdfUrl() : null;
         $quotePdfUrl = $canProduceQuote ? $this->getQuotePdfUrl() : null;
@@ -47,7 +49,6 @@
         class="space-y-7"
         x-data="quoteTenderOutput({
             tenders: @js($quoteTenderOptions),
-            customerName: @js($this->record->customer_name ?: 'Customer'),
             areas: @js($outputAreaOptions),
             scheduleUrl: @js($schedulePdfUrl),
             quoteUrl: @js($quotePdfUrl),
@@ -55,6 +56,7 @@
             prepareDatasheetsUrl: @js($preparedQuoteDatasheetsUrl),
             zipUrl: @js($preparedQuoteZipUrl),
             includeDatasheets: @js($includeQuoteDatasheets),
+            includeLegalPage: @js($includeQuoteLegalPage),
             includeScheduleDatasheets: @js($includeScheduleDatasheets),
             csrfToken: @js(csrf_token()),
         })"
@@ -739,29 +741,46 @@
                                     </button>
                                 </div>
 
-                                <label class="flex min-h-9 items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-300">
-                                    <span class="inline-flex items-center gap-2">
-                                        Include datasheets
-                                        <x-heroicon-o-information-circle class="h-4 w-4 text-gray-400" />
-                                    </span>
-                                    <input type="checkbox" x-model="includeDatasheets" class="sr-only">
-                                    <span
-                                        x-bind:class="includeDatasheets ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"
-                                        class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition"
-                                        aria-hidden="true"
-                                    >
+                                <div class="grid min-h-9 grid-cols-2 items-center gap-4 text-sm text-gray-600 dark:text-gray-300">
+                                    <label class="flex items-center justify-between gap-3">
+                                        <span class="inline-flex items-center gap-2">
+                                            Include datasheets
+                                            <x-heroicon-o-information-circle class="h-4 w-4 text-gray-400" />
+                                        </span>
+                                        <input type="checkbox" x-model="includeDatasheets" class="sr-only">
                                         <span
-                                            x-bind:class="includeDatasheets ? 'translate-x-5' : ''"
-                                            class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"
-                                        ></span>
-                                    </span>
-                                </label>
+                                            x-bind:class="includeDatasheets ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"
+                                            class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition"
+                                            aria-hidden="true"
+                                        >
+                                            <span
+                                                x-bind:class="includeDatasheets ? 'translate-x-5' : ''"
+                                                class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"
+                                            ></span>
+                                        </span>
+                                    </label>
+
+                                    <label class="flex items-center justify-between gap-3 border-l border-gray-200 pl-4 dark:border-white/10">
+                                        <span>Include legal page</span>
+                                        <input type="checkbox" x-model="includeLegalPage" class="sr-only">
+                                        <span
+                                            x-bind:class="includeLegalPage ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"
+                                            class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition"
+                                            aria-hidden="true"
+                                        >
+                                            <span
+                                                x-bind:class="includeLegalPage ? 'translate-x-5' : ''"
+                                                class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"
+                                            ></span>
+                                        </span>
+                                    </label>
+                                </div>
 
                                 <div class="mt-4 space-y-3">
                                     @if($validationPassed && $quoteApproved)
                                         <button
                                             type="button"
-                                            x-on:click="openTenderDialog()"
+                                            x-on:click="generateQuote()"
                                             class="{{ $primaryButtonClasses }}"
                                         >
                                             Generate Quote PDF
@@ -941,6 +960,7 @@
             </div>
         </div>
 
+        @if($hasQuoteTenders)
         <div
             x-cloak
             x-show="open"
@@ -957,7 +977,7 @@
                 <div class="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4 dark:border-white/10">
                     <div>
                         <h2 id="quote-tender-title" class="text-lg font-semibold text-gray-950 dark:text-white">Choose Tenders</h2>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400" x-text="tenders.length > 0 ? 'Select the contractors that need their own quote cover sheet.' : 'Choose whether to include a customer cover sheet.'"></p>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Select the contractors that need their own quote cover sheet.</p>
                     </div>
                     <button type="button" x-on:click="! generating && close()" class="rounded-md p-1 text-gray-400 transition hover:text-gray-700 dark:hover:text-gray-200">
                         <x-heroicon-o-x-mark class="h-6 w-6" />
@@ -989,7 +1009,7 @@
                                         <span class="truncate text-sm font-semibold text-gray-950 dark:text-white" x-text="tender.name"></span>
                                         <span x-show="tender.is_primary" class="rounded-md border border-orange-400/40 bg-orange-400/15 px-2 py-0.5 text-[11px] font-semibold text-orange-200">Primary</span>
                                     </div>
-                                    <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400" x-text="tender.city || (tender.is_customer ? customerName : 'No city recorded')"></p>
+                                    <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400" x-text="tender.city || 'No city recorded'"></p>
                                 </div>
                                 <div class="min-w-32 text-right text-sm">
                                     <template x-if="results[tender.id]?.url">
@@ -1029,6 +1049,7 @@
                 </div>
             </div>
         </div>
+        @endif
     </div>
 
     @once
@@ -1051,8 +1072,8 @@
                     dotCount: 1,
                     dotTimer: null,
                     includeDatasheets: Boolean(config.includeDatasheets),
+                    includeLegalPage: config.includeLegalPage !== false,
                     quoteUrl: config.quoteUrl,
-                    customerName: config.customerName || 'Customer',
                     scheduleUrl: config.scheduleUrl,
                     includeScheduleDatasheets: Boolean(config.includeScheduleDatasheets),
                     prepareUrl: config.prepareUrl,
@@ -1148,8 +1169,20 @@
 
                         this.open = true;
                     },
+                    generateQuote() {
+                        if (this.tenders.length > 0) {
+                            this.openTenderDialog();
+
+                            return;
+                        }
+
+                        window.open(this.directQuoteUrl(), '_blank', 'noopener');
+                    },
                     directQuoteUrl() {
                         const url = new URL(this.quoteUrl, window.location.origin);
+
+                        url.searchParams.set('include_cover', '0');
+                        url.searchParams.set('include_legal_page', this.includeLegalPage ? '1' : '0');
 
                         if (this.includeDatasheets) {
                             url.searchParams.set('include_datasheets', '1');
@@ -1177,17 +1210,8 @@
                     close() {
                         this.open = false;
                     },
-                    customerCoverOption() {
-                        return {
-                            id: 'customer',
-                            name: 'Include Cover sheet to Customer',
-                            city: this.customerName,
-                            is_primary: false,
-                            is_customer: true,
-                        };
-                    },
                     quoteCoverOptions() {
-                        return this.tenders.length > 0 ? this.tenders : [this.customerCoverOption()];
+                        return this.tenders;
                     },
                     selectAll() {
                         for (const tender of this.quoteCoverOptions()) {
@@ -1267,7 +1291,7 @@
 
                             for (const tender of selectedTenders) {
                                 this.status[tender.id] = 'Generating...';
-                                const prepared = await this.prepareQuote(tender.is_customer ? null : tender.id, true, datasheetToken);
+                                const prepared = await this.prepareQuote(tender.id, true, datasheetToken);
                                 this.results[tender.id] = prepared;
                                 this.status[tender.id] = 'Ready';
 
@@ -1290,6 +1314,7 @@
                         const payload = {
                             include_cover: includeCover,
                             include_datasheets: this.includeDatasheets,
+                            include_legal_page: this.includeLegalPage,
                             salesforce_upload: true,
                         };
                         const areaIds = this.outputAreaIds();

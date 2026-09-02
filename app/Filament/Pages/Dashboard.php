@@ -213,14 +213,45 @@ class Dashboard extends BaseDashboard
                     return null;
                 }
 
+                $parameters = [
+                    'project' => $project,
+                    'revision' => $revision->id,
+                ];
+                $payload = $log->payload ?? [];
+
+                if ((bool) ($payload['include_datasheets'] ?? false)) {
+                    $parameters['include_datasheets'] = true;
+                }
+
+                if ($routeName === 'projects.pdf.quote') {
+                    if (filled($payload['tender_id'] ?? null)) {
+                        $parameters['tender_id'] = (int) $payload['tender_id'];
+                    }
+
+                    if (array_key_exists('include_cover', $payload)) {
+                        $parameters['include_cover'] = (bool) $payload['include_cover'];
+                    }
+
+                    if (array_key_exists('include_legal_page', $payload)) {
+                        $parameters['include_legal_page'] = (bool) $payload['include_legal_page'];
+                    }
+                }
+
+                $areaIds = collect($payload['area_ids'] ?? [])
+                    ->map(fn (mixed $areaId): int => (int) $areaId)
+                    ->filter(fn (int $areaId): bool => $areaId > 0)
+                    ->values()
+                    ->all();
+
+                if ($areaIds !== []) {
+                    $parameters['area_ids'] = $areaIds;
+                }
+
                 return $this->outputRow(
                     $project,
                     $revision,
                     $log->created_at,
-                    route($routeName, [
-                        'project' => $project,
-                        'revision' => $revision->id,
-                    ]),
+                    route($routeName, $parameters),
                 );
             })
             ->filter()

@@ -50,6 +50,7 @@ class AdminDashboardTest extends TestCase
         $quoteRevision = $quoteProject->activeRevision;
         $this->activityLog($admin, $quoteProject, 'quote_pdf.generated', now()->subMinutes(3), $quoteRevision, [
             'filename' => 'quote-output.pdf',
+            'include_legal_page' => false,
         ]);
 
         $packProject = Project::factory()->create(['name' => 'Pack Output Project']);
@@ -79,10 +80,11 @@ class AdminDashboardTest extends TestCase
             ]), false)
             ->assertSee('Recent Quotes')
             ->assertSee('Quote Output Project')
-            ->assertSee(route('projects.pdf.quote', [
+            ->assertSee(e(route('projects.pdf.quote', [
                 'project' => $quoteProject,
                 'revision' => $quoteRevision->id,
-            ]), false)
+                'include_legal_page' => false,
+            ])), false)
             ->assertSee('Recent Document Packs')
             ->assertSee('Document pack')
             ->assertSee('Tender Pack')
