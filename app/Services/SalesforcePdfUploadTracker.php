@@ -142,6 +142,10 @@ class SalesforcePdfUploadTracker
      */
     private function quoteCoverTenderPayload(Project $project, ?ProjectTender $tender = null): ?array
     {
+        if ($tender !== null && (int) $tender->project_id !== (int) $project->getKey()) {
+            return null;
+        }
+
         $tender ??= $project->tenders()
             ->where('is_primary', true)
             ->first()

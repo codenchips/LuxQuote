@@ -1908,6 +1908,42 @@ class AdminProjectResourceTest extends TestCase
         $this->assertTrue($pdfService->includeCover);
     }
 
+    public function test_quote_generation_rejects_a_tender_from_another_project(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        $otherProject = Project::factory()->for($admin)->create();
+        $otherTender = ProjectTender::create([
+            'project_id' => $otherProject->id,
+            'salesforce_account_id' => '001000000000003AAA',
+            'account_name' => 'Wrong Project Contractor',
+            'is_primary' => true,
+            'created_by_id' => $admin->id,
+        ]);
+
+        $this->postJson(route('projects.pdf.quote.prepare', [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+        ]), [
+            'include_cover' => true,
+            'tender_id' => $otherTender->id,
+        ])->assertNotFound();
+
+        $this->assertDatabaseMissing(ActivityLog::class, [
+            'project_id' => $project->id,
+            'action_type' => 'quote_pdf.generated',
+        ]);
+    }
+
     public function test_pdf_template_shows_sales_engineer_and_line_columns_in_requested_order(): void
     {
         $admin = User::factory()->admin()->create();

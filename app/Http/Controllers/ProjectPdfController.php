@@ -236,54 +236,60 @@ class ProjectPdfController extends Controller
             areaIds: $areaIds,
         );
 
-        if ($this->shouldUploadPdfToSalesforce($request, $project)) {
-            $pdf = app(ProjectSchedulePdfService::class);
+        try {
+            if ($this->shouldUploadPdfToSalesforce($request, $project)) {
+                $pdf = app(ProjectSchedulePdfService::class);
 
-            $this->uploadPdfToSalesforce(
-                project: $project,
-                revision: $revision,
-                filename: $pdf->salesforceQuoteFilename($project, $revision, $includeCover ? $tender : null, $areaIds),
-                pdfContent: $quotePdf['content'],
-                documentLabel: 'Lighting Quote',
-                documentType: $this->quoteSalesforceDocumentType($tender, $includeCover),
-                fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint(
-                    $project,
-                    $revision,
-                    'quote',
-                    true,
-                    $request->boolean('include_datasheets'),
-                    $includeCover,
-                    $includeCover ? $tender : null,
-                    $areaIds,
-                    $includeLegalPage,
-                ),
-            );
+                $this->uploadPdfToSalesforce(
+                    project: $project,
+                    revision: $revision,
+                    filename: $pdf->salesforceQuoteFilename($project, $revision, $includeCover ? $tender : null, $areaIds),
+                    pdfContent: $quotePdf['content'],
+                    documentLabel: 'Lighting Quote',
+                    documentType: $this->quoteSalesforceDocumentType($tender, $includeCover),
+                    fingerprintHash: app(SalesforcePdfUploadTracker::class)->fingerprint(
+                        $project,
+                        $revision,
+                        'quote',
+                        true,
+                        $request->boolean('include_datasheets'),
+                        $includeCover,
+                        $includeCover ? $tender : null,
+                        $areaIds,
+                        $includeLegalPage,
+                    ),
+                );
+            }
+
+            ActivityLog::create([
+                'user_id' => $request->user()->id,
+                'project_id' => $project->id,
+                'action_type' => 'quote_pdf.generated',
+                'user_email_snapshot' => $request->user()->email,
+                'project_name_snapshot' => $project->name,
+                'revision_number' => $revision->revision_number,
+                'payload' => $this->pdfActivityPayload(
+                    filename: $quotePdf['pdf']['filename'],
+                    revision: $revision,
+                    includeDatasheets: $request->boolean('include_datasheets'),
+                    areaIds: $areaIds,
+                    tender: $tender,
+                    includeCover: $includeCover,
+                    includeLegalPage: $includeLegalPage,
+                ) + [
+                    'filename' => $quotePdf['pdf']['filename'],
+                    'tender' => $tender?->account_name,
+                ],
+            ]);
+
+            $project->markQuoted($revision);
+
+            return response()->json($downloads->register($quotePdf['pdf'], $request->user()->id));
+        } catch (Throwable $exception) {
+            app(ProjectLegalPdfService::class)->delete($quotePdf['pdf']['path']);
+
+            throw $exception;
         }
-
-        ActivityLog::create([
-            'user_id' => $request->user()->id,
-            'project_id' => $project->id,
-            'action_type' => 'quote_pdf.generated',
-            'user_email_snapshot' => $request->user()->email,
-            'project_name_snapshot' => $project->name,
-            'revision_number' => $revision->revision_number,
-            'payload' => $this->pdfActivityPayload(
-                filename: $quotePdf['pdf']['filename'],
-                revision: $revision,
-                includeDatasheets: $request->boolean('include_datasheets'),
-                areaIds: $areaIds,
-                tender: $tender,
-                includeCover: $includeCover,
-                includeLegalPage: $includeLegalPage,
-            ) + [
-                'filename' => $quotePdf['pdf']['filename'],
-                'tender' => $tender?->account_name,
-            ],
-        ]);
-
-        $project->markQuoted($revision);
-
-        return response()->json($downloads->register($quotePdf['pdf'], $request->user()->id));
     }
 
     public function prepareQuoteDatasheets(Request $request, Project $project, PdfDownloadUrlService $downloads): JsonResponse

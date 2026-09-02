@@ -178,7 +178,10 @@ class ProjectSchedulePdfService
     {
         $quoteContent = $this->contentFromBuilder($this->quoteBuilder($project, $revision, $areaIds));
 
-        if (! $includeCover || ($tender === null && ! $project->tenders()->exists())) {
+        $tenderBelongsToProject = $tender === null
+            || (int) $tender->project_id === (int) $project->getKey();
+
+        if (! $includeCover || ! $tenderBelongsToProject || ($tender === null && ! $project->tenders()->exists())) {
             return $quoteContent;
         }
 
@@ -237,6 +240,10 @@ class ProjectSchedulePdfService
      */
     private function quoteCoverContractor(Project $project, ?ProjectTender $tender = null): array
     {
+        if ($tender !== null && (int) $tender->project_id !== (int) $project->getKey()) {
+            $tender = null;
+        }
+
         $tender ??= $project->tenders()
             ->where('is_primary', true)
             ->first()

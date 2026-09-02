@@ -358,6 +358,58 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         ]);
     }
 
+    public function test_prepared_quote_pdf_with_optional_legal_page_is_uploaded_to_salesforce(): void
+    {
+        config(['services.salesforce.url' => 'https://example.my.salesforce.com']);
+
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()
+            ->for($admin)
+            ->create([
+                'reference_number' => 'QT-PREPARED',
+                'salesforce_project' => true,
+                'salesforce_id' => '006000000000001AAA',
+            ]);
+
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        $this->instance(ProjectSchedulePdfService::class, $this->fakePdfService(
+            scheduleFilename: 'lighting-schedule-QT-PREPARED-P1.pdf',
+            quoteFilename: 'lighting-quote-QT-PREPARED-P1.pdf',
+            responseBody: 'fake quote pdf',
+        ));
+
+        $this->fakeSuccessfulSalesforcePdfUpload();
+
+        $this->postJson(route('projects.pdf.quote.prepare', [
+            'project' => $project,
+            'revision' => $project->active_revision_id,
+        ]), [
+            'include_legal_page' => false,
+            'salesforce_upload' => true,
+        ])->assertOk()
+            ->assertJsonPath('filename', 'lighting-quote-QT-PREPARED-P1.pdf');
+
+        $this->assertContentVersionUploadWasSent('Lighting-Quote-QT-PREPARED-P1.pdf');
+        $this->assertDatabaseHas('activity_logs', [
+            'project_id' => $project->id,
+            'action_type' => 'quote_pdf.generated',
+            'revision_number' => 1,
+        ]);
+        $this->assertFalse((bool) ActivityLog::query()
+            ->where('project_id', $project->id)
+            ->where('action_type', 'quote_pdf.generated')
+            ->latest('id')
+            ->value('payload->include_legal_page'));
+    }
+
     public function test_user_without_quote_permissions_cannot_generate_or_upload_quote_pdf(): void
     {
         $user = User::factory()->create();
