@@ -427,7 +427,7 @@ class AdminDocumentPackTest extends TestCase
         $process->mustRun();
 
         $this->assertSame('2', trim($process->getOutput()));
-        $this->assertSame('PACK-001-Warehouse-Upgrade-TL-DP-P1.pdf', $generated['filename']);
+        $this->assertSame('PACK-001-WarehouseUpgrade-TL-DP-P01.pdf', $generated['filename']);
 
         File::delete($generated['path']);
     }
@@ -462,7 +462,7 @@ class AdminDocumentPackTest extends TestCase
         $process->mustRun();
 
         $this->assertSame('1', trim($process->getOutput()));
-        $this->assertSame('LEGAL-001-Office-Upgrade-TL-DP-P1.pdf', $generated['filename']);
+        $this->assertSame('LEGAL-001-OfficeUpgrade-TL-DP-P01.pdf', $generated['filename']);
 
         File::delete($generated['path']);
     }
@@ -617,7 +617,7 @@ class AdminDocumentPackTest extends TestCase
             'revision' => $project->active_revision_id,
         ]));
 
-        $response->assertOk()->assertDownload('DOWNLOAD-001-School-Upgrade-TL-DP-P1.pdf');
+        $response->assertOk()->assertDownload('DOWNLOAD-001-SchoolUpgrade-TL-DP-P01.pdf');
 
         $this->assertDatabaseHas('activity_logs', [
             'project_id' => $project->id,

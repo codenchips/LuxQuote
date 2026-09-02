@@ -2472,7 +2472,7 @@ class AdminProjectResourceTest extends TestCase
 
         $response->assertOk();
         $response->assertHeader('content-type', 'text/csv; charset=UTF-8');
-        $response->assertDownload('CSV-001-CSV-Project-TL-LS-P1.csv');
+        $response->assertDownload('CSV-001-CSVProject-TL-LS-P01.csv');
 
         $csv = $response->streamedContent();
 

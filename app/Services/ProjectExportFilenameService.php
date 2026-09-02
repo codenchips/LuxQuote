@@ -31,19 +31,24 @@ class ProjectExportFilenameService
             throw new InvalidArgumentException('The filename extension is invalid.');
         }
 
-        return collect([
-            $project->reference_number ?? 'Project-'.$project->id,
-            $project->name,
+        return implode('-', [
+            $this->filenamePart($project->reference_number ?: 'Project-'.$project->id),
+            $this->projectNamePart($project->name),
             'TL',
             $documentTypeCode,
-            $revision->label(),
-        ])
-            ->map(fn (?string $part): string => $this->filenamePart($part ?: 'Project'))
-            ->implode('-').'.'.$extension;
+            sprintf('P%02d', $revision->revision_number),
+        ]).'.'.$extension;
     }
 
     private function filenamePart(string $part): string
     {
         return trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', $part), '-');
+    }
+
+    private function projectNamePart(?string $projectName): string
+    {
+        $projectName = (string) preg_replace('/[^A-Za-z0-9]+/', '', $projectName ?? '');
+
+        return $projectName !== '' ? $projectName : 'Project';
     }
 }

@@ -754,26 +754,27 @@ class SalesforceSchedulePdfUploadTest extends TestCase
                 'reference_number' => 'REF 123',
                 'name' => 'City Hospital Upgrade',
             ]);
+        $project->activeRevision->update(['revision_number' => 5]);
 
         $service = app(ProjectSchedulePdfService::class);
 
         $this->assertSame(
-            'REF-123-City-Hospital-Upgrade-TL-LS-P1.pdf',
+            'REF-123-CityHospitalUpgrade-TL-LS-P05.pdf',
             $service->filename($project, $project->activeRevision),
         );
 
         $this->assertSame(
-            'REF-123-City-Hospital-Upgrade-TL-PQ-P1.pdf',
+            'REF-123-CityHospitalUpgrade-TL-PQ-P05.pdf',
             $service->quoteFilename($project, $project->activeRevision),
         );
 
         $this->assertSame(
-            'REF-123-City-Hospital-Upgrade-TL-LS-P1.pdf',
+            'REF-123-CityHospitalUpgrade-TL-LS-P05.pdf',
             $service->salesforceScheduleFilename($project, $project->activeRevision),
         );
 
         $this->assertSame(
-            'REF-123-City-Hospital-Upgrade-TL-PQ-P1.pdf',
+            'REF-123-CityHospitalUpgrade-TL-PQ-P05.pdf',
             $service->salesforceQuoteFilename($project, $project->activeRevision),
         );
     }
