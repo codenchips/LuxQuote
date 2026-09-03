@@ -437,6 +437,32 @@ journalctl -t luxquote-db-backup --since today
 
 The backup command is read-only with respect to MySQL. A restore is destructive because it replaces current database state and must only be run after explicitly selecting and confirming the intended archive.
 
+## Generated PDF Storage Cleanup
+
+Quote, Schedule, datasheet, and Document Pack generation uses private working and output directories. Successful requests normally remove or relocate their generated files, but interrupted requests can leave abandoned output behind. LuxQuote schedules `app:prune-generated-pdfs` for 23 minutes past every hour with overlap protection.
+
+Install the standard Laravel scheduler entry once in root's crontab:
+
+```cron
+* * * * * cd /home/tamliteco/luxquote.app && docker compose exec -T laravel.test php artisan schedule:run >> storage/logs/scheduler.log 2>&1
+```
+
+The cleanup removes recognised generated files from `legal-merge-outputs`, `datasheet-merge-outputs`, and `document-pack-outputs` after 24 hours; prepared download PDFs/ZIPs after 60 minutes; and abandoned UUID working directories after 24 hours. It never scans or removes persistent uploads in `storage/app/private/document-packs`.
+
+Preview the eligible files without deleting anything:
+
+```bash
+docker compose exec -T laravel.test php artisan app:prune-generated-pdfs --dry-run
+```
+
+Run the cleanup immediately when required:
+
+```bash
+docker compose exec -T laravel.test php artisan app:prune-generated-pdfs
+```
+
+The default retention periods can be overridden with `GENERATED_PDF_OUTPUT_RETENTION_HOURS`, `GENERATED_PDF_DOWNLOAD_RETENTION_MINUTES`, and `GENERATED_PDF_TEMP_RETENTION_HOURS` before rebuilding the configuration cache.
+
 ## Docker Disk Cleanup
 
 Docker build cache and old images can consume significant disk space on the VPS. The deploy script prunes build cache older than 24 hours after successful deploys, and `scripts/production-docker-cleanup.sh` can be run manually or from cron for broader safe cleanup.

@@ -41,6 +41,7 @@ _Last updated: 1 September 2026_
 - **Revision always shown on PDFs**: Quote and Schedule PDFs show the revision from the initial `P1` output onward, including the quote cover reference.
 - **Standard export filenames**: Generated files use `Reference-ProjectName-TL-Type-Pnn.ext`: project-name whitespace and punctuation are removed, and revision numbers are padded to at least two digits (for example, `20930-PortOfDover-TL-LS-P05.pdf`). Lighting Schedules use `LS`, Project Quotes use `PQ`, and Document Packs use `DP`.
 - **Timestamp-free output names**: Quote and Schedule PDFs, Salesforce PDF versions, quote datasheet outputs, quote ZIPs, schedule CSVs, and Document Packs no longer include generated date/time suffixes.
+- **Generated PDF cleanup**: Laravel schedules `app:prune-generated-pdfs` hourly with overlap protection. It removes only recognised expired generated outputs, prepared downloads, and abandoned UUID working directories; persistent Document Pack uploads are explicitly outside its cleanup targets. A `--dry-run` mode previews eligible storage safely.
 
 ---
 
