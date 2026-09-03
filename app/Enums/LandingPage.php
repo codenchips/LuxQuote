@@ -8,6 +8,7 @@ use App\Filament\Resources\ActivityLogs\ActivityLogResource;
 use App\Filament\Resources\PermissionGroups\PermissionGroupResource;
 use App\Filament\Resources\Products\ProductResource;
 use App\Filament\Resources\Projects\ProjectResource;
+use App\Filament\Resources\ResourceFiles\ResourceFileResource;
 use App\Filament\Resources\SpecialOrderCodes\SpecialOrderCodeResource;
 use App\Filament\Resources\Teams\TeamResource;
 use App\Filament\Resources\Users\UserResource;
@@ -23,6 +24,7 @@ enum LandingPage: string
     case History = 'history';
     case Specials = 'specials';
     case Products = 'products';
+    case Resources = 'resources';
     case Users = 'users';
     case Groups = 'groups';
     case Teams = 'teams';
@@ -37,6 +39,7 @@ enum LandingPage: string
             self::History => 'History',
             self::Specials => 'Specials',
             self::Products => 'Products',
+            self::Resources => 'Resources',
             self::Users => 'Users',
             self::Groups => 'Groups',
             self::Teams => 'Teams',
@@ -53,6 +56,7 @@ enum LandingPage: string
             self::History => ActivityLogResource::getUrl('index'),
             self::Specials => SpecialOrderCodeResource::getUrl('index'),
             self::Products => ProductResource::getUrl('index'),
+            self::Resources => ResourceFileResource::getUrl('index'),
             self::Users => UserResource::getUrl('index'),
             self::Groups => PermissionGroupResource::getUrl('index'),
             self::Teams => TeamResource::getUrl('index'),
@@ -69,6 +73,7 @@ enum LandingPage: string
             self::History => PermissionKey::ActivityLogView,
             self::Specials => PermissionKey::SpecialsManage,
             self::Products => PermissionKey::ProductsView,
+            self::Resources => PermissionKey::ResourcesView,
             self::Users => PermissionKey::UsersView,
             self::Groups => PermissionKey::PermissionsManage,
             self::Teams => PermissionKey::TeamsManage,
@@ -95,6 +100,7 @@ enum LandingPage: string
                 self::History->value => self::History->label(),
                 self::Specials->value => self::Specials->label(),
                 self::Products->value => self::Products->label(),
+                self::Resources->value => self::Resources->label(),
             ],
             'Users' => [
                 self::Users->value => self::Users->label(),

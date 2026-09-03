@@ -94,6 +94,16 @@ They add project currency, change only the default revision for future projects,
 
 The first Docker image build after an older build cache has expired can spend several minutes printing package installation output from `docker/8.5/Dockerfile`. That output is expected during `docker compose up -d --build` and is not, by itself, a runner loop. Do not start a second deployment while the first workflow is still running. The existing persistent `luxquote-production` runner does not need to be recreated for this release when it remains online and its logs end with `Listening for Jobs`.
 
+## Pending Resources Library Rollout
+
+The Resources feature adds one forward-only migration:
+
+- `2026_09_03_094427_create_resource_files_table`
+- `2026_09_03_114115_add_resource_permissions`
+- `2026_09_03_114829_disable_resource_permissions_for_non_admin_groups`
+
+The first migration creates a new metadata table, the second adds the four `resources.*` permission catalogue entries, and the third guarantees that their rollout defaults are off for every group except Admin. The third migration also safely corrects local or staging databases where the earlier temporary defaults were already applied. None alters or deletes existing business records or uploaded files. The normal production workflow will run all three with the existing `php artisan migrate --force --no-interaction` step, and `resource_files` is included in the deploy data-loss guard. Uploaded files live under `storage/app/private/resources`; the production bind mount preserves that directory across container rebuilds and Git checkouts. The current `backup-production-database.sh` job is database-only and therefore does not back up the uploaded file contents.
+
 ## Salesforce Visits Calendar Release Checklist
 
 The Visits interface reads and mutates Salesforce `Event` records owned by a public Salesforce `Calendar`. Before the first production deployment, confirm the production integration user can:

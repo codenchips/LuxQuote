@@ -6,13 +6,16 @@ use App\Enums\LandingPage;
 use App\Filament\Resources\PermissionGroups\Pages\CreatePermissionGroup;
 use App\Filament\Resources\PermissionGroups\Pages\EditPermissionGroup;
 use App\Filament\Resources\PermissionGroups\Pages\ListPermissionGroups;
+use App\Filament\Resources\PermissionGroups\Schemas\PermissionGroupForm;
 use App\Filament\Resources\Permissions\Pages\ListPermissions;
 use App\Filament\Resources\Permissions\PermissionResource;
 use App\Filament\Resources\Users\Pages\CreateUser;
 use App\Models\Permission;
 use App\Models\PermissionGroup;
 use App\Models\User;
+use Filament\Forms\Components\CheckboxList;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -40,10 +43,11 @@ class AdminPermissionResourceTest extends TestCase
     {
         $this->actingAs($this->adminUser());
 
-        $permissions = Permission::whereIn('key', [
+        $projectPermissions = Permission::whereIn('key', [
             'projects.view',
             'projects.create',
         ])->pluck('id')->all();
+        $resourcePermission = Permission::where('key', 'resources.view')->value('id');
 
         Livewire::test(CreatePermissionGroup::class)
             ->fillForm([
@@ -51,7 +55,8 @@ class AdminPermissionResourceTest extends TestCase
                 'slug' => 'estimators',
                 'description' => 'Estimator access',
                 'default_landing_page' => LandingPage::Projects->value,
-                'permissions' => $permissions,
+                'project_permissions' => $projectPermissions,
+                'resources_permissions' => [$resourcePermission],
             ])
             ->call('create')
             ->assertHasNoFormErrors();
@@ -59,8 +64,64 @@ class AdminPermissionResourceTest extends TestCase
         $group = PermissionGroup::where('slug', 'estimators')->firstOrFail();
         $permissionKeys = $group->permissions()->pluck('key')->sort()->values()->all();
 
-        $this->assertSame(['projects.create', 'projects.view'], $permissionKeys);
+        $this->assertSame(['projects.create', 'projects.view', 'resources.view'], $permissionKeys);
         $this->assertSame(LandingPage::Projects, $group->default_landing_page);
+    }
+
+    public function test_permission_settings_are_grouped_once_by_area(): void
+    {
+        $this->actingAs($this->adminUser());
+
+        $component = Livewire::test(CreatePermissionGroup::class);
+
+        foreach (array_keys(PermissionGroupForm::permissionAreas()) as $area) {
+            $component->assertFormFieldExists(Str::snake($area).'_permissions');
+        }
+
+        $mappedCategories = collect(PermissionGroupForm::permissionAreas())->flatten();
+        $databaseCategories = Permission::query()->distinct()->pluck('category');
+
+        $this->assertCount($mappedCategories->unique()->count(), $mappedCategories);
+        $this->assertEqualsCanonicalizing($databaseCategories->all(), $mappedCategories->all());
+    }
+
+    public function test_permission_search_filters_all_areas_from_one_field(): void
+    {
+        $this->actingAs($this->adminUser());
+
+        $component = Livewire::test(CreatePermissionGroup::class)
+            ->assertFormFieldExists('permission_search');
+
+        foreach (array_keys(PermissionGroupForm::permissionAreas()) as $area) {
+            $component->assertFormFieldExists(
+                Str::snake($area).'_permissions',
+                checkFieldUsing: fn (CheckboxList $field): bool => $field->isSearchable()
+                    && $field->getExtraAlpineAttributeBag()->get('x-on:permission-search.window') === 'search = $event.detail',
+            );
+        }
+    }
+
+    public function test_saving_with_an_active_permission_search_preserves_hidden_assignments(): void
+    {
+        $admin = $this->adminUser();
+        $group = PermissionGroup::where('slug', 'user')->firstOrFail();
+        $permissions = Permission::whereIn('key', [
+            'projects.view',
+            'resources.delete',
+        ])->get();
+
+        $group->permissions()->sync($permissions->modelKeys());
+        $this->actingAs($admin);
+
+        Livewire::test(EditPermissionGroup::class, ['record' => $group->getRouteKey()])
+            ->fillForm(['permission_search' => 'resources.delete'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertEqualsCanonicalizing(
+            ['projects.view', 'resources.delete'],
+            $group->fresh()->permissions()->pluck('key')->all(),
+        );
     }
 
     public function test_admin_can_update_a_group_landing_page(): void

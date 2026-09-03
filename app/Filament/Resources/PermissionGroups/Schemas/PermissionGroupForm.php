@@ -11,10 +11,23 @@ use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 
 class PermissionGroupForm
 {
+    /** @var array<string, array<int, string>> */
+    private const PermissionAreas = [
+        'Project' => ['Projects', 'Revisions', 'History', 'Output'],
+        'Users' => ['Users & Admin'],
+        'Calendar' => ['Calendar'],
+        'Pricing' => ['Pricing'],
+        'Salesforce' => ['Salesforce'],
+        'Products' => ['Products'],
+        'Resources' => ['Resources'],
+        'Validation' => ['Validation'],
+    ];
+
     public static function configure(Schema $schema): Schema
     {
         return $schema
@@ -48,22 +61,68 @@ class PermissionGroupForm
                             ->helperText('Users in this group will open here after login. Dashboard is used if they do not have access to the selected page.')
                             ->columnSpanFull(),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull(),
 
                 Section::make('Permissions')
                     ->description('Choose the app capabilities this group should have.')
                     ->schema([
-                        CheckboxList::make('permissions')
+                        TextInput::make('permission_search')
+                            ->label('Search permissions')
+                            ->placeholder('Search all permissions')
+                            ->extraAlpineAttributes([
+                                'x-on:input.debounce.300ms' => '$dispatch(\'permission-search\', $event.target.value)',
+                            ])
+                            ->dehydrated(false)
+                            ->columnSpanFull(),
+                        ...self::permissionAreaSections(),
+                    ])
+                    ->columns(2)
+                    ->columnSpanFull(),
+            ]);
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    public static function permissionAreas(): array
+    {
+        return self::PermissionAreas;
+    }
+
+    /**
+     * @return array<int, Section>
+     */
+    private static function permissionAreaSections(): array
+    {
+        return collect(self::PermissionAreas)
+            ->map(function (array $categories, string $area): Section {
+                $statePath = Str::snake($area).'_permissions';
+                $isProjectArea = $area === 'Project';
+
+                $section = Section::make($area)
+                    ->schema([
+                        CheckboxList::make($statePath)
+                            ->hiddenLabel()
                             ->relationship(
+                                name: 'permissions',
                                 titleAttribute: 'name',
-                                modifyQueryUsing: fn ($query) => $query
-                                    ->orderBy('category')
+                                modifyQueryUsing: fn (Builder $query): Builder => $query
+                                    ->whereIn('category', $categories)
                                     ->orderBy('name'),
                             )
                             ->searchable()
+                            ->extraAlpineAttributes([
+                                'class' => 'lux-shared-permission-search-list',
+                                'x-on:permission-search.window' => 'search = $event.detail',
+                            ])
                             ->bulkToggleable()
-                            ->columns(2),
-                    ]),
-            ]);
+                            ->columns($isProjectArea ? 3 : 2),
+                    ]);
+
+                return $isProjectArea ? $section->columnSpanFull() : $section;
+            })
+            ->values()
+            ->all();
     }
 }

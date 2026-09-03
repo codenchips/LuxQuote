@@ -17,6 +17,7 @@ class AdminPermissionGateTest extends TestCase
 
     public function test_default_groups_have_expected_permissions(): void
     {
+        $admin = User::factory()->admin()->create();
         $user = User::factory()->create();
         $sales = User::factory()->sales()->create();
         $technical = User::factory()->technical()->create();
@@ -32,6 +33,14 @@ class AdminPermissionGateTest extends TestCase
         $this->assertTrue($user->can('calendar.update'));
         $this->assertTrue($user->can('calendar.create'));
         $this->assertTrue($user->can('calendar.delete'));
+        $this->assertTrue($admin->can('resources.view'));
+        $this->assertTrue($admin->can('resources.create'));
+        $this->assertTrue($admin->can('resources.update'));
+        $this->assertTrue($admin->can('resources.delete'));
+        $this->assertFalse($user->can('resources.view'));
+        $this->assertFalse($user->can('resources.create'));
+        $this->assertFalse($user->can('resources.update'));
+        $this->assertFalse($user->can('resources.delete'));
         $this->assertFalse($user->can('pricing.view'));
 
         $this->assertTrue($sales->can('pricing.view'));
@@ -43,6 +52,10 @@ class AdminPermissionGateTest extends TestCase
         $this->assertTrue($sales->can('calendar.update'));
         $this->assertTrue($sales->can('calendar.create'));
         $this->assertTrue($sales->can('calendar.delete'));
+        $this->assertFalse($sales->can('resources.view'));
+        $this->assertFalse($sales->can('resources.create'));
+        $this->assertFalse($sales->can('resources.update'));
+        $this->assertFalse($sales->can('resources.delete'));
 
         $this->assertTrue($technical->can('projects.update-lines'));
         $this->assertTrue($technical->can('projects.manage-tenders'));
@@ -55,6 +68,10 @@ class AdminPermissionGateTest extends TestCase
         $this->assertTrue($technical->can('calendar.update'));
         $this->assertTrue($technical->can('calendar.create'));
         $this->assertTrue($technical->can('calendar.delete'));
+        $this->assertFalse($technical->can('resources.view'));
+        $this->assertFalse($technical->can('resources.create'));
+        $this->assertFalse($technical->can('resources.update'));
+        $this->assertFalse($technical->can('resources.delete'));
 
         $this->assertTrue($manager->can('projects.create'));
         $this->assertTrue($manager->can('projects.update-lines'));
@@ -68,6 +85,10 @@ class AdminPermissionGateTest extends TestCase
         $this->assertTrue($manager->can('calendar.update'));
         $this->assertTrue($manager->can('calendar.create'));
         $this->assertTrue($manager->can('calendar.delete'));
+        $this->assertFalse($manager->can('resources.view'));
+        $this->assertFalse($manager->can('resources.create'));
+        $this->assertFalse($manager->can('resources.update'));
+        $this->assertFalse($manager->can('resources.delete'));
         $this->assertFalse($manager->can('salesforce.manage-push'));
     }
 

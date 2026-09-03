@@ -16,6 +16,7 @@
         $canRequestQuoteApproval = $this->canRequestQuoteApproval();
         $canViewValidation = $this->canViewValidation();
         $canManageDocumentPacks = $this->canManageDocumentPacks();
+        $canSelectDocumentPackResources = $this->canSelectResourcesForDocumentPack();
         $canViewOutputHistory = $this->canViewOutputHistory();
         $includeQuoteDatasheets = $this->includeQuoteDatasheets;
         $includeQuoteLegalPage = $this->includeQuoteLegalPage;
@@ -199,8 +200,9 @@
                         </p>
                     </div>
 
-                    <div class="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+                    <div class="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
                         @if($this->documentPacks->isNotEmpty())
+                            <span class="whitespace-nowrap text-sm font-semibold text-gray-600 dark:text-gray-300">In this project</span>
                             <select
                                 wire:model="selectedDocumentPackId"
                                 wire:change="loadDocumentPack($event.target.value)"
@@ -220,12 +222,21 @@
                             <x-heroicon-o-plus class="h-4 w-4" />
                             New Pack
                         </button>
+
+                        <button
+                            type="button"
+                            wire:click="openDocumentPackTemplatePicker"
+                            class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-primary-400 px-3 text-sm font-semibold text-primary-700 transition hover:bg-primary-50 dark:border-primary-500/50 dark:text-primary-300 dark:hover:bg-primary-500/10"
+                        >
+                            <x-heroicon-o-rectangle-stack class="h-4 w-4" />
+                            Select a template
+                        </button>
                     </div>
                 </div>
 
                 <div class="mt-5 flex items-center gap-3 rounded-lg border border-sky-300 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900 dark:border-sky-500/50 dark:bg-sky-500/15 dark:text-sky-100">
                     <x-heroicon-o-information-circle class="h-5 w-5 shrink-0" />
-                    <span>This is work in progress and will include pack selection and templated documents.</span>
+                    <span>Templates preserve a reusable document order while Quote and Schedule content is generated for this project.</span>
                 </div>
 
                 <div class="mt-5 grid gap-4 md:grid-cols-2">
@@ -271,7 +282,9 @@
                     @foreach($documentPackItems as $itemKey => $item)
                         @php
                             $role = \App\Enums\DocumentPackItemRole::tryFrom($item['role']);
-                            $roleLabel = $role?->label();
+                            $roleLabel = filled($item['resource_display_name'] ?? null)
+                                ? $item['resource_display_name']
+                                : $role?->label();
                             $requiresUpload = $this->documentPackRoleRequiresUpload($item['role']);
                             $sourceLabel = $role?->source() === \App\Enums\DocumentPackItemSource::Template ? 'Template' : 'Generated';
                             $hasReplacementUpload = $this->documentPackItemHasActiveUpload($item);
@@ -279,7 +292,9 @@
                             $hasFile = $hasExistingFile || $hasReplacementUpload;
                             $uploadedFile = $documentPackUploads[$itemKey] ?? null;
                             $uploadedOriginalName = $documentPackUploadOriginalNames[$itemKey] ?? null;
-                            $displayFilename = $hasReplacementUpload && $uploadedFile ? ($uploadedOriginalName ?? $uploadedFile->getClientOriginalName()) : $item['original_filename'];
+                            $displayFilename = $hasReplacementUpload && $uploadedFile
+                                ? ($uploadedOriginalName ?? $uploadedFile->getClientOriginalName())
+                                : ($item['resource_display_name'] ?? $item['original_filename']);
                             $pdfPreviewUrl = $requiresUpload && $hasFile ? $this->documentPackItemPdfUrl($item) : null;
                             $isEmpty = blank($item['role']) || ($requiresUpload && ! $hasFile);
                         @endphp
@@ -410,11 +425,13 @@
                                 <div class="mt-3">
                                     <select
                                         wire:key="document-pack-role-{{ $itemKey }}"
-                                        wire:model.live="documentPackItems.{{ $itemKey }}.role"
-                                        wire:change="markDocumentPackDirty"
+                                        wire:change="selectDocumentPackRole('{{ $itemKey }}', $event.target.value)"
                                         class="block h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                                     >
                                         <option value="">Select a document...</option>
+                                        @if($canSelectDocumentPackResources)
+                                            <option value="select_resource">Select Resource</option>
+                                        @endif
                                         @foreach($this->documentPackRoleOptions() as $value => $label)
                                             <option value="{{ $value }}">{{ $label }}</option>
                                         @endforeach
@@ -548,6 +565,15 @@
                     @if($documentPackGenerationBlockReason)
                         <span class="text-xs font-medium text-amber-600 dark:text-amber-400">{{ $documentPackGenerationBlockReason }}</span>
                     @endif
+
+                    <button
+                        type="button"
+                        wire:click="openSaveDocumentPackTemplate"
+                        class="inline-flex h-10 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-300 px-4 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5 sm:w-56"
+                    >
+                        <x-heroicon-o-document-duplicate class="h-4 w-4" />
+                        Save as Template
+                    </button>
 
                     <button
                         type="button"
@@ -1051,6 +1077,24 @@
         </div>
         @endif
     </div>
+
+    @if($outputTab === 'packs' && $canSelectDocumentPackResources)
+        <x-document-pack-resource-picker
+            :project="$this->record"
+            :resources="$this->documentPackResourceRows()"
+            :total-rows="$this->documentPackResourceTotalRows()"
+            :total-pages="$this->documentPackResourceTotalPages()"
+            :current-page="$this->documentPackResourceCurrentPage()"
+            :preview-resource="$this->selectedDocumentPackResourcePreview()"
+        />
+    @endif
+
+    @if($outputTab === 'packs' && $canManageDocumentPacks)
+        <x-document-pack-template-dialogs
+            :templates="$this->documentPackTemplates"
+            :visibility-options="$this->documentPackTemplateVisibilityOptions()"
+        />
+    @endif
 
     @once
         <script>

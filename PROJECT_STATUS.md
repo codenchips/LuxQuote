@@ -1,6 +1,20 @@
 # Company App — Project Status
 
-_Last updated: 1 September 2026_
+_Last updated: 3 September 2026_
+
+---
+
+## Shared Resources Library — 3 September 2026
+
+- **Resources page**: A new **Admin → Resources** Filament resource lists uploaded business files with a file-type icon, editable display name, original-filename tooltip, date added, and compact view/edit/delete actions. Editing the display name stays in a compact table modal; previewable PDFs, images, CSV, and text files open in a large lightbox-style modal, while Office formats receive a clear download fallback in that same overlay.
+- **Private storage**: Resource contents are stored under Laravel's private `storage/app/private/resources` disk using generated filenames. The original filename is metadata only; viewing is streamed through an authenticated controller rather than a public storage URL.
+- **Upload controls**: Uploads are limited to PDFs, common Office documents, CSV/text files, and common web images up to 10 MB. Extension and detected MIME type are both checked, managed storage paths are validated, and missing or unreadable files fail closed without exposing filesystem paths.
+- **Lifecycle handling**: Renaming changes only the display name. Confirmed deletion removes both the database row and its managed private file; storage cleanup failures are logged without crashing the UI.
+- **Resource permissions**: `resources.view`, `resources.create`, `resources.update`, and `resources.delete` separately control standalone page/file access, uploads, display-name edits, and permanent deletion. All four default to Admin only; every other built-in or custom group must be granted them explicitly. Per-file permissions remain deferred. Resources is available as a group landing page only when `resources.view` is granted.
+- **Grouped permission editor**: Group create/edit forms organise every permission exactly once under Project, Users, Calendar, Pricing, Salesforce, Products, Resources, or Validation. Related revision, history, output, quote approval, group, and team capabilities are folded into their closest functional area, with one shared search across all areas and per-area Select all/Deselect all controls. Group Details and Permissions use separate full-width panels.
+- **Document Pack Resource picker**: The Document Pack builder can browse PDF-only Resources in a modal table, preview them in the existing lightbox style, and add a selected PDF to a pack tile. Saving copies the Resource into the pack's managed storage so the pack remains stable if the original library entry changes or is deleted. The standalone page remains gated by `resources.view`, while the picker follows the existing `output.manage-document-packs` permission.
+- **Reusable Document Pack templates**: Document Pack users can save the current ordered tile layout as an Open, Private, or Team template, then select any visible template as the starting point for another project's pack. Quote and Schedule remain dynamic placeholders; an unavailable Quote permission produces a warning and omits that placeholder. Static PDFs receive an independent template snapshot and a second project-pack snapshot, so Resource deletion cannot break templates and future template edits cannot change existing project packs. Template save, selection, and preview all follow `output.manage-document-packs` plus owner/team visibility rules.
+- **Forward-only rollout**: `2026_09_03_094427_create_resource_files_table` only creates the new metadata table and foreign key; it does not rewrite or delete existing data.
 
 ---
 
@@ -378,6 +392,8 @@ Known app setting keys:
 | `/activity-logs` | `ActivityLogResource` | Permission-controlled global history table |
 | `/salesforce` | `Salesforce` page | Permission-controlled Salesforce Opportunities table; labelled **Projects** inside the Salesforce navigation group |
 | `/calendar` | `Calendar` page | Permission-controlled Salesforce Visits public-calendar interface |
+| `/resources` | `ResourceFileResource` | Authenticated private resource library with upload, display-name edit, view, and delete actions |
+| `/resources/{resourceFile}/file` | `ResourceFileController` | Authenticated inline stream for a managed private resource file |
 
 **Project visibility scoping** — `ProjectResource::getEloquentQuery()` restricts non-admin users to projects where `visibility = open` OR `user_id = auth user`.
 

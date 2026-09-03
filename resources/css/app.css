@@ -66,6 +66,10 @@
     color: rgb(226 232 240);
 }
 
+.lux-shared-permission-search-list > .fi-fo-checkbox-list-search-input-wrp {
+    display: none;
+}
+
 .lux-dashboard-panel {
     border-color: #2a3140;
     background: #18181b;

@@ -34,7 +34,9 @@ Default system groups are created by the permissions migration:
 - `technical`
 - `manager`
 
-Admins can create additional groups in the Filament Users area and choose from the fixed permission catalogue. Each group also has a default landing page selected from every top-level sidebar destination: Dashboard, Projects, Salesforce Projects, Visits, History, Specials, Products, Users, Groups, or Teams. Existing and newly created groups default to Dashboard. After a normal login, the group setting controls the destination; an inaccessible selection safely falls back to Dashboard, while a valid intended URL from before login remains respected.
+Admins can create additional groups in the Filament Users area and choose from the fixed permission catalogue. Each group also has a default landing page selected from every top-level sidebar destination: Dashboard, Projects, Salesforce Projects, Visits, History, Specials, Products, Resources, Users, Groups, or Teams. Existing and newly created groups default to Dashboard. After a normal login, the group setting controls the destination; an inaccessible selection safely falls back to Dashboard, while a valid intended URL from before login remains respected.
+
+The Group create/edit form presents permissions once each under eight functional areas: Project, Users, Calendar, Pricing, Salesforce, Products, Resources, and Validation. Project also contains revision, project/global history, output, and quote-approval capabilities; Users contains user, group, and team administration. One shared search field filters every area, and each area has its own Select all/Deselect all control. Group Details and Permissions are stacked as full-width panels so the permission labels have adequate room.
 
 ### Users
 
@@ -58,6 +60,7 @@ The left navigation groups permission-controlled features as follows:
   - `History`: the global activity log (`activity-log.view`).
   - `Specials`: special order code management (`specials.manage`).
   - `Products`: the product catalogue (`products.view`).
+  - `Resources`: the private shared file library. Page access, uploads, display-name edits, and deletions use separate `resources.*` capabilities. Per-file permissions are deliberately deferred until the Document Packs integration is designed.
 - `Users`
   - `Users`: create/edit users and assign them to a group.
   - `Groups`: create/edit permission groups and assign permissions.
@@ -129,6 +132,10 @@ New code should use the dotted permission keys from `PermissionKey`.
 | View products list page | x |  |  |  | x |
 | Import / fetch products | x |  |  |  |  |
 | Manage special order codes | x |  |  |  |  |
+| View resources page | x |  |  |  |  |
+| Add resources | x |  |  |  |  |
+| Edit resources | x |  |  |  |  |
+| Delete resources | x |  |  |  |  |
 | View company calendar | x | x | x | x | x |
 | Create company calendar events | x | x | x | x | x |
 | Update company calendar events | x | x | x | x | x |
@@ -156,7 +163,11 @@ These permissions do not bypass the permissions of generated contents:
 - A Schedule role also requires `output.produce-unpriced-schedule`.
 - A pack containing a Quote cannot be generated until the selected revision is validated and approved.
 
-The builder currently offers **Custom PDF**, **Standard Legal Page**, **Quote**, and **Schedule** for new items. Legacy saved **Cover** and uploaded **Legal** items remain supported, but they are not offered in the new-document dropdown.
+The builder offers **Select Resource**, **Custom PDF**, **Standard Legal Page**, **Quote**, and **Schedule** for new items. Select Resource opens a PDF-only picker with Preview and Add actions. Access follows `output.manage-document-packs` and does not require or grant `resources.view`, so users can use library PDFs in packs without access to the standalone Resources page. The selected PDF is copied into managed document-pack storage when the pack is saved, so later renaming or deleting the library Resource does not break the saved pack. Legacy saved **Cover** and uploaded **Legal** items remain supported, but they are not offered in the new-document dropdown.
+
+Users with `output.manage-document-packs` can also save the current ordered builder contents as a reusable template and apply any template visible to them. Template visibility follows the Project rules: Open templates are available to all authenticated Document Pack users; Private templates are limited to their owner and admins; Team templates are available to their owner, admins, and members of the selected team. Template selection and template-item preview routes repeat both the capability and record-visibility checks server-side.
+
+Quote and Schedule entries are stored in a template as dynamic placeholders and generate from the destination project/revision. When a user without quote-production permission applies a template, its Quote placeholder is omitted with a warning; other entries retain their relative order. Static Resource or uploaded PDFs are copied into template-owned storage when the template is saved, then copied again into project-pack storage when the resulting pack is saved. Consequently, deleting a source Resource cannot break a template, and later template changes or deletion cannot alter an already-saved project pack.
 
 The UI hides unavailable roles and disables blocked generation, while Livewire methods, the download controller, and the merge service enforce the same rules server-side. Pack and revision IDs must belong to the current project; non-admin users remain limited to Open projects or projects they own.
 
@@ -216,6 +227,17 @@ The **Specials** page is controlled by `specials.manage`. Special order codes ar
 Each special order code defines the canonical code and description to use on project lines, whether the line requires validation approval, whether it appears on Schedule PDFs, and whether it appears on Quote PDFs.
 
 The initial special is `NO OFFER`, which is matched case-insensitively with or without spaces. It uses the description "No equivalent Tamlite offering available.", does not require approval, appears on schedules, and is excluded from quotes.
+
+## Resources
+
+The standalone **Admin → Resources** page uses four separate capabilities:
+
+- `resources.view` controls navigation, page access, lightbox previews, downloads, and whether Resources may be used as the group's landing page.
+- `resources.create` controls the Add Resource page and file upload.
+- `resources.update` controls the display-name edit modal. It does not allow replacing file contents or changing the stored filename.
+- `resources.delete` controls permanent deletion of the resource metadata and its managed private file.
+
+All four capabilities default to Admin only. User, Sales, Technical, Manager, and custom groups receive no standalone Resources access until an administrator selects the required capabilities in the Groups form. Document Pack users do not need `resources.view`: `output.manage-document-packs` grants access only to the PDF picker and its project-scoped previews. Per-file access rules are not part of this first permission layer.
 
 ## Teams
 

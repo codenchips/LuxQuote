@@ -6,19 +6,24 @@ use App\Enums\DocumentPackItemRole;
 use App\Enums\DocumentPackItemSource;
 use App\Enums\ProjectRevisionStatus;
 use App\Enums\ProjectStatus;
+use App\Enums\ProjectVisibility;
 use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ActivityLog;
 use App\Models\ActivityLogArchive;
 use App\Models\DocumentPack;
 use App\Models\DocumentPackItem;
+use App\Models\DocumentPackTemplate;
+use App\Models\DocumentPackTemplateItem;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
+use App\Models\ResourceFile;
 use App\Services\DocumentPackPdfService;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -30,11 +35,14 @@ use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
+use RuntimeException;
 use Throwable;
 
 class OutputProject extends ViewRecord
 {
     use HasProjectSubNav, WithFileUploads;
+
+    private const DocumentPackResourcePerPage = 10;
 
     protected static string $resource = ProjectResource::class;
 
@@ -48,7 +56,7 @@ class OutputProject extends ViewRecord
 
     public string $documentPackName = '';
 
-    /** @var array<string, array{key: string, id: int|null, role: string, file_path: string|null, original_filename: string|null}> */
+    /** @var array<string, array{key: string, id: int|null, role: string, file_path: string|null, original_filename: string|null, resource_file_id: int|null, resource_display_name: string|null, template_item_id: int|null}> */
     public array $documentPackItems = [];
 
     /** @var array<string, TemporaryUploadedFile> */
@@ -67,6 +75,20 @@ class OutputProject extends ViewRecord
     public array $originalDocumentPackUploadFilenames = [];
 
     public bool $documentPackDirty = false;
+
+    public ?string $documentPackResourceItemKey = null;
+
+    public string $documentPackResourceSearch = '';
+
+    public int $documentPackResourcePage = 1;
+
+    public ?int $documentPackResourcePreviewId = null;
+
+    public string $documentPackTemplateName = '';
+
+    public string $documentPackTemplateVisibilityTarget = 'open';
+
+    public ?int $selectedDocumentPackTemplateId = null;
 
     public ?int $generationRevisionId = null;
 
@@ -429,6 +451,44 @@ class OutputProject extends ViewRecord
     }
 
     #[Computed]
+    public function documentPackTemplates(): Collection
+    {
+        $user = auth()->user();
+
+        if ($user === null || ! $this->canManageDocumentPacks()) {
+            return new Collection;
+        }
+
+        return DocumentPackTemplate::query()
+            ->visibleTo($user)
+            ->with(['owner:id,name', 'team:id,name'])
+            ->withCount('items')
+            ->orderBy('name')
+            ->orderBy('id')
+            ->get();
+    }
+
+    /** @return array<string, string> */
+    public function documentPackTemplateVisibilityOptions(): array
+    {
+        $options = [
+            ProjectVisibility::Open->value => 'Open',
+            ProjectVisibility::Private->value => 'Private',
+        ];
+
+        $teams = auth()->user()?->teams()
+            ->orderBy('name')
+            ->pluck('name', 'teams.id')
+            ->all() ?? [];
+
+        foreach ($teams as $id => $name) {
+            $options["team:{$id}"] = "Team: {$name}";
+        }
+
+        return $options;
+    }
+
+    #[Computed]
     public function projectRevisions(): Collection
     {
         return $this->record->revisions()->get();
@@ -511,6 +571,37 @@ class OutputProject extends ViewRecord
             return null;
         }
 
+        if (filled($item['template_item_id'] ?? null)) {
+            $templateItem = $this->accessibleDocumentPackTemplateItems()
+                ->find((int) $item['template_item_id']);
+
+            if ($templateItem === null || ! $templateItem->hasManagedFile()) {
+                return null;
+            }
+
+            return route('projects.document-pack-templates.items.file', [
+                'project' => $this->record,
+                'documentPackTemplateItem' => $templateItem,
+            ]);
+        }
+
+        if (filled($item['resource_file_id'] ?? null)) {
+            if (! $this->canSelectResourcesForDocumentPack()) {
+                return null;
+            }
+
+            $resourceFile = $this->pdfResourceFiles()->find((int) $item['resource_file_id']);
+
+            if ($resourceFile === null || ! $resourceFile->hasManagedFile()) {
+                return null;
+            }
+
+            return route('projects.document-packs.resources.file', [
+                'project' => $this->record,
+                'resourceFile' => $resourceFile,
+            ]);
+        }
+
         $upload = $this->documentPackUploads[$item['key']] ?? null;
 
         if ($upload instanceof TemporaryUploadedFile && ! $this->documentPackUploadAppliesToCurrentRole($item, $upload)) {
@@ -552,6 +643,10 @@ class OutputProject extends ViewRecord
      */
     public function documentPackItemHasVisibleExistingFile(array $item): bool
     {
+        if (filled($item['resource_file_id'] ?? null) || filled($item['template_item_id'] ?? null)) {
+            return true;
+        }
+
         return filled($item['original_filename'] ?? null)
             && $this->documentPackExistingFileAppliesToCurrentRole($item);
     }
@@ -592,6 +687,9 @@ class OutputProject extends ViewRecord
                     'role' => $item->role->value,
                     'file_path' => $item->file_path,
                     'original_filename' => $item->original_filename,
+                    'resource_file_id' => null,
+                    'resource_display_name' => $item->configuration['resource_display_name'] ?? null,
+                    'template_item_id' => null,
                 ]];
             })
             ->all();
@@ -628,6 +726,414 @@ class OutputProject extends ViewRecord
         $this->documentPackDirty = true;
     }
 
+    public function selectDocumentPackRole(string $key, string $role): void
+    {
+        abort_unless($this->canManageDocumentPacks(), 403);
+
+        if (! array_key_exists($key, $this->documentPackItems)) {
+            return;
+        }
+
+        if ($role === 'select_resource') {
+            $this->openDocumentPackResourcePicker($key);
+
+            return;
+        }
+
+        $documentRole = DocumentPackItemRole::tryFrom($role);
+        abort_unless($documentRole !== null && $documentRole->selectableInBuilder(), 422);
+        abort_unless($this->canUseDocumentRole($documentRole), 403);
+
+        $this->documentPackItems[$key]['role'] = $documentRole->value;
+        $this->documentPackItems[$key]['resource_file_id'] = null;
+        $this->documentPackItems[$key]['resource_display_name'] = null;
+        $this->documentPackItems[$key]['template_item_id'] = null;
+        $this->documentPackDirty = true;
+    }
+
+    public function openDocumentPackResourcePicker(string $key): void
+    {
+        abort_unless($this->canSelectResourcesForDocumentPack(), 403);
+        abort_unless(array_key_exists($key, $this->documentPackItems), 404);
+
+        $this->documentPackResourceItemKey = $key;
+        $this->documentPackResourceSearch = '';
+        $this->documentPackResourcePage = 1;
+        $this->documentPackResourcePreviewId = null;
+        $this->dispatch('open-modal', id: 'document-pack-resource-picker');
+    }
+
+    public function updatedDocumentPackResourceSearch(): void
+    {
+        $this->documentPackResourcePage = 1;
+    }
+
+    public function previousDocumentPackResourcePage(): void
+    {
+        $this->documentPackResourcePage = max(1, $this->documentPackResourcePage - 1);
+    }
+
+    public function nextDocumentPackResourcePage(): void
+    {
+        $this->documentPackResourcePage = min(
+            $this->documentPackResourceTotalPages(),
+            $this->documentPackResourcePage + 1,
+        );
+    }
+
+    /**
+     * @return Collection<int, ResourceFile>
+     */
+    public function documentPackResourceRows(): Collection
+    {
+        if (! $this->canSelectResourcesForDocumentPack()) {
+            return new Collection;
+        }
+
+        $page = min($this->documentPackResourcePage, $this->documentPackResourceTotalPages());
+
+        return $this->documentPackResourceQuery()
+            ->forPage($page, self::DocumentPackResourcePerPage)
+            ->get();
+    }
+
+    public function documentPackResourceTotalRows(): int
+    {
+        if (! $this->canSelectResourcesForDocumentPack()) {
+            return 0;
+        }
+
+        return $this->documentPackResourceQuery()->count();
+    }
+
+    public function documentPackResourceTotalPages(): int
+    {
+        return max(1, (int) ceil($this->documentPackResourceTotalRows() / self::DocumentPackResourcePerPage));
+    }
+
+    public function documentPackResourceCurrentPage(): int
+    {
+        return min(max(1, $this->documentPackResourcePage), $this->documentPackResourceTotalPages());
+    }
+
+    public function previewDocumentPackResource(int $resourceFileId): void
+    {
+        abort_unless($this->canSelectResourcesForDocumentPack(), 403);
+
+        $resourceFile = $this->pdfResourceFiles()->findOrFail($resourceFileId);
+        abort_unless($resourceFile->hasManagedFile(), 404);
+
+        $this->documentPackResourcePreviewId = $resourceFile->id;
+        $this->dispatch('open-modal', id: 'document-pack-resource-preview');
+    }
+
+    public function selectedDocumentPackResourcePreview(): ?ResourceFile
+    {
+        if (! $this->canSelectResourcesForDocumentPack() || $this->documentPackResourcePreviewId === null) {
+            return null;
+        }
+
+        return $this->pdfResourceFiles()->find($this->documentPackResourcePreviewId);
+    }
+
+    public function addDocumentPackResource(int $resourceFileId): void
+    {
+        abort_unless($this->canSelectResourcesForDocumentPack(), 403);
+        abort_unless(
+            $this->documentPackResourceItemKey !== null
+                && array_key_exists($this->documentPackResourceItemKey, $this->documentPackItems),
+            404,
+        );
+
+        $resourceFile = $this->pdfResourceFiles()->findOrFail($resourceFileId);
+
+        if (! $this->resourcePdfIsAvailable($resourceFile)) {
+            Notification::make()
+                ->title('Resource PDF unavailable')
+                ->body('The selected Resource file could not be found. It may have been removed.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $key = $this->documentPackResourceItemKey;
+        $this->documentPackItems[$key]['role'] = DocumentPackItemRole::CustomPdf->value;
+        $this->documentPackItems[$key]['resource_file_id'] = $resourceFile->id;
+        $this->documentPackItems[$key]['resource_display_name'] = $resourceFile->display_name;
+        $this->documentPackItems[$key]['original_filename'] = $resourceFile->original_filename;
+        $this->documentPackItems[$key]['template_item_id'] = null;
+        unset($this->documentPackUploads[$key], $this->documentPackUploadOriginalNames[$key]);
+        $this->documentPackDirty = true;
+        $this->documentPackResourceItemKey = null;
+        $this->dispatch('close-modal', id: 'document-pack-resource-picker');
+
+        Notification::make()->title('Resource added to document pack')->success()->send();
+    }
+
+    public function openSaveDocumentPackTemplate(): void
+    {
+        abort_unless($this->canManageDocumentPacks(), 403);
+
+        $this->documentPackTemplateName = Str::limit(Str::squish($this->documentPackName), 120, '');
+        $this->documentPackTemplateVisibilityTarget = ProjectVisibility::Open->value;
+        $this->resetValidation(['documentPackTemplateName', 'documentPackTemplateVisibilityTarget']);
+        $this->dispatch('open-modal', id: 'save-document-pack-template');
+    }
+
+    public function openDocumentPackTemplatePicker(): void
+    {
+        abort_unless($this->canManageDocumentPacks(), 403);
+
+        $this->selectedDocumentPackTemplateId = null;
+        $this->dispatch('open-modal', id: 'select-document-pack-template');
+    }
+
+    public function saveDocumentPackAsTemplate(): void
+    {
+        abort_unless($this->canManageDocumentPacks(), 403);
+
+        $this->removeIncompleteDocumentPackItems();
+        $this->documentPackTemplateName = Str::squish($this->documentPackTemplateName);
+        $this->validate([
+            'documentPackTemplateName' => ['required', 'string', 'max:120'],
+            'documentPackTemplateVisibilityTarget' => ['required', 'string', 'max:40'],
+            'documentPackItems' => ['required', 'array', 'min:1'],
+            'documentPackItems.*.role' => ['required', Rule::enum(DocumentPackItemRole::class)],
+        ]);
+
+        $preparedItems = $this->validateDocumentPackItems();
+        [$visibility, $teamId] = $this->normaliseDocumentPackTemplateVisibility();
+        $newPaths = [];
+
+        try {
+            $template = DB::transaction(function () use ($preparedItems, $visibility, $teamId, &$newPaths): DocumentPackTemplate {
+                $template = DocumentPackTemplate::query()->create([
+                    'user_id' => auth()->id(),
+                    'name' => Str::squish($this->documentPackTemplateName),
+                    'visibility' => $visibility,
+                    'team_id' => $teamId,
+                    'created_by' => auth()->id(),
+                    'updated_by' => auth()->id(),
+                ]);
+                $diskName = (string) config('document-packs.upload_disk', 'local');
+
+                foreach (array_values($this->documentPackItems) as $position => $state) {
+                    $role = DocumentPackItemRole::from($state['role']);
+                    $attributes = [
+                        'role' => $role,
+                        'source_type' => $role->source(),
+                        'sort_order' => $position,
+                        'file_disk' => null,
+                        'file_path' => null,
+                        'original_filename' => null,
+                        'configuration' => null,
+                    ];
+
+                    if ($role->source() === DocumentPackItemSource::Uploaded) {
+                        $upload = $preparedItems['uploads'][$state['key']] ?? null;
+                        $resourceFile = $preparedItems['resources'][$state['key']] ?? null;
+                        $sourceTemplateItem = $preparedItems['template_items'][$state['key']] ?? null;
+                        $path = null;
+
+                        if ($upload instanceof TemporaryUploadedFile) {
+                            $path = $upload->storeAs(
+                                DocumentPackTemplateItem::Directory.'/'.$template->id,
+                                Str::uuid().'.pdf',
+                                $diskName,
+                            );
+                            abort_if($path === false, 500, 'The PDF could not be stored in the template.');
+                            $attributes['original_filename'] = $this->documentPackUploadOriginalNames[$state['key']] ?? $upload->getClientOriginalName();
+                        } elseif ($resourceFile instanceof ResourceFile) {
+                            $path = $this->copyStoredPdf(
+                                ResourceFile::Disk,
+                                $resourceFile->file_path,
+                                $diskName,
+                                DocumentPackTemplateItem::Directory.'/'.$template->id,
+                            );
+                            $attributes['original_filename'] = $resourceFile->original_filename;
+                            $attributes['configuration'] = [
+                                'resource_file_id' => $resourceFile->id,
+                                'resource_display_name' => $resourceFile->display_name,
+                            ];
+                        } elseif ($sourceTemplateItem instanceof DocumentPackTemplateItem) {
+                            $path = $this->copyStoredPdf(
+                                $sourceTemplateItem->file_disk ?? 'local',
+                                (string) $sourceTemplateItem->file_path,
+                                $diskName,
+                                DocumentPackTemplateItem::Directory.'/'.$template->id,
+                            );
+                            $attributes['original_filename'] = $sourceTemplateItem->original_filename;
+                            $attributes['configuration'] = $sourceTemplateItem->configuration;
+                        } else {
+                            $sourcePackItem = $this->currentDocumentPackItem($state);
+                            abort_if(
+                                $sourcePackItem === null
+                                    || ! $this->storedPdfIsAvailable(
+                                        $sourcePackItem->file_disk ?? 'local',
+                                        $sourcePackItem->file_path,
+                                        'document-packs',
+                                    ),
+                                422,
+                                'A static PDF is missing from this pack.',
+                            );
+                            $path = $this->copyStoredPdf(
+                                $sourcePackItem->file_disk ?? 'local',
+                                $sourcePackItem->file_path,
+                                $diskName,
+                                DocumentPackTemplateItem::Directory.'/'.$template->id,
+                            );
+                            $attributes['original_filename'] = $sourcePackItem->original_filename;
+                            $attributes['configuration'] = $sourcePackItem->configuration;
+                        }
+
+                        $newPaths[] = [$diskName, $path];
+                        $attributes['file_disk'] = $diskName;
+                        $attributes['file_path'] = $path;
+                    }
+
+                    $template->items()->create($attributes);
+                }
+
+                return $template;
+            });
+        } catch (Throwable $exception) {
+            foreach ($newPaths as [$disk, $path]) {
+                try {
+                    Storage::disk($disk)->delete($path);
+                } catch (Throwable $cleanupException) {
+                    report($cleanupException);
+                }
+            }
+
+            report($exception);
+            Notification::make()
+                ->title('Template could not be saved')
+                ->body('No template was created. Please check the selected PDFs and try again.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'project_id' => $this->record->id,
+            'action_type' => 'document_pack_template.created',
+            'user_email_snapshot' => auth()->user()?->email ?? '',
+            'project_name_snapshot' => $this->record->name,
+            'payload' => [
+                'document_pack_template_id' => $template->id,
+                'document_pack_template_name' => $template->name,
+                'visibility' => $template->visibility->value,
+                'team_id' => $template->team_id,
+                'document_count' => count($this->documentPackItems),
+            ],
+        ]);
+
+        unset($this->documentPackTemplates);
+        $this->dispatch('close-modal', id: 'save-document-pack-template');
+        Notification::make()->title('Document pack template saved')->success()->send();
+    }
+
+    public function useSelectedDocumentPackTemplate(): void
+    {
+        abort_unless($this->canManageDocumentPacks(), 403);
+        abort_if($this->selectedDocumentPackTemplateId === null, 422);
+
+        $user = auth()->user();
+        abort_if($user === null, 403);
+
+        $template = DocumentPackTemplate::query()
+            ->visibleTo($user)
+            ->with('items')
+            ->findOrFail($this->selectedDocumentPackTemplateId);
+        $items = [];
+        $omittedQuote = false;
+        $omittedUnavailable = 0;
+
+        foreach ($template->items as $templateItem) {
+            if ($templateItem->source_type !== $templateItem->role->source()) {
+                $omittedUnavailable++;
+
+                continue;
+            }
+
+            if ($templateItem->role === DocumentPackItemRole::Quote && ! $this->canProduceQuote()) {
+                $omittedQuote = true;
+
+                continue;
+            }
+
+            if (! $this->canUseDocumentRole($templateItem->role)) {
+                $omittedUnavailable++;
+
+                continue;
+            }
+
+            if (
+                $templateItem->source_type === DocumentPackItemSource::Uploaded
+                && ! $this->templatePdfIsUsable($templateItem)
+            ) {
+                $omittedUnavailable++;
+
+                continue;
+            }
+
+            $key = 'template-item-'.$templateItem->id.'-'.Str::uuid();
+            $items[$key] = [
+                'key' => $key,
+                'id' => null,
+                'role' => $templateItem->role->value,
+                'file_path' => null,
+                'original_filename' => $templateItem->original_filename,
+                'resource_file_id' => null,
+                'resource_display_name' => $templateItem->configuration['resource_display_name'] ?? null,
+                'template_item_id' => $templateItem->source_type === DocumentPackItemSource::Uploaded
+                    ? $templateItem->id
+                    : null,
+            ];
+        }
+
+        if ($items === []) {
+            $emptyItem = $this->emptyDocumentPackItem();
+            $items[$emptyItem['key']] = $emptyItem;
+        }
+
+        $this->selectedDocumentPackId = null;
+        $this->documentPackName = $template->name;
+        $this->documentPackItems = $items;
+        $this->documentPackUploads = [];
+        $this->documentPackUploadOriginalNames = [];
+        $this->editingDocumentPackRoleKeys = [];
+        $this->originalDocumentPackRoleValues = [];
+        $this->originalDocumentPackUploadFilenames = [];
+        $this->documentPackDirty = true;
+        $this->dispatch('close-modal', id: 'select-document-pack-template');
+
+        if ($omittedQuote || $omittedUnavailable > 0) {
+            $messages = [];
+
+            if ($omittedQuote) {
+                $messages[] = 'The Quote placeholder was not added because you do not have permission to produce quotes.';
+            }
+
+            if ($omittedUnavailable > 0) {
+                $messages[] = $omittedUnavailable.' unavailable '.Str::plural('document', $omittedUnavailable).' '.($omittedUnavailable === 1 ? 'was' : 'were').' not added.';
+            }
+
+            Notification::make()
+                ->title('Template applied with changes')
+                ->body(implode(' ', $messages))
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        Notification::make()->title('Document pack template applied')->success()->send();
+    }
+
     public function removeDocumentPackItem(string $key): void
     {
         abort_unless($this->canManageDocumentPacks(), 403);
@@ -650,6 +1156,9 @@ class OutputProject extends ViewRecord
         }
 
         unset($this->documentPackUploads[$key], $this->documentPackUploadOriginalNames[$key]);
+        $this->documentPackItems[$key]['resource_file_id'] = null;
+        $this->documentPackItems[$key]['resource_display_name'] = null;
+        $this->documentPackItems[$key]['template_item_id'] = null;
         $this->documentPackDirty = true;
     }
 
@@ -763,12 +1272,12 @@ class OutputProject extends ViewRecord
             'documentPackItems.*.role' => ['required', Rule::enum(DocumentPackItemRole::class)],
         ]);
 
-        $preparedUploads = $this->validateDocumentPackItems();
+        $preparedItems = $this->validateDocumentPackItems();
         $newPaths = [];
         $oldFilesToDelete = [];
 
         try {
-            $documentPack = DB::transaction(function () use ($preparedUploads, &$newPaths, &$oldFilesToDelete): DocumentPack {
+            $documentPack = DB::transaction(function () use ($preparedItems, &$newPaths, &$oldFilesToDelete): DocumentPack {
                 $documentPack = $this->selectedDocumentPackId === null
                     ? $this->record->documentPacks()->create([
                         'name' => $this->documentPackName,
@@ -795,13 +1304,14 @@ class OutputProject extends ViewRecord
 
                     $oldDisk = $item->file_disk;
                     $oldPath = $item->file_path;
-                    $upload = $preparedUploads[$state['key']] ?? null;
+                    $upload = $preparedItems['uploads'][$state['key']] ?? null;
+                    $resourceFile = $preparedItems['resources'][$state['key']] ?? null;
+                    $templateItem = $preparedItems['template_items'][$state['key']] ?? null;
 
                     $attributes = [
                         'role' => $role,
                         'source_type' => $role->source(),
                         'sort_order' => $position,
-                        'configuration' => null,
                     ];
 
                     if ($upload !== null) {
@@ -816,6 +1326,49 @@ class OutputProject extends ViewRecord
                             'file_disk' => $diskName,
                             'file_path' => $path,
                             'original_filename' => $this->documentPackUploadOriginalNames[$state['key']] ?? $upload->getClientOriginalName(),
+                            'configuration' => null,
+                        ];
+
+                        if ($oldPath !== null) {
+                            $oldFilesToDelete[] = [$oldDisk ?? 'local', $oldPath];
+                        }
+                    } elseif ($resourceFile instanceof ResourceFile) {
+                        $path = $this->copyResourceIntoDocumentPack(
+                            $resourceFile,
+                            $documentPack,
+                            $diskName,
+                        );
+                        $newPaths[] = [$diskName, $path];
+                        $attributes += [
+                            'file_disk' => $diskName,
+                            'file_path' => $path,
+                            'original_filename' => $resourceFile->original_filename,
+                            'configuration' => [
+                                'resource_file_id' => $resourceFile->id,
+                                'resource_display_name' => $resourceFile->display_name,
+                            ],
+                        ];
+
+                        if ($oldPath !== null) {
+                            $oldFilesToDelete[] = [$oldDisk ?? 'local', $oldPath];
+                        }
+                    } elseif ($templateItem instanceof DocumentPackTemplateItem) {
+                        $path = $this->copyStoredPdf(
+                            $templateItem->file_disk ?? 'local',
+                            (string) $templateItem->file_path,
+                            $diskName,
+                            'document-packs/'.$this->record->id.'/'.$documentPack->id,
+                        );
+                        $newPaths[] = [$diskName, $path];
+                        $attributes += [
+                            'file_disk' => $diskName,
+                            'file_path' => $path,
+                            'original_filename' => $templateItem->original_filename,
+                            'configuration' => array_filter([
+                                ...($templateItem->configuration ?? []),
+                                'document_pack_template_id' => $templateItem->document_pack_template_id,
+                                'document_pack_template_item_id' => $templateItem->id,
+                            ], fn (mixed $value): bool => $value !== null),
                         ];
 
                         if ($oldPath !== null) {
@@ -826,6 +1379,7 @@ class OutputProject extends ViewRecord
                             'file_disk' => null,
                             'file_path' => null,
                             'original_filename' => null,
+                            'configuration' => null,
                         ];
 
                         if ($oldPath !== null) {
@@ -1097,6 +1651,11 @@ class OutputProject extends ViewRecord
         return auth()->user()?->can('output.manage-document-packs') ?? false;
     }
 
+    public function canSelectResourcesForDocumentPack(): bool
+    {
+        return $this->canManageDocumentPacks();
+    }
+
     public function canProduceDocumentPacks(): bool
     {
         return auth()->user()?->can('output.produce-document-packs') ?? false;
@@ -1108,11 +1667,13 @@ class OutputProject extends ViewRecord
     }
 
     /**
-     * @return array<string, TemporaryUploadedFile>
+     * @return array{uploads: array<string, TemporaryUploadedFile>, resources: array<string, ResourceFile>, template_items: array<string, DocumentPackTemplateItem>}
      */
     private function validateDocumentPackItems(): array
     {
         $uploads = [];
+        $resources = [];
+        $templateItems = [];
 
         foreach ($this->documentPackItems as $state) {
             $role = DocumentPackItemRole::from($state['role']);
@@ -1126,6 +1687,68 @@ class OutputProject extends ViewRecord
             $upload = $this->documentPackUploads[$state['key']] ?? null;
             $hasActiveUpload = $this->documentPackItemHasActiveUpload($state);
             $hasExistingFile = $this->documentPackItemHasExistingFile($state);
+            $resourceFileId = filled($state['resource_file_id'] ?? null)
+                ? (int) $state['resource_file_id']
+                : null;
+            $templateItemId = filled($state['template_item_id'] ?? null)
+                ? (int) $state['template_item_id']
+                : null;
+
+            if ($resourceFileId !== null && ! $hasActiveUpload) {
+                abort_unless($this->canSelectResourcesForDocumentPack(), 403);
+
+                if ($role !== DocumentPackItemRole::CustomPdf) {
+                    throw ValidationException::withMessages([
+                        "documentPackItems.{$state['key']}.role" => 'A Resource PDF must use the Custom PDF document type.',
+                    ]);
+                }
+
+                $resourceFile = $this->pdfResourceFiles()->find($resourceFileId);
+
+                if (
+                    $resourceFile === null
+                    || ! $this->resourcePdfIsAvailable($resourceFile)
+                ) {
+                    throw ValidationException::withMessages([
+                        "documentPackItems.{$state['key']}.role" => 'The selected Resource PDF is no longer available.',
+                    ]);
+                }
+
+                try {
+                    app(DocumentPackPdfService::class)->assertValidUploadedPdf(
+                        Storage::disk(ResourceFile::Disk)->path($resourceFile->file_path),
+                    );
+                } catch (Throwable $exception) {
+                    report($exception);
+
+                    throw ValidationException::withMessages([
+                        "documentPackItems.{$state['key']}.role" => 'The selected Resource PDF is corrupt, encrypted, or cannot currently be read.',
+                    ]);
+                }
+
+                $resources[$state['key']] = $resourceFile;
+
+                continue;
+            }
+
+            if ($templateItemId !== null && ! $hasActiveUpload) {
+                $templateItem = $this->accessibleDocumentPackTemplateItems()->find($templateItemId);
+
+                if (
+                    $templateItem === null
+                    || $templateItem->role !== $role
+                    || $templateItem->source_type !== DocumentPackItemSource::Uploaded
+                    || ! $this->templatePdfIsUsable($templateItem)
+                ) {
+                    throw ValidationException::withMessages([
+                        "documentPackItems.{$state['key']}.role" => 'This template PDF is no longer available.',
+                    ]);
+                }
+
+                $templateItems[$state['key']] = $templateItem;
+
+                continue;
+            }
 
             if (! $hasActiveUpload && ! $hasExistingFile) {
                 throw ValidationException::withMessages([
@@ -1156,7 +1779,11 @@ class OutputProject extends ViewRecord
             $uploads[$state['key']] = $upload;
         }
 
-        return $uploads;
+        return [
+            'uploads' => $uploads,
+            'resources' => $resources,
+            'template_items' => $templateItems,
+        ];
     }
 
     private function removeIncompleteDocumentPackItems(): int
@@ -1249,6 +1876,199 @@ class OutputProject extends ViewRecord
         };
     }
 
+    private function accessibleDocumentPackTemplateItems(): Builder
+    {
+        $user = auth()->user();
+
+        if ($user === null) {
+            return DocumentPackTemplateItem::query()->whereRaw('1 = 0');
+        }
+
+        return DocumentPackTemplateItem::query()
+            ->whereHas(
+                'documentPackTemplate',
+                fn (Builder $query): Builder => $query->visibleTo($user),
+            );
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     */
+    private function currentDocumentPackItem(array $state): ?DocumentPackItem
+    {
+        if ($this->selectedDocumentPackId === null || blank($state['id'] ?? null)) {
+            return null;
+        }
+
+        return DocumentPackItem::query()
+            ->where('document_pack_id', $this->selectedDocumentPackId)
+            ->whereHas('documentPack', fn (Builder $query): Builder => $query->where('project_id', $this->record->id))
+            ->find((int) $state['id']);
+    }
+
+    /** @return array{ProjectVisibility, int|null} */
+    private function normaliseDocumentPackTemplateVisibility(): array
+    {
+        $target = $this->documentPackTemplateVisibilityTarget;
+
+        if (! str_starts_with($target, 'team:')) {
+            return [
+                $target === ProjectVisibility::Private->value
+                    ? ProjectVisibility::Private
+                    : ProjectVisibility::Open,
+                null,
+            ];
+        }
+
+        $teamId = filter_var(str_replace('team:', '', $target), FILTER_VALIDATE_INT);
+        $allowed = $teamId !== false
+            && (auth()->user()?->teams()->whereKey($teamId)->exists() ?? false);
+
+        return $allowed
+            ? [ProjectVisibility::Team, (int) $teamId]
+            : [ProjectVisibility::Private, null];
+    }
+
+    private function pdfResourceFiles(): Builder
+    {
+        return ResourceFile::query()
+            ->where('extension', 'pdf')
+            ->where('mime_type', 'application/pdf');
+    }
+
+    private function documentPackResourceQuery(): Builder
+    {
+        $search = Str::squish($this->documentPackResourceSearch);
+
+        return $this->pdfResourceFiles()
+            ->when($search !== '', fn (Builder $query): Builder => $query
+                ->where(function (Builder $query) use ($search): void {
+                    $query
+                        ->where('display_name', 'like', "%{$search}%")
+                        ->orWhere('original_filename', 'like', "%{$search}%");
+                }))
+            ->latest();
+    }
+
+    private function resourcePdfIsAvailable(ResourceFile $resourceFile): bool
+    {
+        if (! $resourceFile->hasManagedFile()) {
+            return false;
+        }
+
+        try {
+            return Storage::disk(ResourceFile::Disk)->exists($resourceFile->file_path);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return false;
+        }
+    }
+
+    private function copyResourceIntoDocumentPack(
+        ResourceFile $resourceFile,
+        DocumentPack $documentPack,
+        string $destinationDiskName,
+    ): string {
+        return $this->copyStoredPdf(
+            ResourceFile::Disk,
+            $resourceFile->file_path,
+            $destinationDiskName,
+            'document-packs/'.$this->record->id.'/'.$documentPack->id,
+        );
+    }
+
+    private function storedPdfIsAvailable(
+        string $diskName,
+        ?string $path,
+        string $requiredDirectory,
+    ): bool {
+        if ($path === null) {
+            return false;
+        }
+
+        $normalisedPath = str_replace('\\', '/', $path);
+
+        if (
+            ! str_starts_with($normalisedPath, trim($requiredDirectory, '/').'/')
+            || str_contains($normalisedPath, '../')
+            || strtolower(pathinfo($normalisedPath, PATHINFO_EXTENSION)) !== 'pdf'
+        ) {
+            return false;
+        }
+
+        try {
+            return Storage::disk($diskName)->exists($normalisedPath);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return false;
+        }
+    }
+
+    private function templatePdfIsUsable(DocumentPackTemplateItem $templateItem): bool
+    {
+        $diskName = $templateItem->file_disk ?? 'local';
+
+        if (! $this->storedPdfIsAvailable(
+            $diskName,
+            $templateItem->file_path,
+            DocumentPackTemplateItem::Directory,
+        )) {
+            return false;
+        }
+
+        try {
+            app(DocumentPackPdfService::class)->assertValidUploadedPdf(
+                Storage::disk($diskName)->path((string) $templateItem->file_path),
+            );
+
+            return true;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return false;
+        }
+    }
+
+    private function copyStoredPdf(
+        string $sourceDiskName,
+        string $sourcePath,
+        string $destinationDiskName,
+        string $destinationDirectory,
+    ): string {
+        $destinationPath = trim($destinationDirectory, '/').'/'.Str::uuid().'.pdf';
+        $sourceDisk = Storage::disk($sourceDiskName);
+        $destinationDisk = Storage::disk($destinationDiskName);
+        $stream = null;
+
+        try {
+            $stream = $sourceDisk->readStream($sourcePath);
+
+            if ($stream === false) {
+                throw new RuntimeException('The source PDF could not be read.');
+            }
+
+            if (! $destinationDisk->put($destinationPath, $stream)) {
+                throw new RuntimeException('The PDF snapshot could not be stored.');
+            }
+        } catch (Throwable $exception) {
+            try {
+                $destinationDisk->delete($destinationPath);
+            } catch (Throwable $cleanupException) {
+                report($cleanupException);
+            }
+
+            throw $exception;
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+        }
+
+        return $destinationPath;
+    }
+
     private function generationRevision(): ?ProjectRevision
     {
         if ($this->generationRevisionId === null) {
@@ -1258,7 +2078,7 @@ class OutputProject extends ViewRecord
         return $this->record->revisions()->find($this->generationRevisionId);
     }
 
-    /** @return array{key: string, id: null, role: string, file_path: null, original_filename: null} */
+    /** @return array{key: string, id: null, role: string, file_path: null, original_filename: null, resource_file_id: null, resource_display_name: null, template_item_id: null} */
     private function emptyDocumentPackItem(): array
     {
         return [
@@ -1267,6 +2087,9 @@ class OutputProject extends ViewRecord
             'role' => '',
             'file_path' => null,
             'original_filename' => null,
+            'resource_file_id' => null,
+            'resource_display_name' => null,
+            'template_item_id' => null,
         ];
     }
 }

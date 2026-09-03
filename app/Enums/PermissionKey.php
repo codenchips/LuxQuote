@@ -34,6 +34,10 @@ enum PermissionKey: string
     case ProductsView = 'products.view';
     case ProductsImport = 'products.import';
     case SpecialsManage = 'specials.manage';
+    case ResourcesView = 'resources.view';
+    case ResourcesCreate = 'resources.create';
+    case ResourcesUpdate = 'resources.update';
+    case ResourcesDelete = 'resources.delete';
     case CalendarView = 'calendar.view';
     case CalendarCreate = 'calendar.create';
     case CalendarUpdate = 'calendar.update';
@@ -80,6 +84,10 @@ enum PermissionKey: string
             self::ProductsView => 'View products list page',
             self::ProductsImport => 'Import / fetch products',
             self::SpecialsManage => 'Manage special order codes',
+            self::ResourcesView => 'View resources page',
+            self::ResourcesCreate => 'Add resources',
+            self::ResourcesUpdate => 'Edit resources',
+            self::ResourcesDelete => 'Delete resources',
             self::CalendarView => 'View company calendar',
             self::CalendarCreate => 'Create company calendar events',
             self::CalendarUpdate => 'Update company calendar events',
@@ -133,6 +141,11 @@ enum PermissionKey: string
             self::ProductsImport,
             self::SpecialsManage => 'Products',
 
+            self::ResourcesView,
+            self::ResourcesCreate,
+            self::ResourcesUpdate,
+            self::ResourcesDelete => 'Resources',
+
             self::CalendarView,
             self::CalendarCreate,
             self::CalendarUpdate,
@@ -159,6 +172,10 @@ enum PermissionKey: string
             self::ProjectsManageTenders => 'Allows adding, removing, and choosing primary contractor tenders for a project.',
             self::ProjectsMarkDesignComplete => 'Allows toggling the Design Complete project status without granting full project-detail editing.',
             self::SpecialsManage => 'Allows managing special order codes that affect project entry, validation, and PDF outputs.',
+            self::ResourcesView => 'Allows viewing the Resources page and previewing or downloading its files.',
+            self::ResourcesCreate => 'Allows uploading new files to the Resources library.',
+            self::ResourcesUpdate => 'Allows changing a resource display name.',
+            self::ResourcesDelete => 'Allows permanently deleting resources and their stored files.',
             self::OutputHistoryView => 'Allows viewing and regenerating previously generated project quote and schedule outputs.',
             self::SalesforceManagePush => 'Allows pausing and resuming outbound Salesforce writes while keeping Salesforce project import/search available.',
             self::CalendarCreate => 'Allows creating events on the configured Salesforce public calendar.',

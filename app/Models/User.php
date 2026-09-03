@@ -84,6 +84,14 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
         return $this->hasMany(ProjectPresence::class);
     }
 
+    /**
+     * @return HasMany<DocumentPackTemplate, $this>
+     */
+    public function documentPackTemplates(): HasMany
+    {
+        return $this->hasMany(DocumentPackTemplate::class);
+    }
+
     public function isAdministrator(): bool
     {
         return $this->role === UserRole::Admin || $this->permissionGroup?->slug === 'admin';

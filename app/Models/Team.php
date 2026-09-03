@@ -25,4 +25,12 @@ class Team extends Model
     {
         return $this->hasMany(Project::class);
     }
+
+    /**
+     * @return HasMany<DocumentPackTemplate, $this>
+     */
+    public function documentPackTemplates(): HasMany
+    {
+        return $this->hasMany(DocumentPackTemplate::class);
+    }
 }

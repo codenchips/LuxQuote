@@ -2,13 +2,19 @@
 
 use App\Http\Controllers\DocumentPackController;
 use App\Http\Controllers\ProjectPdfController;
+use App\Http\Controllers\ResourceFileController;
 use App\Models\Project;
 use App\Models\ProjectLock;
 use App\Models\ProjectPresence;
+use Filament\Http\Middleware\Authenticate as FilamentAuthenticate;
 use Illuminate\Support\Facades\Route;
 use Spatie\LaravelPdf\Facades\Pdf;
 
 // Filament handles all routes
+
+Route::get('/resources/{resourceFile}/file', ResourceFileController::class)
+    ->middleware(FilamentAuthenticate::class)
+    ->name('resource-files.view');
 
 Route::middleware('auth')->group(function (): void {
     Route::get('/projects/{project}/pdf/schedule', [ProjectPdfController::class, 'schedule'])
@@ -43,6 +49,12 @@ Route::middleware('auth')->group(function (): void {
 
     Route::get('/projects/{project}/document-packs/{documentPack}/items/{documentPackItem}/file', [DocumentPackController::class, 'uploadedItem'])
         ->name('projects.document-packs.items.file');
+
+    Route::get('/projects/{project}/document-pack-resources/{resourceFile}/file', [DocumentPackController::class, 'resource'])
+        ->name('projects.document-packs.resources.file');
+
+    Route::get('/projects/{project}/document-pack-template-items/{documentPackTemplateItem}/file', [DocumentPackController::class, 'templateItem'])
+        ->name('projects.document-pack-templates.items.file');
 
     Route::post('/projects/{project}/lock/release', function (Project $project): void {
         ProjectLock::query()

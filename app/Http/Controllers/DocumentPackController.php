@@ -4,17 +4,24 @@ namespace App\Http\Controllers;
 
 use App\Enums\DocumentPackItemRole;
 use App\Enums\DocumentPackItemSource;
+use App\Enums\PermissionKey;
 use App\Models\ActivityLog;
 use App\Models\DocumentPack;
 use App\Models\DocumentPackItem;
+use App\Models\DocumentPackTemplateItem;
 use App\Models\Project;
 use App\Models\ProjectRevision;
+use App\Models\ResourceFile;
 use App\Services\DocumentPackPdfService;
 use App\Services\PdfDownloadUrlService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 class DocumentPackController extends Controller
 {
@@ -100,6 +107,120 @@ class DocumentPackController extends Controller
         }, 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="'.$filename.'"',
+        ]);
+    }
+
+    public function resource(
+        Request $request,
+        Project $project,
+        ResourceFile $resourceFile,
+    ): StreamedResponse {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless($request->user()->can(PermissionKey::OutputManageDocumentPacks->value), 403);
+        abort_unless(
+            $resourceFile->extension === 'pdf'
+                && $resourceFile->mime_type === 'application/pdf'
+                && $resourceFile->hasManagedFile(),
+            404,
+        );
+
+        try {
+            $disk = Storage::disk(ResourceFile::Disk);
+            abort_unless($disk->exists($resourceFile->file_path), 404);
+            $fileSize = $disk->size($resourceFile->file_path);
+            $stream = $disk->readStream($resourceFile->file_path);
+        } catch (Throwable $exception) {
+            Log::warning('A document pack Resource PDF could not be opened.', [
+                'project_id' => $project->id,
+                'resource_file_id' => $resourceFile->id,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            abort(404);
+        }
+
+        abort_if($stream === false, 404);
+
+        $filename = basename(str_replace('\\', '/', $resourceFile->original_filename));
+        $filename = preg_replace('/[\x00-\x1F\x7F]/u', '', $filename) ?: 'resource.pdf';
+        $fallbackFilename = preg_replace('/[^A-Za-z0-9._-]/', '-', Str::ascii($filename)) ?: 'resource.pdf';
+        $disposition = (new ResponseHeaderBag)->makeDisposition(
+            ResponseHeaderBag::DISPOSITION_INLINE,
+            $filename,
+            $fallbackFilename,
+        );
+
+        return response()->stream(function () use ($stream): void {
+            try {
+                fpassthru($stream);
+            } finally {
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
+        }, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => $disposition,
+            'Content-Length' => (string) $fileSize,
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    public function templateItem(
+        Request $request,
+        Project $project,
+        DocumentPackTemplateItem $documentPackTemplateItem,
+    ): StreamedResponse {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless($request->user()->can(PermissionKey::OutputManageDocumentPacks->value), 403);
+
+        $template = $documentPackTemplateItem->documentPackTemplate;
+        abort_unless($template !== null && $template->isVisibleTo($request->user()), 404);
+        abort_unless(
+            $documentPackTemplateItem->source_type === DocumentPackItemSource::Uploaded
+                && $documentPackTemplateItem->hasManagedFile(),
+            404,
+        );
+
+        try {
+            $disk = Storage::disk($documentPackTemplateItem->file_disk ?? 'local');
+            abort_unless($disk->exists($documentPackTemplateItem->file_path), 404);
+            $fileSize = $disk->size($documentPackTemplateItem->file_path);
+            $stream = $disk->readStream($documentPackTemplateItem->file_path);
+        } catch (Throwable $exception) {
+            Log::warning('A document pack template PDF could not be opened.', [
+                'project_id' => $project->id,
+                'document_pack_template_item_id' => $documentPackTemplateItem->id,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            abort(404);
+        }
+
+        abort_if($stream === false, 404);
+
+        $filename = basename(str_replace('\\', '/', $documentPackTemplateItem->original_filename ?: 'template-document.pdf'));
+        $filename = preg_replace('/[\x00-\x1F\x7F]/u', '', $filename) ?: 'template-document.pdf';
+        $fallbackFilename = preg_replace('/[^A-Za-z0-9._-]/', '-', Str::ascii($filename)) ?: 'template-document.pdf';
+        $disposition = (new ResponseHeaderBag)->makeDisposition(
+            ResponseHeaderBag::DISPOSITION_INLINE,
+            $filename,
+            $fallbackFilename,
+        );
+
+        return response()->stream(function () use ($stream): void {
+            try {
+                fpassthru($stream);
+            } finally {
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
+        }, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => $disposition,
+            'Content-Length' => (string) $fileSize,
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 

@@ -13,6 +13,7 @@ use App\Models\PermissionGroup;
 use App\Models\Project;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
+use App\Models\ResourceFile;
 use App\Models\User;
 use App\Services\DocumentPackPdfService;
 use App\Services\ProjectSchedulePdfService;
@@ -87,6 +88,112 @@ class AdminDocumentPackTest extends TestCase
             DocumentPackItemRole::Quote->value => 'Quote',
             DocumentPackItemRole::UnpricedSchedule->value => 'Schedule',
         ], $component->instance()->documentPackRoleOptions());
+    }
+
+    public function test_document_pack_manager_can_select_only_pdf_resources_without_resources_page_access(): void
+    {
+        Storage::fake('local');
+
+        $group = PermissionGroup::create([
+            'name' => 'Pack Resource User',
+            'slug' => 'pack-resource-user',
+            'is_system' => false,
+        ]);
+        $group->permissions()->attach(Permission::query()->whereIn('key', [
+            'projects.view',
+            'output.view',
+            'output.manage-document-packs',
+            'output.produce-document-packs',
+        ])->pluck('id'));
+        $user = User::factory()->create(['permission_group_id' => $group->id]);
+        $project = Project::factory()->for($user)->create();
+        $pdfResource = ResourceFile::factory()->for($user, 'uploader')->create([
+            'display_name' => 'Emergency Lighting Guide',
+            'original_filename' => 'emergency-lighting.pdf',
+        ]);
+        $wordResource = ResourceFile::factory()->for($user, 'uploader')->create([
+            'display_name' => 'Word Instructions',
+            'file_path' => ResourceFile::Directory.'/word-instructions.docx',
+            'original_filename' => 'instructions.docx',
+            'mime_type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'extension' => 'docx',
+        ]);
+        Storage::disk(ResourceFile::Disk)->put($pdfResource->file_path, $this->pdfWithText('Resource PDF'));
+        Storage::disk(ResourceFile::Disk)->put($wordResource->file_path, 'word resource');
+        $this->actingAs($user);
+
+        $this->assertFalse($user->can('resources.view'));
+        $this->get(route('resource-files.view', $pdfResource))->assertForbidden();
+        $this->get(route('projects.document-packs.resources.file', [
+            'project' => $project,
+            'resourceFile' => $pdfResource,
+        ]))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf');
+        $this->get(route('projects.document-packs.resources.file', [
+            'project' => $project,
+            'resourceFile' => $wordResource,
+        ]))->assertNotFound();
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id]);
+        $component->set('outputTab', 'packs');
+        $component->assertSee('Select Resource');
+        $itemKey = array_key_first($component->get('documentPackItems'));
+
+        $component->call('openDocumentPackResourcePicker', $itemKey);
+        $component->assertSee('Emergency Lighting Guide');
+        $component->assertSee('emergency-lighting.pdf');
+        $component->assertDontSee('Word Instructions');
+        $component->call('previewDocumentPackResource', $pdfResource->id);
+        $component->assertSeeHtml('<iframe');
+        $component->call('addDocumentPackResource', $pdfResource->id);
+        $component->assertSet("documentPackItems.{$itemKey}.role", DocumentPackItemRole::CustomPdf->value);
+        $component->assertSet("documentPackItems.{$itemKey}.resource_file_id", $pdfResource->id);
+        $component->assertSee('Emergency Lighting Guide');
+        $component->set('documentPackName', 'Resource Pack');
+        $component->call('saveDocumentPack');
+        $component->assertHasNoErrors();
+        $component->assertNotified('Document pack saved');
+
+        $item = DocumentPack::query()->where('project_id', $project->id)->sole()->items()->sole();
+
+        $this->assertSame(DocumentPackItemRole::CustomPdf, $item->role);
+        $this->assertSame('Emergency Lighting Guide', $item->configuration['resource_display_name']);
+        $this->assertSame($pdfResource->id, $item->configuration['resource_file_id']);
+        $this->assertNotSame($pdfResource->file_path, $item->file_path);
+        Storage::disk('local')->assertExists($item->file_path);
+
+        $pdfResource->delete();
+        Storage::disk('local')->assertExists($item->file_path);
+    }
+
+    public function test_document_pack_resource_picker_requires_document_pack_management(): void
+    {
+        $group = PermissionGroup::create([
+            'name' => 'Output Viewer',
+            'slug' => 'output-viewer',
+            'is_system' => false,
+        ]);
+        $group->permissions()->attach(Permission::query()->whereIn('key', [
+            'projects.view',
+            'output.view',
+        ])->pluck('id'));
+        $user = User::factory()->create(['permission_group_id' => $group->id]);
+        $project = Project::factory()->for($user)->create();
+        $resource = ResourceFile::factory()->for($user, 'uploader')->create();
+        $this->actingAs($user);
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->set('outputTab', 'packs')
+            ->assertDontSee('Select Resource');
+        $component
+            ->call('openDocumentPackResourcePicker', 'forged-item-key')
+            ->assertForbidden();
+
+        $this->get(route('projects.document-packs.resources.file', [
+            'project' => $project,
+            'resourceFile' => $resource,
+        ]))->assertForbidden();
     }
 
     public function test_document_pack_builder_uses_compact_cards_and_end_add_tile(): void
