@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.6 - 2026-09-03
+
+Version: `0.2.5` -> `0.2.6`
+
+Changes included:
+
+- `9cf9378` docs updated
+- `1a0cd8f` Optional legal page and no cover option if no tenders
+- `d8fbdd3` hardening
+- `60f7a2d` filenaming convention tweak
+- `c94acd6` housekeeping temp file cleanups
+
 ## 0.2.5 - 2026-09-01
 
 Version: `0.2.4` -> `0.2.5`
