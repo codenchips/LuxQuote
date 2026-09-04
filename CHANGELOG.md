@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.7 - 2026-09-04
+
+Version: `0.2.6` -> `0.2.7`
+
+Changes included:
+
+- `0656b8c` Resources, Add to Pack and document pack templates
+- `25ebc4e` Document packs preview ok.  History retains 3 months only
+- `cbaa224` Hardening
+
 ## 0.2.6 - 2026-09-03
 
 Version: `0.2.5` -> `0.2.6`
