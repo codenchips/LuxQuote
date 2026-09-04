@@ -139,7 +139,7 @@ class StatisticsReportService
     private function averageRevisionInterval(Collection $projects): ?float
     {
         $intervals = $projects->flatMap(fn (Project $project): Collection => $project->revisions->sortBy('created_at')->values()->sliding(2)
-            ->map(fn (Collection $pair): float => $pair[0]->created_at->diffInMinutes($pair[1]->created_at) / 1440));
+            ->map(fn (Collection $pair): float => $pair->first()->created_at->diffInMinutes($pair->last()->created_at) / 1440));
 
         return $intervals->isEmpty() ? null : round((float) $intervals->average(), 1);
     }

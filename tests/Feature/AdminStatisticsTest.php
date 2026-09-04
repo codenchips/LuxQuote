@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Models\Permission;
 use App\Models\PermissionGroup;
 use App\Models\Project;
+use App\Models\ProjectRevision;
 use App\Models\ReportingEvent;
 use App\Models\User;
 use App\Services\ProjectOwnerNameResolver;
@@ -130,6 +131,34 @@ class AdminStatisticsTest extends TestCase
         $row = $report['project_rows']->firstWhere('reference', $project->reference_number);
         $this->assertSame('Jane Manager', $row['owner']);
         $this->assertStringNotContainsString('@', $row['owner']);
+    }
+
+    public function test_average_revision_interval_handles_projects_with_more_than_two_revisions(): void
+    {
+        $project = Project::factory()->create(['created_at' => now()->subDays(12)]);
+        $revisionDates = [now()->subDays(10), now()->subDays(6), now()];
+        $initialRevision = $project->revisions()->firstOrFail();
+        $initialRevision->forceFill([
+            'created_at' => $revisionDates[0],
+            'updated_at' => $revisionDates[0],
+        ])->saveQuietly();
+
+        foreach (array_slice($revisionDates, 1) as $index => $createdAt) {
+            ProjectRevision::query()->forceCreate([
+                'project_id' => $project->id,
+                'revision_number' => $index + 2,
+                'created_by' => $project->user_id,
+                'created_at' => $createdAt,
+                'updated_at' => $createdAt,
+            ]);
+        }
+
+        $report = app(StatisticsReportService::class)->report(
+            CarbonImmutable::now()->subMonth(),
+            CarbonImmutable::now()->addDay(),
+        );
+
+        $this->assertSame(5.0, $report['summary']['average_revision_interval_days']);
     }
 
     public function test_salesforce_owner_name_is_cached_locally_for_existing_project(): void
