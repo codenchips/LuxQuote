@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.9 - 2026-09-04
+
+Version: `0.2.8` -> `0.2.9`
+
+Changes included:
+
+- `6a5dd75` Stats hotfix
+
 ## 0.2.8 - 2026-09-04
 
 Version: `0.2.7` -> `0.2.8`
