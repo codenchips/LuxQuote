@@ -234,11 +234,6 @@
                     </div>
                 </div>
 
-                <div class="mt-5 flex items-center gap-3 rounded-lg border border-sky-300 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900 dark:border-sky-500/50 dark:bg-sky-500/15 dark:text-sky-100">
-                    <x-heroicon-o-information-circle class="h-5 w-5 shrink-0" />
-                    <span>Templates preserve a reusable document order while Quote and Schedule content is generated for this project.</span>
-                </div>
-
                 <div class="mt-5 grid gap-4 md:grid-cols-2">
                     <label class="block">
                         <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Pack name</span>
@@ -295,7 +290,7 @@
                             $displayFilename = $hasReplacementUpload && $uploadedFile
                                 ? ($uploadedOriginalName ?? $uploadedFile->getClientOriginalName())
                                 : ($item['resource_display_name'] ?? $item['original_filename']);
-                            $pdfPreviewUrl = $requiresUpload && $hasFile ? $this->documentPackItemPdfUrl($item) : null;
+                            $pdfPreviewUrl = $this->documentPackItemPdfUrl($item);
                             $isEmpty = blank($item['role']) || ($requiresUpload && ! $hasFile);
                         @endphp
                         <article
@@ -306,6 +301,19 @@
                                 selectedFilename: window.documentPackPreviewFilenames?.[@js($itemKey)] ?? @js($displayFilename),
                                 uploadError: null,
                                 uploading: false,
+                                releasePreviewUrl() {
+                                    const existingUrl = window.documentPackPreviewUrls?.[this.previewKey] ?? null;
+
+                                    if (typeof existingUrl === 'string' && existingUrl.startsWith('blob:')) {
+                                        URL.revokeObjectURL(existingUrl);
+                                    }
+
+                                    if (window.documentPackPreviewUrls) {
+                                        delete window.documentPackPreviewUrls[this.previewKey];
+                                    }
+
+                                    this.previewUrl = null;
+                                },
                                 acceptsPdf(file) {
                                     if (! file) {
                                         return false;
@@ -345,16 +353,12 @@
                                     window.documentPackPreviewUrls ??= {};
                                     window.documentPackPreviewFilenames ??= {};
 
+                                    this.releasePreviewUrl();
                                     this.selectedFilename = file.name;
                                     window.documentPackPreviewFilenames[this.previewKey] = this.selectedFilename;
                                     this.uploading = true;
-
-                                    const reader = new FileReader();
-                                    reader.onload = () => {
-                                        this.previewUrl = reader.result;
-                                        window.documentPackPreviewUrls[this.previewKey] = this.previewUrl;
-                                    };
-                                    reader.readAsDataURL(file);
+                                    this.previewUrl = URL.createObjectURL(file);
+                                    window.documentPackPreviewUrls[this.previewKey] = this.previewUrl;
 
                                     const finishUpload = () => {
                                         $wire.set('documentPackUploadOriginalNames.{{ $itemKey }}', file.name);
@@ -370,8 +374,13 @@
                                             () => {
                                                 this.uploading = false;
                                                 this.uploadError = 'The PDF could not be uploaded.';
+                                                this.releasePreviewUrl();
                                             },
                                         );
+                                    }).catch(() => {
+                                        this.uploading = false;
+                                        this.uploadError = 'The PDF could not be prepared for upload.';
+                                        this.releasePreviewUrl();
                                     });
                                 },
                                 chooseFile(event) {
@@ -413,6 +422,7 @@
                                 <div class="flex-1"></div>
                                 <button
                                     type="button"
+                                    x-on:click="releasePreviewUrl()"
                                     wire:click="removeDocumentPackItem('{{ $itemKey }}')"
                                     class="rounded-md p-1 text-gray-400 transition hover:bg-danger-50 hover:text-danger-600 dark:hover:bg-danger-500/10"
                                     title="Remove document"
@@ -446,13 +456,21 @@
 
                             @if($requiresUpload)
                                 @if($hasFile)
-                                    <a
+                                    <button
+                                        type="button"
                                         x-show="previewUrl || @js((bool) $pdfPreviewUrl)"
-                                        x-bind:href="previewUrl || @js($pdfPreviewUrl)"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
+                                        x-on:click="
+                                            const url = previewUrl || @js($pdfPreviewUrl);
+
+                                            if (url) {
+                                                $dispatch('open-document-pack-pdf-preview', {
+                                                    url,
+                                                    filename: selectedFilename || @js($displayFilename) || 'PDF preview',
+                                                });
+                                            }
+                                        "
                                         class="mx-auto mt-3 block w-[165px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition hover:border-primary-400 hover:ring-2 hover:ring-primary-500/20 dark:border-white/10 dark:bg-gray-900"
-                                        title="Open uploaded PDF in a new tab"
+                                        title="Preview uploaded PDF"
                                     >
                                         <div class="h-[233px] w-[165px] overflow-hidden bg-gray-100 dark:bg-gray-800">
                                             <iframe
@@ -462,7 +480,7 @@
                                                 class="pointer-events-none h-[253px] w-[185px] max-w-none overflow-hidden border-0"
                                             ></iframe>
                                         </div>
-                                    </a>
+                                    </button>
                                     <div x-show="! previewUrl && ! @js((bool) $pdfPreviewUrl)" class="mx-auto mt-3 flex h-[233px] w-[165px] flex-col items-center justify-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-center dark:border-white/10 dark:bg-white/5">
                                         <x-heroicon-o-document-check class="h-8 w-8 text-primary-500" />
                                         <span class="mt-2 text-xs font-semibold text-gray-500 dark:text-gray-400">PDF selected</span>
@@ -520,6 +538,25 @@
                                 @error('documentPackUploads.'.$itemKey)
                                     <span class="mt-1 block text-xs text-danger-600">{{ $message }}</span>
                                 @enderror
+                            @elseif($pdfPreviewUrl)
+                                <button
+                                    type="button"
+                                    x-on:click="$dispatch('open-document-pack-pdf-preview', {
+                                        url: @js($pdfPreviewUrl),
+                                        filename: @js($roleLabel ?? 'PDF preview'),
+                                    })"
+                                    class="mx-auto mt-3 block w-[165px] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition hover:border-primary-400 hover:ring-2 hover:ring-primary-500/20 dark:border-white/10 dark:bg-gray-900"
+                                    title="Preview {{ $roleLabel }}"
+                                >
+                                    <div class="h-[233px] w-[165px] overflow-hidden bg-gray-100 dark:bg-gray-800">
+                                        <iframe
+                                            src="{{ $pdfPreviewUrl }}#page=1&toolbar=0&navpanes=0&scrollbar=0&view=FitH"
+                                            title="Preview of {{ $roleLabel }}"
+                                            scrolling="no"
+                                            class="pointer-events-none h-[253px] w-[185px] max-w-none overflow-hidden border-0"
+                                        ></iframe>
+                                    </div>
+                                </button>
                             @elseif(filled($item['role']))
                                 <div class="mx-auto mt-3 flex h-[233px] w-[165px] flex-col items-center justify-center rounded-lg border border-primary-200 bg-primary-50 px-3 text-center dark:border-primary-500/20 dark:bg-primary-500/10">
                                     <x-heroicon-o-sparkles class="h-8 w-8 text-primary-500" />
@@ -1090,6 +1127,8 @@
     @endif
 
     @if($outputTab === 'packs' && $canManageDocumentPacks)
+        <x-document-pack-pdf-preview />
+
         <x-document-pack-template-dialogs
             :templates="$this->documentPackTemplates"
             :visibility-options="$this->documentPackTemplateVisibilityOptions()"

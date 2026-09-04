@@ -15,6 +15,11 @@ use Tests\TestCase;
 
 class AdminNavigationTest extends TestCase
 {
+    public function test_admin_panel_does_not_show_global_search(): void
+    {
+        $this->assertNull(Filament::getPanel('admin')->getGlobalSearchProvider());
+    }
+
     public function test_admin_navigation_groups_are_registered_in_the_requested_order(): void
     {
         $this->assertSame(

@@ -1,6 +1,6 @@
 # Company App — Project Status
 
-_Last updated: 3 September 2026_
+_Last updated: 4 September 2026_
 
 ---
 
@@ -14,7 +14,16 @@ _Last updated: 3 September 2026_
 - **Grouped permission editor**: Group create/edit forms organise every permission exactly once under Project, Users, Calendar, Pricing, Salesforce, Products, Resources, or Validation. Related revision, history, output, quote approval, group, and team capabilities are folded into their closest functional area, with one shared search across all areas and per-area Select all/Deselect all controls. Group Details and Permissions use separate full-width panels.
 - **Document Pack Resource picker**: The Document Pack builder can browse PDF-only Resources in a modal table, preview them in the existing lightbox style, and add a selected PDF to a pack tile. Saving copies the Resource into the pack's managed storage so the pack remains stable if the original library entry changes or is deleted. The standalone page remains gated by `resources.view`, while the picker follows the existing `output.manage-document-packs` permission.
 - **Reusable Document Pack templates**: Document Pack users can save the current ordered tile layout as an Open, Private, or Team template, then select any visible template as the starting point for another project's pack. Quote and Schedule remain dynamic placeholders; an unavailable Quote permission produces a warning and omits that placeholder. Static PDFs receive an independent template snapshot and a second project-pack snapshot, so Resource deletion cannot break templates and future template edits cannot change existing project packs. Template save, selection, and preview all follow `output.manage-document-packs` plus owner/team visibility rules.
-- **Forward-only rollout**: `2026_09_03_094427_create_resource_files_table` only creates the new metadata table and foreign key; it does not rewrite or delete existing data.
+- **Forward-only rollout**: Five additive migrations create Resource metadata, install Admin-only Resource permissions, and create Document Pack template/item tables. Their `up()` paths do not rewrite or delete existing business data. The two template migrations were applied locally after the initial missing-table error and are included in commit `0656b8c` for production deployment.
+- **Deployment protection**: `resource_files`, `document_pack_templates`, and `document_pack_template_items` are protected by the deployment row-count/data-loss guard. The normal production workflow runs pending migrations before its post-migration checks.
+
+### Document Pack Template next steps
+
+- Add an Admin template-management page for listing, previewing, editing, and deleting saved templates.
+- Add separate template edit/delete permissions when that management UI is introduced; template selection should continue to follow Document Pack access and visibility rather than standalone Resources access.
+- Allow authorised users to revise an existing template's name, visibility, ordering, placeholders, and static snapshots without changing packs already created from it.
+- Record template updates/deletions in Activity History and consider template version history before widely-used standards become editable.
+- Add orphan snapshot reporting/cleanup and include `storage/app/private/resources` plus `storage/app/private/document-pack-templates` in the production file-backup plan; the current database-only backup cannot restore those PDFs.
 
 ---
 
@@ -127,8 +136,7 @@ _Last updated: 3 September 2026_
 - **Profile-controlled project list preference**: The user profile now includes **Project list view**, with **All available projects** plus one option for each team the user belongs to. Choosing a team makes the Projects table open with that Team filter applied by default.
 - **Team filter behaviour preserved**: When the Projects table Team filter is active, it remains an exclusive Team filter and shows only Team-visible projects assigned to the selected team(s). Clearing it returns to all accessible projects.
 - **Production rollback routines added**: Deploys now write rollback manifests in `backups/` that capture the previous commit and pre-deploy backup paths. `scripts/rollback-production.sh` can roll production back to the previous commit without touching the database, or restore the matching pre-deploy database backup only when `--with-database` is explicitly requested and confirmed.
-- **Activity log archiving added**: `activity_log_archives` now stores old activity-log snapshots, and `app:archive-activity-logs` moves live log rows older than 6 weeks into the archive table in chunks. `DEPLOYMENT.md` records the daily cron entry.
-- **Archived Logs UI added**: The **History** page now links to archived logs, which use the same table layout, action formatting, search, and filters against archived activity logs. Archived logs do not appear as a separate left-sidebar navigation item and are controlled by the existing `activity-log.view` permission.
+- **Superseded — activity log archiving**: The 4 September retention change removed the Archived Logs UI and archive command. History now uses a configurable rolling retention window and permanently prunes expired records.
 
 ---
 
@@ -325,9 +333,8 @@ activity_logs
   payload (JSON, nullable), created_at
 
 activity_log_archives
-  id, original_activity_log_id, user_id (nullable snapshot), project_id (nullable snapshot)
-  action_type, user_email_snapshot, project_name_snapshot, revision_number (nullable)
-  payload (JSON, nullable), created_at (original log time), archived_at
+  Legacy rollback-compatibility table. The first activity-history prune restores retained
+  rows to activity_logs and clears expired rows; no new records are archived.
 
 salesforce_pdf_uploads
   id, project_id (FK), project_revision_id (FK), document_type

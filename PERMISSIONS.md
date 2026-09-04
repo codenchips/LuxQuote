@@ -60,7 +60,7 @@ The left navigation groups permission-controlled features as follows:
   - `History`: the global activity log (`activity-log.view`).
   - `Specials`: special order code management (`specials.manage`).
   - `Products`: the product catalogue (`products.view`).
-  - `Resources`: the private shared file library. Page access, uploads, display-name edits, and deletions use separate `resources.*` capabilities. Per-file permissions are deliberately deferred until the Document Packs integration is designed.
+  - `Resources`: the private shared file library. Page access, uploads, display-name edits, and deletions use separate `resources.*` capabilities. Per-file permissions remain deliberately deferred; the Document Pack picker is separately governed by `output.manage-document-packs`.
 - `Users`
   - `Users`: create/edit users and assign them to a group.
   - `Groups`: create/edit permission groups and assign permissions.
@@ -76,7 +76,7 @@ protected static bool $shouldRegisterNavigation = false;
 
 The permissions catalogue remains directly accessible to authorized users if linked manually, and tests can still render it. It is read-only by design.
 
-The live **History** page and linked **Archived Logs** page are both controlled by `activity-log.view`. Archived Logs searches and displays retained audit snapshots from `activity_log_archives`; it does not appear as a separate left-sidebar navigation item and does not grant any additional project access or mutation capability.
+The **History** page is controlled by `activity-log.view`. History is retained for the configured number of months (three by default); there is no separate archive page or archive permission.
 
 ## Authorization Flow
 

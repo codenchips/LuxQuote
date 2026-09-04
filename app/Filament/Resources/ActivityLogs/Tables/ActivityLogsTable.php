@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\ActivityLogs\Tables;
 
 use App\Models\ActivityLog;
-use App\Models\ActivityLogArchive;
 use App\Models\ProjectRevision;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -15,12 +14,12 @@ class ActivityLogsTable
 {
     private const ACTION_DISPLAY_LIMIT = 160;
 
-    public static function configure(Table $table, bool $archived = false): Table
+    public static function configure(Table $table): Table
     {
         $columns = [
             TextColumn::make('user.name')
                 ->label('Who')
-                ->placeholder(fn (ActivityLog|ActivityLogArchive $record): string => $record->user_email_snapshot)
+                ->placeholder(fn (ActivityLog $record): string => $record->user_email_snapshot)
                 ->searchable()
                 ->width('7rem')
                 ->extraCellAttributes([
@@ -29,7 +28,7 @@ class ActivityLogsTable
 
             TextColumn::make('project.reference_number')
                 ->label('Reference')
-                ->getStateUsing(fn (ActivityLog|ActivityLogArchive $record): string => self::referenceLabel($record))
+                ->getStateUsing(fn (ActivityLog $record): string => self::referenceLabel($record))
                 ->searchable()
                 ->sortable()
                 ->width('10rem')
@@ -55,7 +54,7 @@ class ActivityLogsTable
                 ->extraCellAttributes([
                     'class' => 'w-full min-w-[36rem] overflow-hidden whitespace-nowrap text-ellipsis',
                 ])
-                ->getStateUsing(function (ActivityLog|ActivityLogArchive $record): string {
+                ->getStateUsing(function (ActivityLog $record): string {
                     $payload = $record->payload ?? [];
 
                     $html = match ($record->action_type) {
@@ -306,17 +305,6 @@ class ActivityLogsTable
                     'class' => 'w-40 max-w-40 whitespace-nowrap',
                 ]),
         ];
-
-        if ($archived) {
-            $columns[] = TextColumn::make('archived_at')
-                ->label('Archived')
-                ->dateTime('M d Y H:i')
-                ->sortable()
-                ->width('10rem')
-                ->extraCellAttributes([
-                    'class' => 'w-40 max-w-40 whitespace-nowrap',
-                ]);
-        }
 
         return $table
             ->columns($columns)
@@ -610,7 +598,7 @@ class ActivityLogsTable
         return "Changed <strong>{$label}</strong>";
     }
 
-    private static function referenceLabel(ActivityLog|ActivityLogArchive $record): string
+    private static function referenceLabel(ActivityLog $record): string
     {
         if (str_starts_with($record->action_type, 'calendar.')) {
             return 'Calendar';
@@ -631,7 +619,7 @@ class ActivityLogsTable
         return 'No project';
     }
 
-    private static function projectName(ActivityLog|ActivityLogArchive $record): string
+    private static function projectName(ActivityLog $record): string
     {
         return (string) ($record->project?->name ?? $record->project_name_snapshot ?? 'Unknown project');
     }

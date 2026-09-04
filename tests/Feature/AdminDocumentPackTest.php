@@ -234,6 +234,7 @@ class AdminDocumentPackTest extends TestCase
             ->assertSeeHtml('aria-label="Add document"')
             ->assertSee('Schedule')
             ->assertSee('Generated')
+            ->assertDontSee('Templates preserve a reusable document order')
             ->assertSee("P1 - 2 SKU's, 8 Items")
             ->assertSee('Last modified 25/06/26 10:30')
             ->assertDontSee('Select a document...')
@@ -251,7 +252,10 @@ class AdminDocumentPackTest extends TestCase
             ->assertSeeHtml('Preview of selected PDF')
             ->assertSeeHtml('window.documentPackPreviewUrls')
             ->assertSeeHtml('rejectSelectedFile($event)')
-            ->assertSeeHtml('readAsDataURL')
+            ->assertSeeHtml('URL.createObjectURL(file)')
+            ->assertSee('open-document-pack-pdf-preview', escape: false)
+            ->assertSeeHtml('id="document-pack-pdf-preview"')
+            ->assertDontSeeHtml('Open uploaded PDF in a new tab')
             ->assertSeeHtml('$wire.upload')
             ->assertSeeHtml('clearDocumentPackUpload')
             ->assertSee('Only PDF files can be uploaded.')
@@ -290,7 +294,32 @@ class AdminDocumentPackTest extends TestCase
         ]))
             ->assertOk()
             ->assertHeader('Content-Type', 'application/pdf')
-            ->assertHeader('Content-Disposition', 'inline; filename="cover.pdf"');
+            ->assertHeader('Content-Disposition', 'inline; filename=cover.pdf')
+            ->assertHeader('Content-Length', (string) Storage::disk('local')->size('tests/preview-cover.pdf'))
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+    }
+
+    public function test_missing_uploaded_document_pack_item_returns_not_found(): void
+    {
+        Storage::fake('local');
+
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $pack = DocumentPack::factory()->for($project)->create(['created_by' => $admin->id]);
+        $item = DocumentPackItem::factory()->for($pack)->create([
+            'role' => DocumentPackItemRole::CustomPdf,
+            'source_type' => DocumentPackItemSource::Uploaded,
+            'file_disk' => 'local',
+            'file_path' => 'document-packs/missing.pdf',
+            'original_filename' => 'missing.pdf',
+        ]);
+        $this->actingAs($admin);
+
+        $this->get(route('projects.document-packs.items.file', [
+            'project' => $project,
+            'documentPack' => $pack,
+            'documentPackItem' => $item,
+        ]))->assertNotFound();
     }
 
     public function test_replacing_uploaded_document_pack_item_uses_replacement_filename_without_old_preview_url(): void
@@ -572,6 +601,63 @@ class AdminDocumentPackTest extends TestCase
         $this->assertSame('LEGAL-001-OfficeUpgrade-TL-DP-P01.pdf', $generated['filename']);
 
         File::delete($generated['path']);
+    }
+
+    public function test_standard_legal_page_has_an_authorized_thumbnail_and_lightbox_preview(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $this->actingAs($admin);
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->set('outputTab', 'packs');
+        $itemKey = array_key_first($component->get('documentPackItems'));
+
+        $component
+            ->set("documentPackItems.{$itemKey}.role", DocumentPackItemRole::StandardLegalPage->value)
+            ->assertSeeHtml('Preview of Standard Legal Page')
+            ->assertSee('open-document-pack-pdf-preview', escape: false)
+            ->assertSee(route('projects.document-packs.standard-legal-page.file', ['project' => $project]), escape: false);
+
+        $this->get(route('projects.document-packs.standard-legal-page.file', ['project' => $project]))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->assertHeader('Content-Disposition', 'inline; filename="standard-legal-page.pdf"')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+    }
+
+    public function test_standard_legal_page_preview_requires_document_pack_management(): void
+    {
+        $group = PermissionGroup::create([
+            'name' => 'Output Viewer',
+            'slug' => 'legal-page-output-viewer',
+            'description' => null,
+            'is_system' => false,
+        ]);
+        $group->permissions()->attach(Permission::where('key', 'output.view')->firstOrFail());
+
+        $user = User::factory()->create(['permission_group_id' => $group->id]);
+        $project = Project::factory()->for($user)->create();
+        $this->actingAs($user);
+
+        $this->get(route('projects.document-packs.standard-legal-page.file', ['project' => $project]))
+            ->assertForbidden();
+    }
+
+    public function test_missing_standard_legal_page_preview_returns_not_found(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $originalPath = config('document-packs.legal_page_pdf');
+        config(['document-packs.legal_page_pdf' => storage_path('app/private/missing-standard-legal-page.pdf')]);
+        $this->actingAs($admin);
+
+        try {
+            $this->get(route('projects.document-packs.standard-legal-page.file', ['project' => $project]))
+                ->assertNotFound();
+        } finally {
+            config(['document-packs.legal_page_pdf' => $originalPath]);
+        }
     }
 
     public function test_generated_items_use_the_revision_selected_at_generation_time(): void

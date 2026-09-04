@@ -14,10 +14,12 @@ use App\Models\ProjectRevision;
 use App\Models\ResourceFile;
 use App\Services\DocumentPackPdfService;
 use App\Services\PdfDownloadUrlService;
+use App\Services\ProjectLegalPdfService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -84,19 +86,34 @@ class DocumentPackController extends Controller
 
         $diskName = $documentPackItem->file_disk ?? 'local';
         $filePath = $documentPackItem->file_path;
-        $disk = Storage::disk($diskName);
-
-        abort_unless($disk->exists($filePath), 404);
-
-        $filename = str_replace(['\\', '"'], '', $documentPackItem->original_filename ?: 'document-pack-item.pdf');
-
-        return response()->stream(function () use ($disk, $filePath): void {
+        try {
+            $disk = Storage::disk($diskName);
+            abort_unless($disk->exists($filePath), 404);
+            $fileSize = $disk->size($filePath);
             $stream = $disk->readStream($filePath);
+        } catch (Throwable $exception) {
+            Log::warning('A document pack PDF could not be opened.', [
+                'project_id' => $project->id,
+                'document_pack_id' => $documentPack->id,
+                'document_pack_item_id' => $documentPackItem->id,
+                'exception' => $exception->getMessage(),
+            ]);
 
-            if ($stream === false) {
-                return;
-            }
+            abort(404);
+        }
 
+        abort_if($stream === false, 404);
+
+        $filename = basename(str_replace('\\', '/', $documentPackItem->original_filename ?: 'document-pack-item.pdf'));
+        $filename = preg_replace('/[\x00-\x1F\x7F]/u', '', $filename) ?: 'document-pack-item.pdf';
+        $fallbackFilename = preg_replace('/[^A-Za-z0-9._-]/', '-', Str::ascii($filename)) ?: 'document-pack-item.pdf';
+        $disposition = (new ResponseHeaderBag)->makeDisposition(
+            ResponseHeaderBag::DISPOSITION_INLINE,
+            $filename,
+            $fallbackFilename,
+        );
+
+        return response()->stream(function () use ($stream): void {
             try {
                 fpassthru($stream);
             } finally {
@@ -106,7 +123,9 @@ class DocumentPackController extends Controller
             }
         }, 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="'.$filename.'"',
+            'Content-Disposition' => $disposition,
+            'Content-Length' => (string) $fileSize,
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 
@@ -222,6 +241,32 @@ class DocumentPackController extends Controller
             'Content-Length' => (string) $fileSize,
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    public function standardLegalPage(
+        Request $request,
+        Project $project,
+        ProjectLegalPdfService $legalPdfService,
+    ): BinaryFileResponse {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless($request->user()->can(PermissionKey::OutputManageDocumentPacks->value), 403);
+
+        try {
+            $path = $legalPdfService->legalPagePath();
+
+            return response()->file($path, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="standard-legal-page.pdf"',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        } catch (Throwable $exception) {
+            Log::warning('The standard legal page could not be previewed.', [
+                'project_id' => $project->id,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            abort(404);
+        }
     }
 
     private function authorizeProjectAccess(Request $request, Project $project): void

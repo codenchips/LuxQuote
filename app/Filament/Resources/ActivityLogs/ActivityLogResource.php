@@ -9,6 +9,7 @@ use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use UnitEnum;
 
 class ActivityLogResource extends Resource
@@ -31,6 +32,14 @@ class ActivityLogResource extends Resource
     public static function canCreate(): bool
     {
         return false;
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $retentionMonths = max(1, (int) config('activity-log.retention_months', 3));
+
+        return parent::getEloquentQuery()
+            ->where('created_at', '>=', now()->subMonthsNoOverflow($retentionMonths));
     }
 
     public static function table(Table $table): Table

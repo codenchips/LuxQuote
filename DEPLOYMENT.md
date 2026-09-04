@@ -94,15 +94,31 @@ They add project currency, change only the default revision for future projects,
 
 The first Docker image build after an older build cache has expired can spend several minutes printing package installation output from `docker/8.5/Dockerfile`. That output is expected during `docker compose up -d --build` and is not, by itself, a runner loop. Do not start a second deployment while the first workflow is still running. The existing persistent `luxquote-production` runner does not need to be recreated for this release when it remains online and its logs end with `Listening for Jobs`.
 
-## Pending Resources Library Rollout
+## Pending Resources and Document Pack Templates Rollout
 
-The Resources feature adds one forward-only migration:
+The Resources and reusable Document Pack template features add these forward-only migrations:
 
 - `2026_09_03_094427_create_resource_files_table`
 - `2026_09_03_114115_add_resource_permissions`
 - `2026_09_03_114829_disable_resource_permissions_for_non_admin_groups`
+- `2026_09_03_151703_create_document_pack_templates_table`
+- `2026_09_03_151706_create_document_pack_template_items_table`
 
-The first migration creates a new metadata table, the second adds the four `resources.*` permission catalogue entries, and the third guarantees that their rollout defaults are off for every group except Admin. The third migration also safely corrects local or staging databases where the earlier temporary defaults were already applied. None alters or deletes existing business records or uploaded files. The normal production workflow will run all three with the existing `php artisan migrate --force --no-interaction` step, and `resource_files` is included in the deploy data-loss guard. Uploaded files live under `storage/app/private/resources`; the production bind mount preserves that directory across container rebuilds and Git checkouts. The current `backup-production-database.sh` job is database-only and therefore does not back up the uploaded file contents.
+The first migration creates Resource metadata, the next two add the four `resources.*` permission catalogue entries and guarantee that their rollout defaults are off for every group except Admin, and the final two create reusable Document Pack templates plus their ordered items. None alters or deletes existing business records or uploaded files. The normal production workflow runs them with the existing `php artisan migrate --force --no-interaction` step. `resource_files`, `document_pack_templates`, and `document_pack_template_items` are included in the deploy data-loss guard.
+
+Uploaded files live under `storage/app/private/resources`; template snapshots live under `storage/app/private/document-pack-templates`. The production bind mount preserves both directories across container rebuilds and Git checkouts. The current `backup-production-database.sh` job is database-only and therefore does not back up either set of PDF contents. Add a separate protected file backup before treating the Resource library or templates as the only copy of business-critical documents.
+
+The template migrations are required before opening a project's Document Packs tab. If that page reports that `document_pack_templates` does not exist, verify deployment includes commit `0656b8c` or later and inspect migration state with:
+
+```bash
+docker compose exec -T laravel.test php artisan migrate:status
+```
+
+Do not create the tables manually and do not use a destructive reset. A normal production deployment applies the pending forward migrations automatically; if an operator must apply them independently, use only:
+
+```bash
+docker compose exec -T laravel.test php artisan migrate --force --no-interaction
+```
 
 ## Salesforce Visits Calendar Release Checklist
 
@@ -621,31 +637,33 @@ The legacy datasheet endpoint streams JSON progress chunks while it works. The a
 
 Browser-driven PDF opens/downloads use prepared authenticated URLs under `/pdf-downloads/{token}/{filename}` rather than blob URLs. Prepared files live in `storage/app/pdf-downloads`, are user-scoped, are reusable for 10 minutes, and are cleaned opportunistically after 30 minutes. They should not be treated as permanent generated-output storage.
 
-## Activity Log Archiving
+## Activity History Retention
 
-The live History pages read from `activity_logs`. To keep that table fast and searchable, logs older than 6 weeks should be moved into `activity_log_archives` by the archive command:
+Global and project output History now retain only the most recent three months by default. Older rows are permanently deleted; there is no archive page or ongoing archive process. Adjust the window in production only when required:
+
+```dotenv
+ACTIVITY_LOG_RETENTION_MONTHS=3
+```
+
+After changing this value, clear Laravel's cached configuration as part of the normal deployment/configuration workflow. The value is clamped to a minimum of one month.
+
+The Laravel scheduler runs the retention command daily at 01:41 in bounded batches. The existing once-per-minute `schedule:run` cron is all that is required. A production-safe preview is available before allowing any deletion:
 
 ```bash
 cd /home/tamliteco/luxquote.app
-docker compose exec -T laravel.test php artisan app:archive-activity-logs
+docker compose exec -T laravel.test php artisan app:prune-activity-logs --dry-run
 ```
 
-The command copies eligible rows into `activity_log_archives` in chunks, then deletes only the original rows that are confirmed present in the archive table. The archive table stores snapshot data and does not use foreign keys, so historic audit records survive even if users or projects are later deleted. It does not restore, reset, or prune any Docker volumes.
-
-Useful dry-run:
+To run the same scheduled cleanup immediately:
 
 ```bash
 cd /home/tamliteco/luxquote.app
-docker compose exec -T laravel.test php artisan app:archive-activity-logs --dry-run
+docker compose exec -T laravel.test php artisan app:prune-activity-logs
 ```
 
-Suggested daily cron entry:
+On its first successful run after this release, the command safely moves any still-retained rows from the legacy archive table back into live History, discards expired archive rows, and leaves the legacy table empty for rollback compatibility. Missing user/project relationships are nulled while their snapshot labels are preserved. If the old standalone `app:archive-activity-logs` cron was installed, remove that cron entry; the command no longer exists.
 
-```cron
-41 1 * * * cd /home/tamliteco/luxquote.app && docker compose exec -T laravel.test php artisan app:archive-activity-logs >> storage/logs/activity-log-archive.log 2>&1
-```
-
-The retention window can be changed with `--weeks=`, and the batch size can be changed with `--chunk=` if the table becomes very large.
+Quote status is stored independently on each project revision before pruning, so deleting old audit rows cannot downgrade a previously quoted project. This command does not restore, reset, truncate, or prune Docker volumes.
 
 ## Production Monitoring
 

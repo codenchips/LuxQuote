@@ -10,7 +10,6 @@ use App\Enums\ProjectVisibility;
 use App\Filament\Resources\Projects\Pages\Concerns\HasProjectSubNav;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ActivityLog;
-use App\Models\ActivityLogArchive;
 use App\Models\DocumentPack;
 use App\Models\DocumentPackItem;
 use App\Models\DocumentPackTemplate;
@@ -350,20 +349,8 @@ class OutputProject extends ViewRecord
             ->limit(100)
             ->get();
 
-        $archivedLogs = ActivityLogArchive::query()
-            ->where('project_id', $this->record->id)
-            ->whereIn('action_type', ['quote_pdf.generated', 'schedule_pdf.generated'])
-            ->with('user:id,name,email')
-            ->latest('created_at')
-            ->limit(100)
-            ->get();
-
         return $liveLogs
-            ->concat($archivedLogs)
-            ->sortByDesc('created_at')
-            ->take(100)
-            ->values()
-            ->map(function (ActivityLog|ActivityLogArchive $log) use ($revisions): array {
+            ->map(function (ActivityLog $log) use ($revisions): array {
                 $payload = $log->payload ?? [];
                 $isQuote = $log->action_type === 'quote_pdf.generated';
                 $revisionNumber = (int) ($payload['revision_number'] ?? $log->revision_number ?? 0);
@@ -566,6 +553,12 @@ class OutputProject extends ViewRecord
     public function documentPackItemPdfUrl(array $item): ?string
     {
         $role = DocumentPackItemRole::tryFrom($item['role'] ?? '');
+
+        if ($role === DocumentPackItemRole::StandardLegalPage) {
+            return route('projects.document-packs.standard-legal-page.file', [
+                'project' => $this->record,
+            ]);
+        }
 
         if ($role?->source() !== DocumentPackItemSource::Uploaded) {
             return null;
@@ -1016,20 +1009,24 @@ class OutputProject extends ViewRecord
             return;
         }
 
-        ActivityLog::create([
-            'user_id' => auth()->id(),
-            'project_id' => $this->record->id,
-            'action_type' => 'document_pack_template.created',
-            'user_email_snapshot' => auth()->user()?->email ?? '',
-            'project_name_snapshot' => $this->record->name,
-            'payload' => [
-                'document_pack_template_id' => $template->id,
-                'document_pack_template_name' => $template->name,
-                'visibility' => $template->visibility->value,
-                'team_id' => $template->team_id,
-                'document_count' => count($this->documentPackItems),
-            ],
-        ]);
+        try {
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'project_id' => $this->record->id,
+                'action_type' => 'document_pack_template.created',
+                'user_email_snapshot' => auth()->user()?->email ?? '',
+                'project_name_snapshot' => $this->record->name,
+                'payload' => [
+                    'document_pack_template_id' => $template->id,
+                    'document_pack_template_name' => $template->name,
+                    'visibility' => $template->visibility->value,
+                    'team_id' => $template->team_id,
+                    'document_count' => count($this->documentPackItems),
+                ],
+            ]);
+        } catch (Throwable $exception) {
+            report($exception);
+        }
 
         unset($this->documentPackTemplates);
         $this->dispatch('close-modal', id: 'save-document-pack-template');
@@ -1536,7 +1533,7 @@ class OutputProject extends ViewRecord
     /**
      * @param  array<int, int>  $areaIds
      */
-    private function outputHistoryRegenerateUrl(ActivityLog|ActivityLogArchive $log, ?int $revisionId, array $areaIds): ?string
+    private function outputHistoryRegenerateUrl(ActivityLog $log, ?int $revisionId, array $areaIds): ?string
     {
         $payload = $log->payload ?? [];
         $isQuote = $log->action_type === 'quote_pdf.generated';

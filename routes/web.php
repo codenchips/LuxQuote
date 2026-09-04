@@ -56,6 +56,9 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/projects/{project}/document-pack-template-items/{documentPackTemplateItem}/file', [DocumentPackController::class, 'templateItem'])
         ->name('projects.document-pack-templates.items.file');
 
+    Route::get('/projects/{project}/document-pack-standard-legal-page/file', [DocumentPackController::class, 'standardLegalPage'])
+        ->name('projects.document-packs.standard-legal-page.file');
+
     Route::post('/projects/{project}/lock/release', function (Project $project): void {
         ProjectLock::query()
             ->where('project_id', $project->id)

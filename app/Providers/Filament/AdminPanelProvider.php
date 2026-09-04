@@ -44,6 +44,7 @@ class AdminPanelProvider extends PanelProvider
             ->defaultThemeMode(ThemeMode::Dark)
             ->defaultAvatarProvider(SkyBlueUiAvatarsProvider::class)
             ->breadcrumbs(false)
+            ->globalSearch(false)
             ->sidebarWidth('13rem')
             ->sidebarCollapsibleOnDesktop()
             ->navigationGroups([

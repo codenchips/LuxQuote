@@ -11,3 +11,7 @@ Artisan::command('inspire', function () {
 Schedule::command('app:prune-generated-pdfs')
     ->hourlyAt(23)
     ->withoutOverlapping(10);
+
+Schedule::command('app:prune-activity-logs')
+    ->dailyAt('01:41')
+    ->withoutOverlapping(30);

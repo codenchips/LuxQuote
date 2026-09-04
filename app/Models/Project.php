@@ -236,6 +236,14 @@ class Project extends Model
 
     public function markQuoted(ProjectRevision $revision): void
     {
+        if ($revision->project_id !== $this->id) {
+            return;
+        }
+
+        if ($revision->quoted_at === null) {
+            $revision->updateQuietly(['quoted_at' => now()]);
+        }
+
         if ($this->status === ProjectStatus::Archived || $this->active_revision_id !== $revision->id) {
             return;
         }
@@ -264,16 +272,7 @@ class Project extends Model
             return false;
         }
 
-        return ActivityLog::where('project_id', $this->id)
-            ->where('revision_number', $this->activeRevision->revision_number)
-            ->where(function ($query): void {
-                $query->where('action_type', 'quote_pdf.generated')
-                    ->orWhere(function ($query): void {
-                        $query->where('action_type', 'document_pack.generated')
-                            ->where('payload->contains_quote', true);
-                    });
-            })
-            ->exists();
+        return $this->activeRevision->quoted_at !== null;
     }
 
     protected static function booted(): void

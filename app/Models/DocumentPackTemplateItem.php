@@ -9,7 +9,9 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 #[Fillable([
     'document_pack_template_id',
@@ -30,9 +32,28 @@ class DocumentPackTemplateItem extends Model
 
     protected static function booted(): void
     {
-        static::deleting(function (DocumentPackTemplateItem $item): void {
-            if ($item->hasManagedFile()) {
-                Storage::disk($item->file_disk ?? 'local')->delete($item->file_path);
+        static::deleted(function (DocumentPackTemplateItem $item): void {
+            if (! $item->hasManagedFile()) {
+                return;
+            }
+
+            $disk = $item->file_disk ?? 'local';
+
+            try {
+                if (! Storage::disk($disk)->delete($item->file_path)) {
+                    Log::warning('Document pack template item was deleted, but its snapshot file could not be removed.', [
+                        'document_pack_template_item_id' => $item->id,
+                        'file_disk' => $disk,
+                        'file_path' => $item->file_path,
+                    ]);
+                }
+            } catch (Throwable $exception) {
+                Log::warning('Document pack template item was deleted, but snapshot storage cleanup failed.', [
+                    'document_pack_template_item_id' => $item->id,
+                    'file_disk' => $disk,
+                    'file_path' => $item->file_path,
+                    'exception' => $exception->getMessage(),
+                ]);
             }
         });
     }

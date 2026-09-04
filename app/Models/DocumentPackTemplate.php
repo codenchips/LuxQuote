@@ -10,7 +10,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 #[Fillable(['user_id', 'name', 'visibility', 'team_id', 'created_by', 'updated_by'])]
 class DocumentPackTemplate extends Model
@@ -18,14 +20,45 @@ class DocumentPackTemplate extends Model
     /** @use HasFactory<DocumentPackTemplateFactory> */
     use HasFactory;
 
+    /** @var array<int, array{item_id: int, disk: string, path: string}> */
+    private array $managedFilesPendingDeletion = [];
+
     protected static function booted(): void
     {
         static::deleting(function (DocumentPackTemplate $template): void {
-            $template->items()->get()->each(function (DocumentPackTemplateItem $item): void {
-                if ($item->hasManagedFile()) {
-                    Storage::disk($item->file_disk ?? 'local')->delete($item->file_path);
+            $template->managedFilesPendingDeletion = $template->items()
+                ->get()
+                ->filter(fn (DocumentPackTemplateItem $item): bool => $item->hasManagedFile())
+                ->map(fn (DocumentPackTemplateItem $item): array => [
+                    'item_id' => $item->id,
+                    'disk' => $item->file_disk ?? 'local',
+                    'path' => (string) $item->file_path,
+                ])
+                ->values()
+                ->all();
+        });
+
+        static::deleted(function (DocumentPackTemplate $template): void {
+            foreach ($template->managedFilesPendingDeletion as $file) {
+                try {
+                    if (! Storage::disk($file['disk'])->delete($file['path'])) {
+                        Log::warning('Document pack template was deleted, but a snapshot file could not be removed.', [
+                            'document_pack_template_id' => $template->id,
+                            'document_pack_template_item_id' => $file['item_id'],
+                            'file_disk' => $file['disk'],
+                            'file_path' => $file['path'],
+                        ]);
+                    }
+                } catch (Throwable $exception) {
+                    Log::warning('Document pack template was deleted, but snapshot storage cleanup failed.', [
+                        'document_pack_template_id' => $template->id,
+                        'document_pack_template_item_id' => $file['item_id'],
+                        'file_disk' => $file['disk'],
+                        'file_path' => $file['path'],
+                        'exception' => $exception->getMessage(),
+                    ]);
                 }
-            });
+            }
         });
     }
 

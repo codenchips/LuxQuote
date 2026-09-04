@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['project_id', 'revision_number', 'created_by', 'validated', 'validated_at', 'validated_by', 'status'])]
+#[Fillable(['project_id', 'revision_number', 'created_by', 'validated', 'validated_at', 'validated_by', 'status', 'quoted_at'])]
 class ProjectRevision extends Model
 {
     protected $attributes = [
@@ -22,6 +22,7 @@ class ProjectRevision extends Model
             'validated' => 'boolean',
             'validated_at' => 'datetime',
             'status' => ProjectRevisionStatus::class,
+            'quoted_at' => 'datetime',
         ];
     }
 
