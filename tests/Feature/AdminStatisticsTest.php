@@ -15,6 +15,7 @@ use App\Services\StatisticsReportService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use RuntimeException;
 use Tests\TestCase;
 
 class AdminStatisticsTest extends TestCase
@@ -149,5 +150,61 @@ class AdminStatisticsTest extends TestCase
 
         $this->assertSame('Sales Owner', $name);
         $this->assertSame('Sales Owner', $project->fresh()->owner_name);
+    }
+
+    public function test_salesforce_owner_failure_falls_back_without_exposing_email(): void
+    {
+        $project = Project::factory()->create([
+            'owner_name' => null,
+            'owner_email' => 'unavailable.owner@example.com',
+            'salesforce_id' => '006000000000002AAA',
+        ]);
+        $this->mock(SalesforceService::class)
+            ->shouldReceive('getOpportunityOwner')
+            ->once()
+            ->andThrow(new RuntimeException('Salesforce unavailable'));
+
+        $report = app(StatisticsReportService::class)->report(
+            CarbonImmutable::now()->subDay(),
+            CarbonImmutable::now()->addDay(),
+        );
+
+        $row = $report['project_rows']->firstWhere('reference', $project->reference_number);
+        $this->assertSame('Owner name unavailable', $row['owner']);
+    }
+
+    public function test_statistics_without_pricing_permission_do_not_expose_values(): void
+    {
+        $group = PermissionGroup::query()->create([
+            'name' => 'Statistics only',
+            'slug' => 'statistics-only',
+            'default_landing_page' => 'statistics',
+        ]);
+        $group->permissions()->attach(Permission::query()->where('key', 'statistics.view')->firstOrFail());
+        $this->actingAs(User::factory()->create(['permission_group_id' => $group->id]));
+        ReportingEvent::factory()->create([
+            'event_type' => 'quote',
+            'currency' => 'GBP',
+            'net_value' => 123456.78,
+            'gross_value' => 234567.89,
+        ]);
+
+        Livewire::test(Statistics::class)
+            ->assertOk()
+            ->assertDontSee('123,456.78')
+            ->assertDontSee('234,567.89')
+            ->assertDontSee('Total gross quoted');
+    }
+
+    public function test_excessive_daily_range_is_rejected_gracefully(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+
+        Livewire::test(Statistics::class)
+            ->set('from', now()->subYears(2)->toDateString())
+            ->set('to', now()->toDateString())
+            ->set('groupBy', 'day')
+            ->call('refreshReport')
+            ->assertHasErrors(['to']);
     }
 }

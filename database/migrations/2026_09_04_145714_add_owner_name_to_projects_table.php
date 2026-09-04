@@ -12,9 +12,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('projects', function (Blueprint $table) {
-            $table->string('owner_name')->nullable()->after('owner_email')->index();
-        });
+        if (! Schema::hasTable('projects')) {
+            return;
+        }
+
+        if (! Schema::hasColumn('projects', 'owner_name')) {
+            Schema::table('projects', function (Blueprint $table) {
+                $table->string('owner_name')->nullable()->after('owner_email')->index();
+            });
+        }
+
+        if (! Schema::hasTable('users')) {
+            return;
+        }
 
         DB::table('users')->whereNotNull('email')->whereNotNull('name')->orderBy('id')->each(function (object $user): void {
             DB::table('projects')->whereNull('owner_name')->where('owner_email', $user->email)->update([
@@ -28,8 +38,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('projects', function (Blueprint $table) {
-            $table->dropColumn('owner_name');
-        });
+        if (Schema::hasColumn('projects', 'owner_name')) {
+            Schema::table('projects', function (Blueprint $table) {
+                $table->dropColumn('owner_name');
+            });
+        }
     }
 };

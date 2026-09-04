@@ -39,17 +39,23 @@ class StatisticsReportService
             ->when($userId, fn (Builder $query) => $query->where('user_id', $userId))
             ->when($ownerEmail, fn (Builder $query) => $query->where('owner_email', $ownerEmail))
             ->when($currency, fn (Builder $query) => $query->where('currency', strtoupper($currency)))
-            ->with(['user', 'revisions', 'tenders', 'activeRevision.areas.lines'])
+            ->with(array_filter([
+                'user',
+                'revisions',
+                'tenders',
+                $includeFinancials ? 'activeRevision.areas.lines' : null,
+            ]))
             ->get();
 
         $eventProjects = Project::query()
             ->whereIn('id', $events->pluck('project_id')->filter()->unique())
             ->get();
-        $ownerNames = $projects->concat($eventProjects)->unique('id')->mapWithKeys(function (Project $project): array {
-            $name = app(ProjectOwnerNameResolver::class)->resolve($project);
-
-            return [$project->id => $name];
-        });
+        $ownerNames = app(ProjectOwnerNameResolver::class)->resolveMany($projects->concat($eventProjects));
+        $projectIds = $projects->pluck('id');
+        $firstQuoteDates = ReportingEvent::query()->whereIn('project_id', $projectIds)->where('event_type', 'quote')
+            ->selectRaw('project_id, MIN(occurred_at) as first_quote_at')->groupBy('project_id')->pluck('first_quote_at', 'project_id');
+        $lastActivityDates = ReportingEvent::query()->whereIn('project_id', $projectIds)
+            ->selectRaw('project_id, MAX(occurred_at) as last_activity_at')->groupBy('project_id')->pluck('last_activity_at', 'project_id');
 
         $events->each(function (ReportingEvent $event) use ($ownerNames): void {
             if (blank($event->owner_name_snapshot) && filled($ownerNames->get($event->project_id))) {
@@ -75,7 +81,7 @@ class StatisticsReportService
                 'quotes' => $quotes->count(),
                 'quote_batches' => $quoteBatches->count(),
                 'document_packs' => $packs->count(),
-                'median_first_quote_hours' => $this->medianFirstQuoteHours($projects),
+                'median_first_quote_hours' => $this->medianFirstQuoteHours($projects, $firstQuoteDates),
                 'quote_regeneration_rate' => $this->regenerationRate($quoteBatches),
                 'average_revision_interval_days' => $this->averageRevisionInterval($projects),
             ],
@@ -95,16 +101,16 @@ class StatisticsReportService
             'status_funnel' => $this->statusFunnel($projects),
             'project_rows' => $this->projectRows($projects, $events, $includeFinancials, $ownerNames),
             'never_quoted' => $this->neverQuoted($projects, $ownerNames),
-            'high_value_inactive' => $includeFinancials ? $this->highValueInactive($projects) : collect(),
+            'high_value_inactive' => $includeFinancials ? $this->highValueInactive($projects, $lastActivityDates) : collect(),
             'products' => $this->products($quoteBatches),
             'data_since' => ReportingEvent::query()->min('occurred_at'),
         ];
     }
 
-    private function medianFirstQuoteHours(Collection $projects): ?float
+    private function medianFirstQuoteHours(Collection $projects, Collection $firstQuoteDates): ?float
     {
-        $values = $projects->map(function (Project $project): ?float {
-            $firstQuote = ReportingEvent::query()->where('project_id', $project->id)->where('event_type', 'quote')->min('occurred_at');
+        $values = $projects->map(function (Project $project) use ($firstQuoteDates): ?float {
+            $firstQuote = $firstQuoteDates->get($project->id);
 
             return $firstQuote ? round($project->created_at->diffInMinutes($firstQuote) / 60, 1) : null;
         })->filter()->sort()->values();
@@ -252,7 +258,7 @@ class StatisticsReportService
     private function projectRows(Collection $projects, Collection $events, bool $includeFinancials, Collection $ownerNames): Collection
     {
         return $projects->map(function (Project $project) use ($events, $includeFinancials, $ownerNames): array {
-            [$net, $gross] = $this->projectValues($project);
+            [$net, $gross] = $includeFinancials ? $this->projectValues($project) : [0.0, 0.0];
 
             return [
                 'reference' => $project->reference_number,
@@ -285,14 +291,14 @@ class StatisticsReportService
         ])->values();
     }
 
-    private function highValueInactive(Collection $projects): Collection
+    private function highValueInactive(Collection $projects, Collection $lastActivityDates): Collection
     {
         $threshold = (float) config('statistics.high_value_threshold', 25000);
         $cutoff = now()->subDays((int) config('statistics.inactive_days', 30));
 
-        return $projects->map(function (Project $project): ?array {
+        return $projects->map(function (Project $project) use ($lastActivityDates): ?array {
             [$net, $gross] = $this->projectValues($project);
-            $lastActivity = ReportingEvent::query()->where('project_id', $project->id)->max('occurred_at') ?? $project->updated_at;
+            $lastActivity = $lastActivityDates->get($project->id) ?? $project->updated_at;
 
             return ['project' => $project, 'net' => $net, 'gross' => $gross, 'last_activity' => $lastActivity];
         })->filter(fn (array $row): bool => $row['gross'] >= $threshold && CarbonImmutable::parse($row['last_activity'])->lt($cutoff))->values();

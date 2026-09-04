@@ -79,6 +79,8 @@ The permissions catalogue remains directly accessible to authorized users if lin
 
 The **History** page is controlled by `activity-log.view`. History is retained for the configured number of months (three by default); there is no separate archive page or archive permission.
 
+The **Statistics** page is controlled independently by `statistics.view`, which defaults to Admin and Manager. This grants access to operational counts, charts, and project/output reporting, but does not grant commercial visibility. Net values, gross values, Cover percentages, and value-by-owner figures are included only when the same user also has `pricing.view`; both the service payload and Blade output omit those values otherwise. Statistics remains available as a group landing page only when `statistics.view` is granted.
+
 ## Authorization Flow
 
 All permission gates are registered in `App\Providers\AppServiceProvider`.

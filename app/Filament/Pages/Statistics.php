@@ -72,6 +72,24 @@ class Statistics extends Page
             'currency' => ['nullable', 'string', 'size:3'],
         ]);
 
+        $from = CarbonImmutable::parse($validated['from'])->startOfDay();
+        $until = CarbonImmutable::parse($validated['to'])->addDay()->startOfDay();
+        $rangeDays = (int) $from->diffInDays($until);
+        $maximumDays = min(
+            (int) config('statistics.max_range_days', 3650),
+            match ($validated['groupBy']) {
+                'day' => 400,
+                'week' => 3650,
+                default => (int) config('statistics.max_range_days', 3650),
+            },
+        );
+
+        if ($rangeDays > $maximumDays) {
+            $this->addError('to', "That range is too large for {$validated['groupBy']} grouping. Choose a broader grouping or a shorter period.");
+
+            return;
+        }
+
         if (! Schema::hasTable('reporting_events') || ! Schema::hasTable('reporting_event_products')) {
             $this->report = [];
             $this->reportError = 'Statistics are being prepared. Please ask an administrator to run the pending database migrations.';
@@ -81,8 +99,8 @@ class Statistics extends Page
 
         try {
             $this->report = app(StatisticsReportService::class)->report(
-                CarbonImmutable::parse($validated['from'])->startOfDay()->utc(),
-                CarbonImmutable::parse($validated['to'])->addDay()->startOfDay()->utc(),
+                $from->utc(),
+                $until->utc(),
                 $validated['groupBy'],
                 $validated['userId'],
                 $validated['ownerEmail'],

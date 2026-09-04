@@ -4,6 +4,23 @@ _Last updated: 4 September 2026_
 
 ---
 
+## Management Statistics — 4 September 2026
+
+- **Reporting workspace**: A permission-controlled **Admin → Statistics** page provides Overview, Usage, Projects, and Outputs sections with shared From/To, day/week/month, user, owner, and currency filters. Quick presets cover Today, This week, This month, and This quarter.
+- **Management visuals**: Overview combines KPI cards with a multi-series activity line chart, status funnel bars, an output-mix doughnut, and stacked top-producer bars. Outputs adds a ranked quoted-product bar chart alongside detailed tables.
+- **Core reporting**: Reports cover logins and active users; projects by creator and owner; current project-status progression; revision and tender counts; schedules, quotes, and document packs by user/owner; datasheet, cover-letter, and legal-page selections; and per-project output totals.
+- **Commercial reporting**: Users with `pricing.view` also receive currency-separated net/gross quote totals, value-weighted average Cover, project values, and quote value by owner. Quote generation batches prevent a multi-tender run from multiplying commercial totals or quoted-product counts.
+- **Additional management measures**: The first iteration includes median project-to-first-quote time, quote regeneration rate, average time between revisions, projects created but never quoted, configurable high-value inactive projects, and most frequently quoted products.
+- **Correct funnel sequence**: The progression is reported as Draft → In Progress → Design Complete → Approval Requested (optional) → Approved → Quoted. Later stages count as having passed earlier stages; the funnel is a current cohort view rather than a historical status-transition audit.
+- **Durable data model**: `reporting_events` snapshots supported successful activity and `reporting_event_products` snapshots quote-batch product quantities. Reporting survives the separate three-month Activity History deletion. A daily reconciliation runs before pruning, and the initial migration backfills the retained source history.
+- **Owner names**: Projects now store a nullable `owner_name`. New Salesforce imports snapshot `Owner.Name`; existing projects first use matching local users or another known project owner, then a cached Salesforce Opportunity-owner lookup. Failures show `Owner name unavailable`, never the owner email address.
+- **Permissions**: `statistics.view` is separate from global History and defaults to Admin and Manager. `pricing.view` remains mandatory for every monetary or Cover field. Statistics is also available as a permission-group landing page.
+- **Hardening**: Missing reporting tables show a migration message rather than a 500; owner lookup/cache/storage failures cannot take down a report; range limits prevent pathological chart requests; first-quote and last-activity values use bulk aggregate queries; and reporting tables are covered by the production data-loss guard.
+- **Configuration**: `STATISTICS_HIGH_VALUE_THRESHOLD` defaults to `25000`, `STATISTICS_INACTIVE_DAYS` to `30`, and `STATISTICS_MAX_RANGE_DAYS` to `3650`. Daily and weekly visual groupings have tighter safe limits.
+- **Export deferred**: Report export is intentionally outside this first iteration.
+
+---
+
 ## Shared Resources Library — 3 September 2026
 
 - **Resources page**: A new **Admin → Resources** Filament resource lists uploaded business files with a file-type icon, editable display name, original-filename tooltip, date added, and compact view/edit/delete actions. Editing the display name stays in a compact table modal; previewable PDFs, images, CSV, and text files open in a large lightbox-style modal, while Office formats receive a clear download fallback in that same overlay.

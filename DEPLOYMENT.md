@@ -122,6 +122,48 @@ Do not create the tables manually and do not use a destructive reset. A normal p
 docker compose exec -T laravel.test php artisan migrate --force --no-interaction
 ```
 
+## Pending Statistics Rollout
+
+The management Statistics feature is deployed through these forward-only migrations:
+
+- `2026_09_04_142322_create_reporting_events_table`
+- `2026_09_04_142331_add_statistics_view_permission`
+- `2026_09_04_142633_create_reporting_event_products_table`
+- `2026_09_04_142700_backfill_reporting_events`
+- `2026_09_04_145714_add_owner_name_to_projects_table`
+
+The migrations create two durable reporting tables, install `statistics.view`, copy supported retained Activity History into reporting snapshots, and add the nullable `projects.owner_name` field. The owner-name migration only fills blank names where an existing LuxQuote user has the same email address. It does not contact Salesforce during deployment. None of these `up()` paths drops a table or column, truncates data, deletes business records, changes project values, or rewrites existing owner email addresses.
+
+Reporting snapshots are intentionally separate from Activity History. The three-month History prune therefore does not remove management statistics. `app:sync-reporting-events` runs daily at `01:31`, ten minutes before Activity History pruning, to reconcile any reportable activity that could not be captured inline. The capture observer fails open: a reporting error is logged for reconciliation and cannot make a successful login, project creation, or PDF generation fail.
+
+`reporting_events` and `reporting_event_products` are included in the production deploy protected-table count and backup guard. They will be absent from the pre-deploy data-only backup on their first deployment because they do not exist yet, but the full pre-deploy database backup is still taken and the reporting backfill is repeatable through the reconciliation command. On later deployments both reporting tables are protected normally.
+
+Optional production settings use safe defaults when omitted:
+
+```dotenv
+STATISTICS_HIGH_VALUE_THRESHOLD=25000
+STATISTICS_INACTIVE_DAYS=30
+STATISTICS_MAX_RANGE_DAYS=3650
+```
+
+`STATISTICS_MAX_RANGE_DAYS` is the absolute report limit. Daily grouping is additionally limited to 400 days and weekly grouping to 3,650 days, preventing accidental browser or database overload; the page returns a validation message and retains the previous report instead of failing.
+
+Owner names are stored locally for new Salesforce imports. Older linked projects resolve `Opportunity.Owner` through the existing Salesforce owner lookup when needed, cache the result for six hours, and persist the name for subsequent reports. Matching local users and already-known project owners are resolved in bulk first. Salesforce, cache, or owner-name persistence failures leave the report available with `Owner name unavailable`; email addresses are not displayed as the fallback.
+
+The Statistics page requires `statistics.view`, granted to Admin and Manager by default. Commercial values additionally require `pricing.view`; users with Statistics but without Pricing receive counts and operational charts without net, gross, Cover, or quote-value fields.
+
+After deployment, verify the forward migration and reporting state without changing business data:
+
+```bash
+cd /home/tamliteco/luxquote.app
+docker compose exec -T laravel.test php artisan migrate:status
+docker compose exec -T laravel.test php artisan config:show statistics
+docker compose exec -T laravel.test php artisan app:sync-reporting-events
+docker compose exec -T laravel.test php artisan schedule:list
+```
+
+Then sign in as an Admin or Manager, open **Admin → Statistics**, confirm the current-month charts load, change the date grouping, and verify owner names. Use a non-pricing test group with `statistics.view` to confirm commercial values remain hidden.
+
 ## Salesforce Visits Calendar Release Checklist
 
 The Visits interface reads and mutates Salesforce `Event` records owned by a public Salesforce `Calendar`. Before the first production deployment, confirm the production integration user can:
