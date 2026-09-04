@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.11 - 2026-09-04
+
+Version: `0.2.10` -> `0.2.11`
+
+Changes included:
+
+- `ec58384` Stats Pagination
+
 ## 0.2.10 - 2026-09-04
 
 Version: `0.2.9` -> `0.2.10`
