@@ -115,9 +115,15 @@ class Project extends Model
 
     public function getCurrencySymbol(): string
     {
-        return match (strtoupper((string) $this->currency)) {
+        return self::symbolForCurrency($this->currency);
+    }
+
+    public static function symbolForCurrency(?string $currency): string
+    {
+        return match (strtoupper((string) ($currency ?: 'GBP'))) {
             'EUR' => '€',
-            default => '£',
+            'GBP' => '£',
+            default => strtoupper((string) $currency).' ',
         };
     }
 

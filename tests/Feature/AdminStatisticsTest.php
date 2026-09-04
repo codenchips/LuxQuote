@@ -130,6 +130,29 @@ class AdminStatisticsTest extends TestCase
         $this->assertSame(20.0, $report['financials']['GBP']['cover']);
     }
 
+    public function test_statistics_display_currency_symbols_instead_of_codes(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        ReportingEvent::factory()->create([
+            'event_type' => 'quote',
+            'currency' => 'GBP',
+            'net_value' => 800,
+            'gross_value' => 1000,
+        ]);
+        ReportingEvent::factory()->create([
+            'event_type' => 'quote',
+            'currency' => 'EUR',
+            'net_value' => 400,
+            'gross_value' => 500,
+        ]);
+
+        Livewire::test(Statistics::class)
+            ->assertSee('£1,000.00')
+            ->assertSee('€500.00')
+            ->assertDontSee('GBP 1,000.00')
+            ->assertDontSee('EUR 500.00');
+    }
+
     public function test_project_owner_name_is_used_instead_of_owner_email(): void
     {
         $project = Project::factory()->create([
