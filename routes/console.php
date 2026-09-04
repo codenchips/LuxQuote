@@ -15,3 +15,7 @@ Schedule::command('app:prune-generated-pdfs')
 Schedule::command('app:prune-activity-logs')
     ->dailyAt('01:41')
     ->withoutOverlapping(30);
+
+Schedule::command('app:sync-reporting-events')
+    ->dailyAt('01:31')
+    ->withoutOverlapping(30);

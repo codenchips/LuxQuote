@@ -55,6 +55,8 @@ class DocumentPackController extends Controller
                 'document_pack_name' => $documentPack->name,
                 'filename' => $generatedPack['filename'],
                 'contains_quote' => $containsQuote,
+                'document_count' => $documentPack->items()->count(),
+                'generation_batch_key' => (string) Str::uuid(),
             ],
         ]);
 

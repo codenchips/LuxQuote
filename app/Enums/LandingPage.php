@@ -4,6 +4,7 @@ namespace App\Enums;
 
 use App\Filament\Pages\Calendar;
 use App\Filament\Pages\Salesforce;
+use App\Filament\Pages\Statistics;
 use App\Filament\Resources\ActivityLogs\ActivityLogResource;
 use App\Filament\Resources\PermissionGroups\PermissionGroupResource;
 use App\Filament\Resources\Products\ProductResource;
@@ -25,6 +26,7 @@ enum LandingPage: string
     case Specials = 'specials';
     case Products = 'products';
     case Resources = 'resources';
+    case Statistics = 'statistics';
     case Users = 'users';
     case Groups = 'groups';
     case Teams = 'teams';
@@ -40,6 +42,7 @@ enum LandingPage: string
             self::Specials => 'Specials',
             self::Products => 'Products',
             self::Resources => 'Resources',
+            self::Statistics => 'Statistics',
             self::Users => 'Users',
             self::Groups => 'Groups',
             self::Teams => 'Teams',
@@ -57,6 +60,7 @@ enum LandingPage: string
             self::Specials => SpecialOrderCodeResource::getUrl('index'),
             self::Products => ProductResource::getUrl('index'),
             self::Resources => ResourceFileResource::getUrl('index'),
+            self::Statistics => Statistics::getUrl(),
             self::Users => UserResource::getUrl('index'),
             self::Groups => PermissionGroupResource::getUrl('index'),
             self::Teams => TeamResource::getUrl('index'),
@@ -74,6 +78,7 @@ enum LandingPage: string
             self::Specials => PermissionKey::SpecialsManage,
             self::Products => PermissionKey::ProductsView,
             self::Resources => PermissionKey::ResourcesView,
+            self::Statistics => PermissionKey::StatisticsView,
             self::Users => PermissionKey::UsersView,
             self::Groups => PermissionKey::PermissionsManage,
             self::Teams => PermissionKey::TeamsManage,
@@ -101,6 +106,7 @@ enum LandingPage: string
                 self::Specials->value => self::Specials->label(),
                 self::Products->value => self::Products->label(),
                 self::Resources->value => self::Resources->label(),
+                self::Statistics->value => self::Statistics->label(),
             ],
             'Users' => [
                 self::Users->value => self::Users->label(),

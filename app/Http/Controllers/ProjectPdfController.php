@@ -20,6 +20,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -100,6 +101,7 @@ class ProjectPdfController extends Controller
                     revision: $revision,
                     includeDatasheets: $request->boolean('include_datasheets'),
                     areaIds: $areaIds,
+                    generationBatchKey: $this->generationBatchKey($request),
                 ) + [
                     'filename' => $filename,
                 ],
@@ -190,6 +192,8 @@ class ProjectPdfController extends Controller
                     tender: $tender,
                     includeCover: $includeCover,
                     includeLegalPage: $includeLegalPage,
+                    generationBatchKey: $this->generationBatchKey($request),
+                    generationBatchSize: $this->generationBatchSize($request, $includeCover),
                 ) + [
                     'filename' => $quotePdf['pdf']['filename'],
                 ],
@@ -276,6 +280,8 @@ class ProjectPdfController extends Controller
                     tender: $tender,
                     includeCover: $includeCover,
                     includeLegalPage: $includeLegalPage,
+                    generationBatchKey: $this->generationBatchKey($request),
+                    generationBatchSize: $this->generationBatchSize($request, $includeCover),
                 ) + [
                     'filename' => $quotePdf['pdf']['filename'],
                     'tender' => $tender?->account_name,
@@ -785,7 +791,7 @@ class ProjectPdfController extends Controller
     }
 
     /**
-     * @return array{filename: string, revision_id: int, revision_number: int, revision_label: string, include_datasheets: bool, area_ids: array<int, int>, area_count: int|null, area_scope: string, tender_id?: int|null, tender_account_name?: string|null, include_cover?: bool, include_legal_page?: bool}
+     * @return array{filename: string, revision_id: int, revision_number: int, revision_label: string, include_datasheets: bool, area_ids: array<int, int>, area_count: int|null, area_scope: string, generation_batch_key: string, generation_batch_size?: int, tender_id?: int|null, tender_account_name?: string|null, include_cover?: bool, include_legal_page?: bool}
      */
     private function pdfActivityPayload(
         string $filename,
@@ -795,6 +801,8 @@ class ProjectPdfController extends Controller
         ?ProjectTender $tender = null,
         ?bool $includeCover = null,
         ?bool $includeLegalPage = null,
+        string $generationBatchKey = '',
+        ?int $generationBatchSize = null,
     ): array {
         $payload = [
             'filename' => $filename,
@@ -805,6 +813,7 @@ class ProjectPdfController extends Controller
             'area_ids' => array_values(array_map(fn (int|string $areaId): int => (int) $areaId, $areaIds)),
             'area_count' => $areaIds === [] ? null : count($areaIds),
             'area_scope' => $areaIds === [] ? 'full' : 'selected',
+            'generation_batch_key' => $generationBatchKey,
         ];
 
         if ($tender instanceof ProjectTender || $includeCover !== null) {
@@ -817,7 +826,25 @@ class ProjectPdfController extends Controller
             $payload['include_legal_page'] = $includeLegalPage;
         }
 
+        if ($generationBatchSize !== null) {
+            $payload['generation_batch_size'] = $generationBatchSize;
+        }
+
         return $payload;
+    }
+
+    private function generationBatchKey(Request $request): string
+    {
+        $batchKey = $request->string('generation_batch_key')->toString();
+
+        return preg_match('/^[A-Za-z0-9_-]{8,80}$/', $batchKey) ? $batchKey : (string) Str::uuid();
+    }
+
+    private function generationBatchSize(Request $request, bool $includeCover): int
+    {
+        $size = $request->integer('generation_batch_size');
+
+        return $size > 0 && $size <= 100 ? $size : ($includeCover ? 1 : 0);
     }
 
     private function progressCacheKey(Request $request, string $token): string

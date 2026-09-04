@@ -1349,8 +1349,10 @@
                         this.results = {};
                         this.zipDownload = null;
                         this.startDots();
+                        this.generationBatchKey = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
                         const selectedTenders = this.selectedQuoteCoverOptions();
+                        this.generationBatchSize = selectedTenders.length;
 
                         try {
                             if (selectedTenders.length === 0) {
@@ -1399,6 +1401,8 @@
                             include_datasheets: this.includeDatasheets,
                             include_legal_page: this.includeLegalPage,
                             salesforce_upload: true,
+                            generation_batch_key: this.generationBatchKey,
+                            generation_batch_size: this.generationBatchSize,
                         };
                         const areaIds = this.outputAreaIds();
 

@@ -26,6 +26,7 @@ class PermissionGroupForm
         'Products' => ['Products'],
         'Resources' => ['Resources'],
         'Validation' => ['Validation'],
+        'Statistics' => ['Statistics'],
     ];
 
     public static function configure(Schema $schema): Schema

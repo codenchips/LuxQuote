@@ -10,6 +10,7 @@ use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\SpecialOrderCode;
 use App\Models\User;
+use App\Observers\ActivityLogObserver;
 use App\Observers\ProjectAreaObserver;
 use App\Observers\ProjectLineObserver;
 use App\Observers\ProjectObserver;
@@ -68,6 +69,7 @@ class AppServiceProvider extends ServiceProvider
             ]);
         });
 
+        ActivityLog::observe(ActivityLogObserver::class);
         Project::observe(ProjectObserver::class);
         ProjectArea::observe(ProjectAreaObserver::class);
         ProjectLine::observe(ProjectLineObserver::class);

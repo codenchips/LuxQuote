@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'contractor',
     'site_location',
     'owner_email',
+    'owner_name',
     'created_by_email',
     'department',
     'date',

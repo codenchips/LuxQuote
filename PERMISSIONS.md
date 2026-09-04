@@ -34,9 +34,9 @@ Default system groups are created by the permissions migration:
 - `technical`
 - `manager`
 
-Admins can create additional groups in the Filament Users area and choose from the fixed permission catalogue. Each group also has a default landing page selected from every top-level sidebar destination: Dashboard, Projects, Salesforce Projects, Visits, History, Specials, Products, Resources, Users, Groups, or Teams. Existing and newly created groups default to Dashboard. After a normal login, the group setting controls the destination; an inaccessible selection safely falls back to Dashboard, while a valid intended URL from before login remains respected.
+Admins can create additional groups in the Filament Users area and choose from the fixed permission catalogue. Each group also has a default landing page selected from every top-level sidebar destination: Dashboard, Projects, Salesforce Projects, Visits, History, Specials, Products, Resources, Statistics, Users, Groups, or Teams. Existing and newly created groups default to Dashboard. After a normal login, the group setting controls the destination; an inaccessible selection safely falls back to Dashboard, while a valid intended URL from before login remains respected.
 
-The Group create/edit form presents permissions once each under eight functional areas: Project, Users, Calendar, Pricing, Salesforce, Products, Resources, and Validation. Project also contains revision, project/global history, output, and quote-approval capabilities; Users contains user, group, and team administration. One shared search field filters every area, and each area has its own Select all/Deselect all control. Group Details and Permissions are stacked as full-width panels so the permission labels have adequate room.
+The Group create/edit form presents permissions once each under nine functional areas: Project, Users, Calendar, Pricing, Salesforce, Products, Resources, Validation, and Statistics. Project also contains revision, project/global history, output, and quote-approval capabilities; Users contains user, group, and team administration. One shared search field filters every area, and each area has its own Select all/Deselect all control. Group Details and Permissions are stacked as full-width panels so the permission labels have adequate room.
 
 ### Users
 
@@ -61,6 +61,7 @@ The left navigation groups permission-controlled features as follows:
   - `Specials`: special order code management (`specials.manage`).
   - `Products`: the product catalogue (`products.view`).
   - `Resources`: the private shared file library. Page access, uploads, display-name edits, and deletions use separate `resources.*` capabilities. Per-file permissions remain deliberately deferred; the Document Pack picker is separately governed by `output.manage-document-packs`.
+  - `Statistics`: management usage, project, output, and commercial reporting (`statistics.view`). Monetary values additionally require `pricing.view`.
 - `Users`
   - `Users`: create/edit users and assign them to a group.
   - `Groups`: create/edit permission groups and assign permissions.
@@ -111,6 +112,7 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Create project revisions | x | x |  |  | x |
 | View project history | x | x | x | x | x |
 | View global history | x |  |  |  | x |
+| View management statistics | x |  |  |  | x |
 | View validation page | x |  | x | x | x |
 | Run validation | x |  |  | x | x |
 | Edit validation line items | x |  |  | x | x |

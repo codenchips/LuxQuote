@@ -13,6 +13,7 @@ enum PermissionKey: string
     case RevisionsCreate = 'revisions.create';
     case ProjectHistoryView = 'project-history.view';
     case ActivityLogView = 'activity-log.view';
+    case StatisticsView = 'statistics.view';
     case ValidationView = 'validation.view';
     case ValidationRun = 'validation.run';
     case ValidationUpdateLines = 'validation.update-lines';
@@ -63,6 +64,7 @@ enum PermissionKey: string
             self::RevisionsCreate => 'Create project revisions',
             self::ProjectHistoryView => 'View project history',
             self::ActivityLogView => 'View global history',
+            self::StatisticsView => 'View management statistics',
             self::ValidationView => 'View validation page',
             self::ValidationRun => 'Run validation',
             self::ValidationUpdateLines => 'Edit validation line items',
@@ -153,6 +155,7 @@ enum PermissionKey: string
             self::SalesforceView => 'Salesforce',
             self::SalesforceManagePush => 'Salesforce',
             self::ActivityLogView => 'History',
+            self::StatisticsView => 'Statistics',
 
             self::UsersView,
             self::UsersCreate,
@@ -181,6 +184,7 @@ enum PermissionKey: string
             self::CalendarCreate => 'Allows creating events on the configured Salesforce public calendar.',
             self::CalendarUpdate => 'Allows updating events on the configured Salesforce public calendar.',
             self::CalendarDelete => 'Allows permanently removing events from the configured Salesforce public calendar.',
+            self::StatisticsView => 'Allows viewing usage, project, output, and commercial management reports. Price values still require pricing visibility.',
             self::TeamsManage => 'Allows creating, editing, deleting, and assigning users to teams.',
             self::PermissionsManage => 'Allows managing permission groups and viewing the permission catalogue.',
             default => $this->label(),
@@ -283,6 +287,7 @@ enum PermissionKey: string
                     self::RevisionsCreate,
                     self::ProjectHistoryView,
                     self::ActivityLogView,
+                    self::StatisticsView,
                     self::ValidationView,
                     self::ValidationRun,
                     self::ValidationUpdateLines,
