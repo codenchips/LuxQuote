@@ -52,6 +52,27 @@ class AdminStatisticsTest extends TestCase
             ->assertSee('Loading statistics');
     }
 
+    public function test_statistics_tables_paginate_after_ten_rows(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+
+        foreach (range(1, 11) as $index) {
+            ReportingEvent::factory()->create([
+                'event_type' => 'login',
+                'user_name_snapshot' => 'Reporting User '.$index,
+                'user_email_snapshot' => 'reporting-user-'.$index.'@example.com',
+            ]);
+        }
+
+        Livewire::test(Statistics::class)
+            ->set('section', 'usage')
+            ->assertSeeHtml('aria-label="Table pagination"')
+            ->assertSeeHtml('x-show="visible(10)"')
+            ->assertSee('Showing')
+            ->assertSee('of 11')
+            ->assertSee('Next');
+    }
+
     public function test_user_without_statistics_permission_cannot_view_page(): void
     {
         $group = PermissionGroup::query()->create([
