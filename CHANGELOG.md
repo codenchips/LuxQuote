@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.10 - 2026-09-04
+
+Version: `0.2.9` -> `0.2.10`
+
+Changes included:
+
+- `aed4801` Stats Spinner
+- `fb2cfee` Currency symbol
+
 ## 0.2.9 - 2026-09-04
 
 Version: `0.2.8` -> `0.2.9`
