@@ -29,12 +29,27 @@ class AdminStatisticsTest extends TestCase
 
         Livewire::test(Statistics::class)
             ->assertOk()
+            ->assertSet('activePreset', 'month')
             ->assertSee('Project status funnel')
             ->assertSee('Median to first quote')
             ->assertSee('Activity over time')
             ->assertSee('Output mix')
             ->assertSee('Top output producers')
             ->assertDontSee('This year');
+    }
+
+    public function test_statistics_presets_are_highlighted_until_dates_are_customised(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+
+        Livewire::test(Statistics::class)
+            ->call('setPreset', 'week')
+            ->assertSet('activePreset', 'week')
+            ->assertSeeHtml('aria-pressed="true"')
+            ->set('from', now()->subMonth()->toDateString())
+            ->assertSet('activePreset', null)
+            ->assertDontSeeHtml('aria-pressed="true"')
+            ->assertSee('Loading statistics');
     }
 
     public function test_user_without_statistics_permission_cannot_view_page(): void

@@ -37,6 +37,8 @@ class Statistics extends Page
 
     public string $groupBy = 'day';
 
+    public ?string $activePreset = 'month';
+
     public ?int $userId = null;
 
     public ?string $ownerEmail = null;
@@ -117,6 +119,8 @@ class Statistics extends Page
 
     public function setPreset(string $preset): void
     {
+        abort_unless(in_array($preset, ['today', 'week', 'month', 'quarter'], true), 404);
+
         $today = now();
         [$from, $groupBy] = match ($preset) {
             'today' => [$today->copy(), 'day'],
@@ -127,7 +131,18 @@ class Statistics extends Page
         $this->from = $from->toDateString();
         $this->to = $today->toDateString();
         $this->groupBy = $groupBy;
+        $this->activePreset = $preset;
         $this->refreshReport();
+    }
+
+    public function updatedFrom(): void
+    {
+        $this->activePreset = null;
+    }
+
+    public function updatedTo(): void
+    {
+        $this->activePreset = null;
     }
 
     /** @return array<int, string> */
