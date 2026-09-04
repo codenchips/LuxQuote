@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -48,5 +49,12 @@ class ActivityLog extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function scopeWithinRetention(Builder $query): Builder
+    {
+        $retentionMonths = max(1, (int) config('activity-log.retention_months', 3));
+
+        return $query->where('created_at', '>=', now()->subMonthsNoOverflow($retentionMonths));
     }
 }

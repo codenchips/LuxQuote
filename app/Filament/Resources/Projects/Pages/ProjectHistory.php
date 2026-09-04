@@ -51,6 +51,7 @@ class ProjectHistory extends ViewRecord implements HasTable
         return ActivityLogsTable::configure(
             $table->query(
                 ActivityLog::query()
+                    ->withinRetention()
                     ->where('project_id', $this->record->getKey())
             ),
         );

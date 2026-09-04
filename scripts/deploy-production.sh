@@ -6,7 +6,7 @@ APP_DIR="${APP_DIR:-/home/tamliteco/luxquote.app}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-production}"
 PUBLIC_URL="${PUBLIC_URL:-https://quote.tamlite.co.uk}"
 BACKUP_DIR="${BACKUP_DIR:-$APP_DIR/backups}"
-PROTECTED_DATA_TABLES="${PROTECTED_DATA_TABLES:-users products teams projects project_revisions project_areas project_lines project_tenders document_packs document_pack_items document_pack_templates document_pack_template_items resource_files team_user activity_logs salesforce_pdf_uploads}"
+PROTECTED_DATA_TABLES="${PROTECTED_DATA_TABLES:-permission_groups permissions users products teams projects project_revisions project_areas project_lines project_tenders document_packs document_pack_items document_pack_templates document_pack_template_items resource_files permission_group_permission team_user activity_logs activity_log_archives salesforce_pdf_uploads}"
 RESTORE_ON_CATASTROPHIC_DATA_LOSS="${RESTORE_ON_CATASTROPHIC_DATA_LOSS:-true}"
 MAINTENANCE_MARKER="$APP_DIR/storage/framework/luxquote-deploy-maintenance"
 MAINTENANCE_MODE_ENABLED_BY_DEPLOY=false
@@ -307,6 +307,9 @@ docker compose exec laravel.test composer dump-autoload --optimize
 log "Restarting app container after dependencies are available"
 docker compose restart laravel.test
 
+log "Clearing stale framework caches before migrations"
+docker compose exec -T laravel.test php artisan optimize:clear
+
 log "Verifying qpdf runtime"
 docker compose exec laravel.test qpdf --version
 
@@ -355,6 +358,10 @@ if [ "$data_loss_state" = "partial" ]; then
     log "Data-only backup: $data_backup"
     exit 1
 fi
+
+log "Applying configured activity history retention"
+docker compose exec -T laravel.test php artisan config:show activity-log
+docker compose exec -T laravel.test php artisan app:prune-activity-logs --no-interaction
 
 log "Clearing and rebuilding Laravel caches"
 docker compose exec laravel.test php artisan optimize:clear

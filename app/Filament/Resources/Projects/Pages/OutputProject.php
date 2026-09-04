@@ -342,6 +342,7 @@ class OutputProject extends ViewRecord
             ->keyBy('revision_number');
 
         $liveLogs = ActivityLog::query()
+            ->withinRetention()
             ->where('project_id', $this->record->id)
             ->whereIn('action_type', ['quote_pdf.generated', 'schedule_pdf.generated'])
             ->with('user:id,name,email')

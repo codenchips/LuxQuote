@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Enums\ProjectStatus;
 use App\Filament\Resources\ActivityLogs\Pages\ListActivityLogs;
+use App\Filament\Resources\Projects\Pages\OutputProject;
+use App\Filament\Resources\Projects\Pages\ProjectHistory;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\User;
@@ -180,6 +182,33 @@ class ActivityLogArchiveTest extends TestCase
         $this->assertSame(ProjectStatus::Quoted, $project->fresh()->status);
     }
 
+    public function test_quoted_at_migration_backfills_status_and_history_without_removing_logs(): void
+    {
+        Carbon::setTestNow('2026-09-04 09:00:00');
+        $statusProject = Project::factory()->create(['status' => ProjectStatus::Quoted]);
+        $historyProject = Project::factory()->create();
+        $generatedAt = now()->subYear();
+
+        $quoteLog = ActivityLog::create([
+            'user_id' => $historyProject->user_id,
+            'project_id' => $historyProject->id,
+            'action_type' => 'quote_pdf.generated',
+            'user_email_snapshot' => 'quote@example.com',
+            'project_name_snapshot' => $historyProject->name,
+            'revision_number' => $historyProject->activeRevision->revision_number,
+            'payload' => null,
+        ]);
+        $quoteLog->forceFill(['created_at' => $generatedAt])->save();
+
+        $migration = require database_path('migrations/2026_09_04_100302_backfill_project_revision_quoted_at.php');
+        $migration->up();
+        $migration->up();
+
+        $this->assertNotNull($statusProject->activeRevision->fresh()->quoted_at);
+        $this->assertTrue($historyProject->activeRevision->fresh()->quoted_at->equalTo($generatedAt));
+        $this->assertDatabaseHas(ActivityLog::class, ['id' => $quoteLog->id]);
+    }
+
     public function test_global_history_query_never_displays_rows_outside_retention(): void
     {
         Carbon::setTestNow('2026-09-04 09:00:00');
@@ -211,6 +240,50 @@ class ActivityLogArchiveTest extends TestCase
             ->assertSuccessful()
             ->assertSee('retained-history@example.com')
             ->assertDontSee('expired-history@example.com');
+    }
+
+    public function test_project_and_output_history_queries_apply_the_same_retention_window(): void
+    {
+        Carbon::setTestNow('2026-09-04 09:00:00');
+        config()->set('activity-log.retention_months', 3);
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+
+        $expiredLog = ActivityLog::create([
+            'user_id' => $admin->id,
+            'project_id' => $project->id,
+            'action_type' => 'schedule_pdf.generated',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $project->name,
+            'revision_number' => $project->activeRevision->revision_number,
+            'payload' => ['filename' => 'expired-schedule.pdf'],
+        ]);
+        $expiredLog->forceFill(['created_at' => now()->subMonthsNoOverflow(3)->subSecond()])->save();
+
+        ActivityLog::create([
+            'user_id' => $admin->id,
+            'project_id' => $project->id,
+            'action_type' => 'schedule_pdf.generated',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $project->name,
+            'revision_number' => $project->activeRevision->revision_number,
+            'payload' => ['filename' => 'retained-schedule.pdf'],
+        ]);
+
+        $this->actingAs($admin);
+
+        Livewire::test(ProjectHistory::class, ['record' => $project->id])
+            ->assertSuccessful()
+            ->assertSee('retained-schedule.pdf')
+            ->assertDontSee('expired-schedule.pdf');
+
+        $filenames = collect(Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->instance()
+            ->outputHistoryRows())
+            ->pluck('filename');
+
+        $this->assertTrue($filenames->contains('retained-schedule.pdf'));
+        $this->assertFalse($filenames->contains('expired-schedule.pdf'));
     }
 
     public function test_scheduler_registers_activity_history_pruning(): void

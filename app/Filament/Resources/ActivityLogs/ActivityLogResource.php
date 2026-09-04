@@ -36,10 +36,7 @@ class ActivityLogResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $retentionMonths = max(1, (int) config('activity-log.retention_months', 3));
-
-        return parent::getEloquentQuery()
-            ->where('created_at', '>=', now()->subMonthsNoOverflow($retentionMonths));
+        return parent::getEloquentQuery()->withinRetention();
     }
 
     public static function table(Table $table): Table

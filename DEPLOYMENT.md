@@ -103,8 +103,10 @@ The Resources and reusable Document Pack template features add these forward-onl
 - `2026_09_03_114829_disable_resource_permissions_for_non_admin_groups`
 - `2026_09_03_151703_create_document_pack_templates_table`
 - `2026_09_03_151706_create_document_pack_template_items_table`
+- `2026_09_04_093500_add_quoted_at_to_project_revisions_table`
+- `2026_09_04_100302_backfill_project_revision_quoted_at`
 
-The first migration creates Resource metadata, the next two add the four `resources.*` permission catalogue entries and guarantee that their rollout defaults are off for every group except Admin, and the final two create reusable Document Pack templates plus their ordered items. None alters or deletes existing business records or uploaded files. The normal production workflow runs them with the existing `php artisan migrate --force --no-interaction` step. `resource_files`, `document_pack_templates`, and `document_pack_template_items` are included in the deploy data-loss guard.
+The first migration creates Resource metadata, the next two add the four `resources.*` permission catalogue entries and guarantee that their rollout defaults are off for every group except Admin, and the following two create reusable Document Pack templates plus their ordered items. The final pair separately add a nullable, indexed quote-generation timestamp to project revisions and safely backfill it from current project status plus live and legacy activity history. Keeping the schema change and data backfill separate makes an interrupted MySQL deployment straightforward to resume. None deletes existing business records or uploaded files. The normal production workflow runs them with the existing `php artisan migrate --force --no-interaction` step. Resource, template, permission, live-history, and legacy-history tables are included in the deploy data-loss guard.
 
 Uploaded files live under `storage/app/private/resources`; template snapshots live under `storage/app/private/document-pack-templates`. The production bind mount preserves both directories across container rebuilds and Git checkouts. The current `backup-production-database.sh` job is database-only and therefore does not back up either set of PDF contents. Add a separate protected file backup before treating the Resource library or templates as the only copy of business-critical documents.
 
@@ -647,7 +649,7 @@ ACTIVITY_LOG_RETENTION_MONTHS=3
 
 After changing this value, clear Laravel's cached configuration as part of the normal deployment/configuration workflow. The value is clamped to a minimum of one month.
 
-The Laravel scheduler runs the retention command daily at 01:41 in bounded batches. The existing once-per-minute `schedule:run` cron is all that is required. A production-safe preview is available before allowing any deletion:
+The deployment clears stale configuration caches before migrations, displays the effective retention configuration, then runs the retention command once after the forward migrations and protected-table checks while maintenance mode and the fresh full database backup are still in place. This makes the transition from the legacy archive immediate and means the only intentional production row deletion during deployment is expired activity history. The Laravel scheduler then runs the same command daily at 01:41 in bounded batches. The existing once-per-minute `schedule:run` cron is all that is required. A production-safe preview is available before allowing any manual deletion:
 
 ```bash
 cd /home/tamliteco/luxquote.app
