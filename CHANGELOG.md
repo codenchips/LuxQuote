@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.8 - 2026-09-04
+
+Version: `0.2.7` -> `0.2.8`
+
+Changes included:
+
+- `902f00e` Stats!
+- `ded64c3` Stats hardened
+
 ## 0.2.7 - 2026-09-04
 
 Version: `0.2.6` -> `0.2.7`
