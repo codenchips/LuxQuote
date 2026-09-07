@@ -1,6 +1,6 @@
 @php
     $chartRows = collect($rows)->values();
-    $series = ['logins' => '#a78bfa', 'projects' => '#ff9800', 'quotes' => '#34c77b', 'schedules' => '#39a9db'];
+    $series = ['logins' => '#f472b6', 'projects' => '#ff9800', 'quotes' => '#34c77b', 'schedules' => '#39a9db'];
     $chartMax = max(1, $chartRows->max(fn ($row) => max($row['logins'], $row['projects'], $row['quotes'], $row['schedules'])) ?? 1);
     $pointCount = max(1, $chartRows->count() - 1);
 @endphp

@@ -1,10 +1,31 @@
 # Company App — Project Status
 
-_Last updated: 4 September 2026_
+_Last updated: 7 September 2026_
 
 ---
 
-## Management Statistics — 4 September 2026
+## Monday Baseline Review — 7 September 2026
+
+The deployed `0.2.11` feature set is broad and stable under the current automated suite: **366 tests / 2,187 assertions pass**, every tracked migration is applied locally, the production asset build succeeds, and `npm audit --omit=dev` reports no vulnerabilities. The next release should concentrate on the following items before another large feature tranche:
+
+1. **Patch PHP dependencies before the next production release.** The locked Composer graph currently reports 33 advisories across 10 packages. Directly relevant findings include a high-severity Filament MFA recovery-code bypass in `filament/filament 5.6.5`, a Livewire DOM XSS issue in `livewire/livewire 4.3.0`, and a Laravel signed-URL path-confusion issue in `laravel/framework 13.11.2`, plus high-severity Guzzle/CommonMark advisories. Upgrade the Laravel/Filament/Livewire ecosystem in a controlled branch, then run the full suite, asset build, authentication/MFA, permissions, Salesforce, Calendar, Statistics, and PDF smoke tests before deployment.
+2. **Remove or protect the public `/test-pdf` diagnostic route.** It currently performs a Browsershot render without authentication or rate limiting. That is unnecessary production attack surface and a potentially expensive denial-of-service endpoint.
+3. **Add a pre-deployment quality gate.** The production workflow currently deploys immediately when `production` is pushed. Require tests, the production asset build, `composer audit --locked`, and `npm audit --omit=dev` to pass before the VPS job enters maintenance mode.
+4. **Back up all persistent document storage off-server.** Database dumps do not contain Resource files, Document Pack uploads, or template snapshots. Back up `storage/app/private/resources`, `storage/app/private/document-packs`, and `storage/app/private/document-pack-templates`, encrypt the copy, send it off the VPS, and periodically perform a controlled restore-verification exercise.
+5. **Make catalogue replacement atomic.** `ProductImportService` validates the remote response before changing data, but then deletes the Products table and inserts the replacement rows without a database transaction. Wrap replacement and related price updates atomically so an insertion/database failure cannot leave the live catalogue empty.
+6. **Enforce a real password policy.** The Admin user form currently confirms passwords and limits their maximum length but has no minimum-strength validation. Apply Laravel's password rule consistently to account creation, password changes, and resets, and add focused tests.
+
+### Recommended product roadmap
+
+- **Reliability first**: move Quote, Schedule, datasheet, and Document Pack generation into durable queued jobs with retries, cancellation, persistent progress, and a recent-download area. This shortens web requests and makes external/Puppeteer failures recoverable.
+- **Statistics scale-up**: current 10-row pagination is browser-side presentation; large reports still load and aggregate the full selected range. Move large tables and aggregates server-side, add short-lived filter-keyed caching, drill-down links, and previous-period comparison before adding exports.
+- **Document standards**: build the planned Admin Document Pack Template manager with explicit edit/delete permissions, version history, replacement of static snapshots, and activity logging.
+- **Resource usability and governance**: add folders/categories, tags, search/filtering, replacement/version history, and optional file-level/team visibility before the library becomes the authoritative source for sensitive documents.
+- **Integration resilience**: centralise Salesforce and product API clients with explicit connect/request timeouts, bounded retries with jitter, and last-success/stale-data indicators. The Visits calendar should retain a read-only last-known view when Salesforce is temporarily unavailable.
+- **Everyday UX**: add favourites/recent projects, clearer autosave/unsaved-state feedback, accessible keyboard/focus behaviour for custom modals and lightboxes, and responsive browser tests for the most-used project/output flows.
+- **Operational security**: after upgrading Filament, require MFA for privileged groups, strengthen new-password rules, review security headers at Apache/application level, ensure Docker port `8080` is not publicly reachable, and replace the emergency CGI's shared query token/secondary static confirmation word with a server-managed high-entropy secret plus IP restriction and auditable access.
+
+## Management Statistics — 7 September 2026
 
 - **Reporting workspace**: A permission-controlled **Admin → Statistics** page provides Overview, Usage, Projects, and Outputs sections with shared From/To, day/week/month, user, owner, and currency filters. Quick presets cover Today, This week, This month, and This quarter.
 - **Management visuals**: Overview combines KPI cards with a multi-series activity line chart, status funnel bars, an output-mix doughnut, and stacked top-producer bars. Outputs adds a ranked quoted-product bar chart alongside detailed tables.
@@ -14,10 +35,22 @@ _Last updated: 4 September 2026_
 - **Correct funnel sequence**: The progression is reported as Draft → In Progress → Design Complete → Approval Requested (optional) → Approved → Quoted. Later stages count as having passed earlier stages; the funnel is a current cohort view rather than a historical status-transition audit.
 - **Durable data model**: `reporting_events` snapshots supported successful activity and `reporting_event_products` snapshots quote-batch product quantities. Reporting survives the separate three-month Activity History deletion. A daily reconciliation runs before pruning, and the initial migration backfills the retained source history.
 - **Owner names**: Projects now store a nullable `owner_name`. New Salesforce imports snapshot `Owner.Name`; existing projects first use matching local users or another known project owner, then a cached Salesforce Opportunity-owner lookup. Failures show `Owner name unavailable`, never the owner email address.
+- **Responsive report feedback**: A blocking busy overlay is shown while filters and presets are being processed. The active predefined period is highlighted; manually changing either date clears the preset highlight.
+- **Readable large reports**: Every Statistics table paginates independently at 10 rows. This prevents extremely tall pages, while preserving each filter result in memory for the current first iteration.
+- **Chart and currency polish**: Commercial values use `£` or `€` rather than currency abbreviations. Login and Schedule lines have distinct colours, and the Overview uses multiple line, bar, stacked-bar, and doughnut visuals.
 - **Permissions**: `statistics.view` is separate from global History and defaults to Admin and Manager. `pricing.view` remains mandatory for every monetary or Cover field. Statistics is also available as a permission-group landing page.
 - **Hardening**: Missing reporting tables show a migration message rather than a 500; owner lookup/cache/storage failures cannot take down a report; range limits prevent pathological chart requests; first-quote and last-activity values use bulk aggregate queries; and reporting tables are covered by the production data-loss guard.
 - **Configuration**: `STATISTICS_HIGH_VALUE_THRESHOLD` defaults to `25000`, `STATISTICS_INACTIVE_DAYS` to `30`, and `STATISTICS_MAX_RANGE_DAYS` to `3650`. Daily and weekly visual groupings have tighter safe limits.
 - **Export deferred**: Report export is intentionally outside this first iteration.
+
+---
+
+## Output and History Refinements — 3–4 September 2026
+
+- **Tender-aware Quote flow**: The Choose Tenders dialog appears only when the project has at least one Tender. Projects without Tenders generate without a customer cover sheet, and the same rule is repeated server-side rather than relying on the hidden UI alone.
+- **Optional legal page**: Quote and Schedule controls include an **Include legal page** switch beside **Include datasheets**. It defaults on for the established behaviour; turning it off omits the full legal PDF from that generated output and is retained in output history/regeneration metadata.
+- **Private preview consistency**: freshly selected Custom PDFs, saved pack PDFs, Resource snapshots, template snapshots, and the Standard Legal Page all provide immediate thumbnails and use the authenticated in-page lightbox rather than opening an unprotected tab.
+- **Activity History retention**: Global and project output History retain three months by default using `ACTIVITY_LOG_RETENTION_MONTHS`. The former archive page/action/command has been removed; expired history is permanently pruned after durable reportable events are reconciled into Statistics.
 
 ---
 
@@ -28,7 +61,7 @@ _Last updated: 4 September 2026_
 - **Upload controls**: Uploads are limited to PDFs, common Office documents, CSV/text files, and common web images up to 10 MB. Extension and detected MIME type are both checked, managed storage paths are validated, and missing or unreadable files fail closed without exposing filesystem paths.
 - **Lifecycle handling**: Renaming changes only the display name. Confirmed deletion removes both the database row and its managed private file; storage cleanup failures are logged without crashing the UI.
 - **Resource permissions**: `resources.view`, `resources.create`, `resources.update`, and `resources.delete` separately control standalone page/file access, uploads, display-name edits, and permanent deletion. All four default to Admin only; every other built-in or custom group must be granted them explicitly. Per-file permissions remain deferred. Resources is available as a group landing page only when `resources.view` is granted.
-- **Grouped permission editor**: Group create/edit forms organise every permission exactly once under Project, Users, Calendar, Pricing, Salesforce, Products, Resources, or Validation. Related revision, history, output, quote approval, group, and team capabilities are folded into their closest functional area, with one shared search across all areas and per-area Select all/Deselect all controls. Group Details and Permissions use separate full-width panels.
+- **Grouped permission editor**: Group create/edit forms organise every permission exactly once under Project, Users, Calendar, Pricing, Salesforce, Products, Resources, Statistics, or Validation. Related revision, history, output, quote approval, group, and team capabilities are folded into their closest functional area, with one shared search across all areas and per-area Select all/Deselect all controls. Group Details and Permissions use separate full-width panels.
 - **Document Pack Resource picker**: The Document Pack builder can browse PDF-only Resources in a modal table, preview them in the existing lightbox style, and add a selected PDF to a pack tile. Saving copies the Resource into the pack's managed storage so the pack remains stable if the original library entry changes or is deleted. The standalone page remains gated by `resources.view`, while the picker follows the existing `output.manage-document-packs` permission.
 - **Reusable Document Pack templates**: Document Pack users can save the current ordered tile layout as an Open, Private, or Team template, then select any visible template as the starting point for another project's pack. Quote and Schedule remain dynamic placeholders; an unavailable Quote permission produces a warning and omits that placeholder. Static PDFs receive an independent template snapshot and a second project-pack snapshot, so Resource deletion cannot break templates and future template edits cannot change existing project packs. Template save, selection, and preview all follow `output.manage-document-packs` plus owner/team visibility rules.
 - **Forward-only rollout**: Five additive migrations create Resource metadata, install Admin-only Resource permissions, and create Document Pack template/item tables. Their `up()` paths do not rewrite or delete existing business data. The two template migrations were applied locally after the initial missing-table error and are included in commit `0656b8c` for production deployment.
@@ -40,7 +73,7 @@ _Last updated: 4 September 2026_
 - Add separate template edit/delete permissions when that management UI is introduced; template selection should continue to follow Document Pack access and visibility rather than standalone Resources access.
 - Allow authorised users to revise an existing template's name, visibility, ordering, placeholders, and static snapshots without changing packs already created from it.
 - Record template updates/deletions in Activity History and consider template version history before widely-used standards become editable.
-- Add orphan snapshot reporting/cleanup and include `storage/app/private/resources` plus `storage/app/private/document-pack-templates` in the production file-backup plan; the current database-only backup cannot restore those PDFs.
+- Add orphan snapshot reporting/cleanup and include `storage/app/private/resources`, `storage/app/private/document-packs`, and `storage/app/private/document-pack-templates` in the production file-backup plan; the current database-only backup cannot restore those PDFs.
 
 ---
 
@@ -980,18 +1013,27 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ---
 
-## Known Gaps / Next Steps (reviewed 27 August 2026)
+## Known Gaps / Next Steps (reviewed 7 September 2026)
 
+- [ ] Upgrade the Composer lock to resolve the current Filament MFA bypass, Livewire XSS, Laravel signed-URL, Guzzle, CommonMark, and Symfony advisories; validate the upgrade with the full automated and production-PDF smoke suite
+- [ ] Remove `/test-pdf` from production or restrict it to authenticated administrators with rate limiting
+- [ ] Add mandatory test, asset-build, and dependency-audit checks before the production deploy job starts
+- [ ] Replace the emergency CGI's shared URL token/static confirmation word with server-managed high-entropy authentication, IP restriction where practical, and access auditing
+- [ ] Verify production uses `APP_ENV=production`, `APP_DEBUG=false`, HTTPS-only session cookies, appropriate security headers, and a firewall/loopback restriction preventing direct public access to Docker port `8080`
+- [ ] Apply and test a consistent minimum password-strength rule for user creation, profile changes, and password resets
 - [ ] Complete the Project Tenders workflow: create/sync Salesforce `Tender__c` records and add tender-specific quote output and cover sheets
 - [ ] Continue Cover pricing review after beta feedback, especially how Cover values should appear in quote/schedule outputs and approval summaries
 - [ ] Move long-running PDF/document-pack generation toward queued jobs with polling/download links so browser/proxy timeouts and remote datasheet delays do not surface as user-facing 500 errors
 - [ ] Add structured logging around PDF generation with project reference, revision, document type, include-datasheets flag, progress token, qpdf step, datasheet endpoint result, and exception class/message
-- [ ] Add a runner maintenance/checklist script that recreates `luxquote-production` with the GitHub deploy key, `known_hosts`, labels, and `/home/tamliteco/luxquote.app` checkout mount intact
 - [ ] Review VPS resources and Docker health: memory/swap, disk pressure, MySQL restart history, Apache proxy timeout, and whether long PDF requests are being killed or timed out
-- [ ] Add off-server database backup/restore verification and keep emergency recovery strictly volume-preserving unless a deliberate restore is chosen
+- [ ] Add encrypted off-server database and persistent-file backups with automated integrity checks and controlled restore verification; keep emergency recovery volume-preserving unless a deliberate restore is chosen
+- [ ] Make Product catalogue replacement transactional so a mid-import database failure cannot leave Products empty or partially populated
+- [ ] Add explicit connect/request timeouts and bounded retry policies to external API clients, with visible last-success/stale-data status where useful
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
-- [ ] Additional document-pack roles/templates (for example case studies) are planned but not yet implemented
+- [ ] Build the Admin Document Pack Template management/versioning workflow and add dedicated edit/delete permissions
+- [ ] Add Resource categories, search/filtering, replacement history, and optional file/team-level access controls
+- [ ] Optimise large Statistics ranges with database aggregation, server-side pagination, and short-lived caching; browser-side pagination currently improves layout but not query/payload cost
 - [ ] Fill remaining automated coverage gaps: product picker UI, revision activation UI, presence heartbeat, and broader validation/PDF browser scenarios
 - [ ] Review the Output page visually in dark mode across desktop widths
 - [ ] Review the Output page in light mode, especially orange actions, tab underline, status chips, and disabled buttons
@@ -999,12 +1041,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [ ] Add browser-level coverage for the Output page layout if visual regressions continue
 - [ ] Standardize a shared Blade/CSS helper for Filament-style primary buttons used outside native Filament actions
 - [ ] Consider applying the same shared button helper to other custom modals and project-page actions
-- [ ] Revisit the Document Packs builder PDF preview behavior for uploaded files that return 404
-- [ ] Run a final focused regression pass before deployment:
-  - `vendor/bin/sail artisan test --compact tests/Feature/AdminProjectResourceTest.php`
-  - `vendor/bin/sail artisan test --compact tests/Feature/AdminDocumentPackTest.php`
-  - `vendor/bin/sail artisan test --compact tests/Feature/AdminProjectValidationTest.php`
-  - `vendor/bin/sail artisan test --compact tests/Feature/SalesforcePushControlTest.php tests/Feature/BadgeStyleTest.php`
+- [ ] Add maintained browser-level smoke coverage for login/MFA, permission boundaries, project editing, Statistics filters/pagination, Calendar modals, and PDF/Document Pack progress and previews
 
 ---
 
@@ -1015,8 +1052,8 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - **Project details access**: The projects table now has a pencil/details action beside the copy action, and locked projects still expose Details in read-only mode rather than hiding the panel completely.
 - **Projects table laptop layout**: Project-list columns were tightened again to prioritise the project name and avoid horizontal scrollbars on laptop-width screens.
 - **Shared badge styling**: Reusable badge styling now keeps labels compact, standardises identical app labels, applies Tamlite/Xcite brand colours where applicable, and gives unknown labels deterministic colours without changing the displayed words.
-- **Standard legal PDF page**: Quote and schedule PDF downloads now append `resources/documents/legal/full-legal-page.pdf` immediately after the generated quote/schedule pages.
-- **Legal-before-datasheets order**: When datasheets are included, merge order is generated quote/schedule PDF, standard legal page, then datasheets.
+- **Standard legal PDF page (initial behaviour)**: Quote and Schedule PDF downloads originally always appended `resources/documents/legal/full-legal-page.pdf` immediately after the generated pages. This was superseded in September by the default-on **Include legal page** output switch.
+- **Legal-before-datasheets order**: When both optional additions are selected, merge order is generated Quote/Schedule PDF, standard legal page, then datasheets.
 - **Document-pack template role**: The document-pack builder now includes **Standard Legal Page** as an app-owned template document, separate from the existing uploaded Legal PDF role.
 - **Document-pack selector cleanup**: New pack items no longer offer Cover or uploaded Legal in the dropdown; **Unpriced Schedule** is labelled **Schedule**, and **Custom PDF** is available for uploaded one-off documents.
 - **Salesforce PDF fingerprints**: Quote and Schedule uploads retain output fingerprint tracking for audit state, including the standard legal PDF hash, but deliberately create a new Salesforce version whenever an upload is requested.
@@ -1192,5 +1229,3 @@ Blank lines with no SKU render empty schedule cells so placeholder rows do not s
 - **JobRole enum** (`app/Enums/JobRole.php`): `SalesEngineer`, `TradeSalesEngineer`, `Technical`, `ProductDesign` — easy to extend with more cases
 - **Display names in UI**: Project owner column and history "Who" column now show the user's display name instead of their email address
 - **Salesforce integration foundation**: OAuth2 client credentials auth working; `InterrogateSalesforce` command printing live Opportunity records from Salesforce to the terminal
-
-# Bump Bump

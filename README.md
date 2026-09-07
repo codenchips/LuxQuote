@@ -10,6 +10,8 @@ A Laravel + Filament application for managing quotes and projects.
 - Admin validation separates unresolved **Issues** from **Validated** lines.
 - Running validation marks a revision ready to approve; clicking **Approve Revision** locks the revision.
 - Salesforce project creation is the default create mode and can populate reference, customer, owner email, cover, and value from the selected Opportunity.
+- Quote and Schedule output supports optional datasheets/legal pages, Tender-aware cover sheets, stable revision filenames, Salesforce version uploads, and reusable Document Packs.
+- The Admin area includes private Resources, management Statistics, three-month Activity History, Products, and Specials; Salesforce Visits provides the shared business calendar.
 
 ## Stack
 
@@ -92,8 +94,10 @@ vendor/bin/sail artisan test --compact --filter=testName
 | Task | Command |
 |------|---------|
 | Run migrations | `vendor/bin/sail artisan migrate` |
-| Fresh migration + seed | `vendor/bin/sail artisan migrate:fresh --seed` |
+| Check migration status | `vendor/bin/sail artisan migrate:status` |
 | Clear all caches | `vendor/bin/sail artisan config:clear && vendor/bin/sail artisan view:clear` |
 | List routes | `vendor/bin/sail artisan route:list --except-vendor` |
 | Fix code style | `vendor/bin/sail bin pint --dirty` |
 | Tinker | `vendor/bin/sail artisan tinker` |
+
+Never use `migrate:fresh`, `migrate:refresh`, `db:wipe`, or a database restore against an existing environment unless destruction/restoration of that exact database has been explicitly authorised. Production deploys use forward-only `docker compose exec laravel.test php artisan migrate --force`.

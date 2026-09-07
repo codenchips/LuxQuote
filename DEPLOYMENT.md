@@ -66,19 +66,30 @@ Before any command that may affect data, confirm the exact database name and whe
 Production should include:
 
 ```dotenv
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://quote.tamlite.co.uk
 APP_TIMEZONE=Europe/London
+SESSION_SECURE_COOKIE=true
 ```
+
+`SESSION_HTTP_ONLY` and `SESSION_SAME_SITE=lax` retain Laravel's safe defaults. Consider `SESSION_ENCRYPT=true` as an additional defence for database-backed session contents. Never print the complete production environment or secrets into a deployment log.
 
 Use `Europe/London`, not a fixed `GMT+1` offset, so PHP automatically handles GMT/BST changes. After changing `.env` or deploying a config change, clear Laravel's cached config:
 
 ```bash
 docker compose exec laravel.test php artisan optimize:clear
 docker compose exec laravel.test php artisan config:show app.timezone
+docker compose exec laravel.test php artisan config:show app.env
+docker compose exec laravel.test php artisan config:show app.debug
+docker compose exec laravel.test php artisan config:show session.secure
 ```
 
-## Production 0.2.5 Release Record
+Verify Apache supplies HSTS, clickjacking/CSP framing protection, content-type protection, and an appropriate referrer policy. Also verify port `8080` is restricted by loopback binding or the VPS firewall so clients cannot bypass Apache and spoof trusted proxy headers. `bootstrap/app.php` currently trusts all proxies because of the reverse-proxy architecture; that is safe only while direct container access is blocked.
 
-Version `0.2.5` is the production-visible release containing the feature work prepared after `0.2.3`. The `0.2.5` commit followed a one-time reconciliation of divergent `main` and `production` release-history commits; it did not duplicate migrations or application changes. A manual database backup did not cause that Git divergence because backup archives are outside the tracked release history.
+## Current Production Release Baseline
+
+Version `0.2.11` is the current production-visible baseline as of 7 September 2026. It includes Resources, reusable Document Pack templates, three-month Activity History retention, management Statistics, loading/preset feedback, currency-symbol output, and 10-row Statistics table pagination. The earlier `0.2.5` commit followed a one-time reconciliation of divergent `main` and `production` histories; a manual database backup did not cause that divergence because backup archives are outside tracked release history.
 
 This release deploys these forward-only migrations:
 
@@ -92,9 +103,26 @@ This release deploys these forward-only migrations:
 
 They add project currency, change only the default revision for future projects, add the four Calendar capabilities to permission groups, and add the group landing-page setting. They do not rewrite existing project revision sequences or restore/reset the database.
 
-The first Docker image build after an older build cache has expired can spend several minutes printing package installation output from `docker/8.5/Dockerfile`. That output is expected during `docker compose up -d --build` and is not, by itself, a runner loop. Do not start a second deployment while the first workflow is still running. The existing persistent `luxquote-production` runner does not need to be recreated for this release when it remains online and its logs end with `Listening for Jobs`.
+The `0.2.4`/`0.2.5` feature tranche introduced the forward-only migrations listed above. The first Docker image build after an older build cache has expired can spend several minutes printing package installation output from `docker/8.5/Dockerfile`. That output is expected during `docker compose up -d --build` and is not, by itself, a runner loop. Do not start a second deployment while the first workflow is still running. The existing persistent `luxquote-production` runner does not need to be recreated when it remains online and its logs end with `Listening for Jobs`.
 
-## Pending Resources and Document Pack Templates Rollout
+## Pre-deployment Quality and Security Gate
+
+As of 7 September 2026, the application suite passes **366 tests / 2,187 assertions**, the production Vite build succeeds, all tracked migrations are applied locally, and `npm audit --omit=dev` reports no findings. However, `composer audit --locked` reports **33 advisories across 10 locked packages**, including a high-severity Filament MFA recovery-code bypass affecting the installed `5.6.5`, a Livewire DOM XSS issue affecting the installed `4.3.0`, and a Laravel signed-URL issue affecting the installed `13.11.2`. Treat the Composer upgrade as a prerequisite for the next production release.
+
+Run this non-destructive gate locally before pushing `production`:
+
+```bash
+vendor/bin/sail artisan test --compact
+vendor/bin/sail npm run build
+vendor/bin/sail composer validate --strict
+vendor/bin/sail composer audit --locked
+vendor/bin/sail npm audit --omit=dev
+vendor/bin/sail artisan migrate:status
+```
+
+Do not suppress audit failures merely to make the gate green. Upgrade compatible packages in a branch, review `composer.lock`, and repeat the full test/build plus authentication/MFA, permissions, Calendar, Salesforce, Statistics, and PDF smoke checks. The GitHub production workflow does not yet enforce this gate automatically; adding a prerequisite CI job is a priority. The deploy should also move from `npm install` to deterministic `npm ci` once the revised workflow has been exercised outside production.
+
+## Resources and Document Pack Templates Schema
 
 The Resources and reusable Document Pack template features add these forward-only migrations:
 
@@ -108,7 +136,7 @@ The Resources and reusable Document Pack template features add these forward-onl
 
 The first migration creates Resource metadata, the next two add the four `resources.*` permission catalogue entries and guarantee that their rollout defaults are off for every group except Admin, and the following two create reusable Document Pack templates plus their ordered items. The final pair separately add a nullable, indexed quote-generation timestamp to project revisions and safely backfill it from current project status plus live and legacy activity history. Keeping the schema change and data backfill separate makes an interrupted MySQL deployment straightforward to resume. None deletes existing business records or uploaded files. The normal production workflow runs them with the existing `php artisan migrate --force --no-interaction` step. Resource, template, permission, live-history, and legacy-history tables are included in the deploy data-loss guard.
 
-Uploaded files live under `storage/app/private/resources`; template snapshots live under `storage/app/private/document-pack-templates`. The production bind mount preserves both directories across container rebuilds and Git checkouts. The current `backup-production-database.sh` job is database-only and therefore does not back up either set of PDF contents. Add a separate protected file backup before treating the Resource library or templates as the only copy of business-critical documents.
+Uploaded Resource files live under `storage/app/private/resources`, project-pack uploads under `storage/app/private/document-packs`, and template snapshots under `storage/app/private/document-pack-templates`. The production bind mount preserves these directories across container rebuilds and Git checkouts. The current `backup-production-database.sh` job is database-only and does not back up any of these PDF contents. Add an encrypted, off-server file backup before treating LuxQuote as the only copy of business-critical documents.
 
 The template migrations are required before opening a project's Document Packs tab. If that page reports that `document_pack_templates` does not exist, verify deployment includes commit `0656b8c` or later and inspect migration state with:
 
@@ -122,7 +150,7 @@ Do not create the tables manually and do not use a destructive reset. A normal p
 docker compose exec -T laravel.test php artisan migrate --force --no-interaction
 ```
 
-## Pending Statistics Rollout
+## Statistics Schema
 
 The management Statistics feature is deployed through these forward-only migrations:
 
@@ -170,11 +198,11 @@ The Visits interface reads and mutates Salesforce `Event` records owned by a pub
 
 - read the `Calendar` object and see the intended public calendar
 - read, create, edit, and delete `Event` records on that calendar
-- read the core Event fields `Id`, `Subject`, `StartDateTime`, `EndDateTime`, `IsAllDayEvent`, and `OwnerId`
-- create/update the fields required by the UI: `Subject`, `Location`, `Type`, `StartDateTime`, `EndDateTime`, and `IsAllDayEvent`
+- read the core Event fields `Id`, `Subject`, `StartDateTime`, `EndDateTime`, and `OwnerId`
+- create/update the fields required by the UI: `Subject`, `StartDateTime`, and `EndDateTime`; `Location`, `Type`, and the all-day field are capability-detected
 - set `OwnerId` to the public calendar when creating an Event
 
-`Owner.Name`, `CreatedBy.Name`, `Type`, and `Location` reads are optional. LuxQuote retries event reads without unavailable optional fields and keeps affected form controls read-only when describe metadata reports narrower access. The Salesforce public calendar sharing level must still allow the intended create/update/delete operations.
+`Owner.Name`, `CreatedBy.Name`, `Type`, `Location`, and Salesforce's all-day field are optional. LuxQuote retries event reads without unavailable optional fields, derives safe timed/all-day presentation where necessary, and keeps affected form controls read-only when describe metadata reports narrower access. The Salesforce public calendar sharing level must still allow the intended create/update/delete operations.
 
 Production `.env` must include:
 
@@ -473,6 +501,8 @@ chmod 700 /home/tamliteco/quote/cgi-bin/reset-app.cgi
 ```
 
 Do not expose the CGI URL without the secret key. The script also enforces a five-minute cooldown with `/tmp/luxquote_reset.lock`.
+
+The query token should be a high-entropy value supplied as `LUXQUOTE_RESET_KEY` by server configuration, never committed to git or left as `CHANGE_ME_ON_THE_SERVER`. The additional static `dean` confirmation word is only an accidental-operation guard, not a second secure authentication factor. Because this endpoint can deliberately overwrite the production database, restrict it by source IP or authenticated VPN at Apache where practical, rate-limit failed access before CGI execution, log access, and rotate the query token if its URL is ever shared or exposed.
 
 ## Automated Database Backups
 
@@ -915,6 +945,8 @@ The deploy script:
 - writes `backups/deploy-manifest-latest.env` after a successful smoke check, then removes the pending manifest
 - prunes Docker build cache older than 24 hours
 - prunes DB backups older than 14 days
+
+The current maintenance window includes the container build, dependency installation, npm build, Puppeteer setup, migrations, and smoke checks. A future deployment improvement should build and test an immutable release before entering maintenance mode, leaving only the short database migration and release switch inside the user-visible 503 window.
 
 The deploy data-loss guard is intentionally conservative. It only auto-restores when protected business data has catastrophically disappeared from every previously-populated protected table. If only some protected tables look emptied, the deploy stops and leaves the full backup plus `backups/latest-protected-data-restore.sql.gz` in place for manual inspection rather than risking duplicate or mixed-state rows. The rolling data-only restore file is replaced on each deploy, so only one `latest-protected-data-restore.sql.gz` should exist at a time. If the migrated-schema data restore fails, the deploy log explains that the new migrations likely changed table or column structures in a way that needs a custom manual recovery from the full backup. The protected table list can be overridden with `PROTECTED_DATA_TABLES`; automatic catastrophic restore can be disabled with `RESTORE_ON_CATASTROPHIC_DATA_LOSS=false`.
 
