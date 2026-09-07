@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\DocumentPackItemRole;
 use App\Enums\DocumentPackItemSource;
+use App\Enums\PermissionKey;
 use App\Enums\ProjectVisibility;
 use App\Filament\Resources\Projects\Pages\OutputProject;
 use App\Models\DocumentPack;
@@ -199,6 +200,7 @@ class AdminDocumentPackTemplateTest extends TestCase
             ->for($otherPrivate, 'documentPackTemplate')
             ->create();
         $this->actingAs($member);
+        $this->assertTrue($member->can(PermissionKey::OutputManageDocumentPacks->value));
 
         $denied = false;
 
@@ -214,7 +216,7 @@ class AdminDocumentPackTemplateTest extends TestCase
         $this->get(route('projects.document-pack-templates.items.file', [
             'project' => $project,
             'documentPackTemplateItem' => $inaccessibleItem,
-        ]))->assertForbidden();
+        ]))->assertNotFound();
     }
 
     public function test_invalid_template_team_selection_falls_back_to_private(): void

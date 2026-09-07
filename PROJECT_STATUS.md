@@ -6,9 +6,9 @@ _Last updated: 7 September 2026_
 
 ## Monday Baseline Review — 7 September 2026
 
-The deployed `0.2.11` feature set is broad and stable under the current automated suite: **366 tests / 2,187 assertions pass**, every tracked migration is applied locally, the production asset build succeeds, and `npm audit --omit=dev` reports no vulnerabilities. The next release should concentrate on the following items before another large feature tranche:
+The deployed `0.2.11` feature set is broad and stable. The dependency-security refresh prepared locally for the next release passes **366 tests / 2,188 assertions**, every tracked migration is applied locally, the production asset build and PDF health check succeed, and both Composer and npm audits report no vulnerabilities. Production remains on the `0.2.11` lock until that tested refresh is deployed. The next release should concentrate on the following items before another large feature tranche:
 
-1. **Patch PHP dependencies before the next production release.** The locked Composer graph currently reports 33 advisories across 10 packages. Directly relevant findings include a high-severity Filament MFA recovery-code bypass in `filament/filament 5.6.5`, a Livewire DOM XSS issue in `livewire/livewire 4.3.0`, and a Laravel signed-URL path-confusion issue in `laravel/framework 13.11.2`, plus high-severity Guzzle/CommonMark advisories. Upgrade the Laravel/Filament/Livewire ecosystem in a controlled branch, then run the full suite, asset build, authentication/MFA, permissions, Salesforce, Calendar, Statistics, and PDF smoke tests before deployment.
+1. **Deploy the tested PHP dependency refresh.** The next-release lock updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and their compatible transitive packages. The former 33-advisory Composer result is now zero locally; production receives these exact versions through the committed lock and normal deployment, never by running an ad-hoc update on the VPS.
 2. **Remove or protect the public `/test-pdf` diagnostic route.** It currently performs a Browsershot render without authentication or rate limiting. That is unnecessary production attack surface and a potentially expensive denial-of-service endpoint.
 3. **Add a pre-deployment quality gate.** The production workflow currently deploys immediately when `production` is pushed. Require tests, the production asset build, `composer audit --locked`, and `npm audit --omit=dev` to pass before the VPS job enters maintenance mode.
 4. **Back up all persistent document storage off-server.** Database dumps do not contain Resource files, Document Pack uploads, or template snapshots. Back up `storage/app/private/resources`, `storage/app/private/document-packs`, and `storage/app/private/document-pack-templates`, encrypt the copy, send it off the VPS, and periodically perform a controlled restore-verification exercise.
@@ -23,7 +23,7 @@ The deployed `0.2.11` feature set is broad and stable under the current automate
 - **Resource usability and governance**: add folders/categories, tags, search/filtering, replacement/version history, and optional file-level/team visibility before the library becomes the authoritative source for sensitive documents.
 - **Integration resilience**: centralise Salesforce and product API clients with explicit connect/request timeouts, bounded retries with jitter, and last-success/stale-data indicators. The Visits calendar should retain a read-only last-known view when Salesforce is temporarily unavailable.
 - **Everyday UX**: add favourites/recent projects, clearer autosave/unsaved-state feedback, accessible keyboard/focus behaviour for custom modals and lightboxes, and responsive browser tests for the most-used project/output flows.
-- **Operational security**: after upgrading Filament, require MFA for privileged groups, strengthen new-password rules, review security headers at Apache/application level, ensure Docker port `8080` is not publicly reachable, and replace the emergency CGI's shared query token/secondary static confirmation word with a server-managed high-entropy secret plus IP restriction and auditable access.
+- **Operational security**: after deploying the upgraded Filament build, require MFA for privileged groups, strengthen new-password rules, review security headers at Apache/application level, ensure Docker port `8080` is not publicly reachable, and replace the emergency CGI's shared query token/secondary static confirmation word with a server-managed high-entropy secret plus IP restriction and auditable access.
 
 ## Management Statistics — 7 September 2026
 
@@ -1015,7 +1015,7 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Known Gaps / Next Steps (reviewed 7 September 2026)
 
-- [ ] Upgrade the Composer lock to resolve the current Filament MFA bypass, Livewire XSS, Laravel signed-URL, Guzzle, CommonMark, and Symfony advisories; validate the upgrade with the full automated and production-PDF smoke suite
+- [ ] Deploy and production-smoke-test the locally verified dependency lock that resolves the Filament MFA bypass, Livewire XSS, Laravel signed-URL, Guzzle, CommonMark, and Symfony advisories
 - [ ] Remove `/test-pdf` from production or restrict it to authenticated administrators with rate limiting
 - [ ] Add mandatory test, asset-build, and dependency-audit checks before the production deploy job starts
 - [ ] Replace the emergency CGI's shared URL token/static confirmation word with server-managed high-entropy authentication, IP restriction where practical, and access auditing

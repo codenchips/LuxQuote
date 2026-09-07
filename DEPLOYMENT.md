@@ -107,7 +107,9 @@ The `0.2.4`/`0.2.5` feature tranche introduced the forward-only migrations liste
 
 ## Pre-deployment Quality and Security Gate
 
-As of 7 September 2026, the application suite passes **366 tests / 2,187 assertions**, the production Vite build succeeds, all tracked migrations are applied locally, and `npm audit --omit=dev` reports no findings. However, `composer audit --locked` reports **33 advisories across 10 locked packages**, including a high-severity Filament MFA recovery-code bypass affecting the installed `5.6.5`, a Livewire DOM XSS issue affecting the installed `4.3.0`, and a Laravel signed-URL issue affecting the installed `13.11.2`. Treat the Composer upgrade as a prerequisite for the next production release.
+The 7 September dependency-security refresh updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and compatible transitive packages. The refreshed lock passes **366 tests / 2,188 assertions**, the production Vite build, Composer validation/platform checks, and the full production-safe PDF health command. Both `composer audit --locked` and `npm audit --omit=dev` report no vulnerabilities locally.
+
+Production remains on its existing versions until this lock and the matching published Filament assets are committed and deployed. Do **not** run `composer update` on the VPS: the normal workflow uses `composer install` and must install the exact reviewed lock. This dependency refresh introduces no migrations and performs no database rewrite; the deployment's standard forward-only migration step should report nothing pending for this change.
 
 Run this non-destructive gate locally before pushing `production`:
 
@@ -120,7 +122,22 @@ vendor/bin/sail npm audit --omit=dev
 vendor/bin/sail artisan migrate:status
 ```
 
-Do not suppress audit failures merely to make the gate green. Upgrade compatible packages in a branch, review `composer.lock`, and repeat the full test/build plus authentication/MFA, permissions, Calendar, Salesforce, Statistics, and PDF smoke checks. The GitHub production workflow does not yet enforce this gate automatically; adding a prerequisite CI job is a priority. The deploy should also move from `npm install` to deterministic `npm ci` once the revised workflow has been exercised outside production.
+Do not suppress future audit failures merely to make the gate green. Upgrade compatible packages locally, review `composer.lock`, and repeat the full test/build plus authentication/MFA, permissions, Calendar, Salesforce, Statistics, and PDF smoke checks. The GitHub production workflow does not yet enforce this gate automatically; adding a prerequisite CI job is a priority. The deploy should also move from `npm install` to deterministic `npm ci` once the revised workflow has been exercised outside production.
+
+After the dependency release deploys, verify the installed production versions and runtime without changing business data:
+
+```bash
+cd /home/tamliteco/luxquote.app
+docker compose exec -T laravel.test composer show filament/filament --no-dev
+docker compose exec -T laravel.test composer show laravel/framework --no-dev
+docker compose exec -T laravel.test composer show livewire/livewire --no-dev
+docker compose exec -T laravel.test composer show guzzlehttp/guzzle --no-dev
+docker compose exec -T laravel.test composer audit --locked --no-dev --no-interaction
+docker compose exec -T laravel.test php artisan migrate:status
+docker compose exec -T laravel.test php artisan app:production-health-check
+```
+
+Then sign in normally, complete an MFA login/recovery-code smoke test with a disposable recovery code, and verify one representative Project, Statistics page, Visits Calendar view, Resource preview, Quote/Schedule PDF, and Document Pack preview. Do not paste production recovery codes or secrets into workflow logs.
 
 ## Resources and Document Pack Templates Schema
 
