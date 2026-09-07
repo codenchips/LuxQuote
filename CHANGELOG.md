@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.13 - 2026-09-07
+
+Version: `0.2.12` -> `0.2.13`
+
+Changes included:
+
+- `863567f` Document production dependency security rollout
+- `5666231` Harden production headers and deployment gate
+
 ## 0.2.12 - 2026-09-07
 
 Version: `0.2.11` -> `0.2.12`
