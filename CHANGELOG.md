@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.14 - 2026-09-07
+
+Version: `0.2.13` -> `0.2.14`
+
+Changes included:
+
+- `2bfd7bb` Fix clean CI application bootstrap
+
 ## 0.2.13 - 2026-09-07
 
 Version: `0.2.12` -> `0.2.13`
