@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.12 - 2026-09-07
+
+Version: `0.2.11` -> `0.2.12`
+
+Changes included:
+
+- `d755a09` docs updated
+- `ae52a65` Upgrade framework dependencies for security advisories
+
 ## 0.2.11 - 2026-09-04
 
 Version: `0.2.10` -> `0.2.11`
