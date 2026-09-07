@@ -23,9 +23,9 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Process\Process;
 use Tests\TestCase;
-use Throwable;
 
 class AdminDocumentPackTest extends TestCase
 {
@@ -503,7 +503,10 @@ class AdminDocumentPackTest extends TestCase
             'description' => null,
             'is_system' => false,
         ]);
-        $group->permissions()->attach(Permission::where('key', 'output.view')->firstOrFail());
+        $group->permissions()->attach(Permission::query()->whereIn('key', [
+            'projects.view',
+            'output.view',
+        ])->pluck('id'));
 
         $user = User::factory()->create(['permission_group_id' => $group->id]);
         $project = Project::factory()->for($user)->create();
@@ -511,16 +514,18 @@ class AdminDocumentPackTest extends TestCase
 
         $this->assertFalse($user->can('output.manage-document-packs'));
 
-        $failed = false;
+        $page = app(OutputProject::class);
+        $page->record = $project;
 
         try {
-            Livewire::test(OutputProject::class, ['record' => $project->id])
-                ->call('newDocumentPack');
-        } catch (Throwable) {
-            $failed = true;
+            $page->newDocumentPack();
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+
+            return;
         }
 
-        $this->assertTrue($failed, 'The server-side document pack mutation should be denied.');
+        $this->fail('The server-side document pack mutation should be denied.');
     }
 
     public function test_qpdf_merges_uploaded_documents_in_saved_order(): void

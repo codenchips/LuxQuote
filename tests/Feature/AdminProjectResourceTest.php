@@ -3144,6 +3144,8 @@ class AdminProjectResourceTest extends TestCase
 
     public function test_salesforce_project_details_save_updates_amount_when_value_changes(): void
     {
+        config(['services.salesforce.url' => 'https://example.my.salesforce.com']);
+
         $admin = User::factory()->admin()->create();
         $this->actingAs($admin);
 
