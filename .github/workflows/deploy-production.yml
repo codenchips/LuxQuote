@@ -10,9 +10,99 @@ concurrency:
   group: production-deploy
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
+  verify:
+    name: Verify release quality and security
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      APP_DEBUG: false
+      APP_URL: http://localhost
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: testing
+      DB_USERNAME: root
+      DB_PASSWORD: password
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+      LARAVEL_PDF_TEMP_PATH: ${{ github.workspace }}/storage/app/browsershot
+      PUPPETEER_CACHE_DIR: ${{ github.workspace }}/.cache/puppeteer
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: testing
+          MYSQL_ROOT_PASSWORD: password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --password=password --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Check out release
+        uses: actions/checkout@v7
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: dom, fileinfo, intl, mbstring, pdo_mysql, zip
+          tools: composer:v2
+          coverage: none
+        env:
+          fail-fast: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Validate Composer metadata
+        run: composer validate --strict
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Check production PHP platform requirements
+        run: composer check-platform-reqs --no-dev
+
+      - name: Audit Composer dependencies
+        run: composer audit --locked --no-interaction
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Audit production frontend dependencies
+        run: npm audit --omit=dev
+
+      - name: Install PDF runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes qpdf
+          sudo env "PATH=$PATH" "PUPPETEER_CACHE_DIR=$PUPPETEER_CACHE_DIR" npx puppeteer browsers install chrome-headless-shell --install-deps
+
+      - name: Build production assets
+        run: npm run build
+
+      - name: Run application test suite
+        run: php artisan test --compact
+
   deploy:
     name: Deploy to production VPS
+    needs: verify
     runs-on: [self-hosted, luxquote-production]
     environment: production
 

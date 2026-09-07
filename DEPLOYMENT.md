@@ -11,7 +11,7 @@ This app is deployed to a Linux VPS managed through cPanel / WHM.
 - Database container: `mysql`
 - Database target: containerized MySQL, not cPanel MySQL
 - External SSL/reverse proxy: cPanel host Apache terminates HTTPS and proxies traffic to the app container on local port `8080`
-- MySQL and Redis host port bindings in `compose.yaml` are loopback-only (`127.0.0.1`) so Docker does not expose them publicly
+- App/Vite, MySQL, Redis, Meilisearch, and Mailpit host port bindings in `compose.yaml` are loopback-only (`127.0.0.1`) so Docker does not expose them publicly
 
 Because Apache terminates SSL before proxying to Docker, Laravel must trust proxy headers so generated URLs and redirects use the public HTTPS domain rather than `http://127.0.0.1:8080`.
 
@@ -71,6 +71,11 @@ APP_DEBUG=false
 APP_URL=https://quote.tamlite.co.uk
 APP_TIMEZONE=Europe/London
 SESSION_SECURE_COOKIE=true
+SECURITY_HEADERS_ENABLED=true
+SECURITY_HSTS_ENABLED=true
+SECURITY_HSTS_MAX_AGE=31536000
+SECURITY_HSTS_INCLUDE_SUBDOMAINS=false
+SECURITY_HSTS_PRELOAD=false
 ```
 
 `SESSION_HTTP_ONLY` and `SESSION_SAME_SITE=lax` retain Laravel's safe defaults. Consider `SESSION_ENCRYPT=true` as an additional defence for database-backed session contents. Never print the complete production environment or secrets into a deployment log.
@@ -85,7 +90,16 @@ docker compose exec laravel.test php artisan config:show app.debug
 docker compose exec laravel.test php artisan config:show session.secure
 ```
 
-Verify Apache/Cloudflare supplies HSTS, clickjacking/CSP framing protection, content-type protection, and an appropriate referrer policy. The public response checked after the `0.2.12` deployment returned `Strict-Transport-Security: max-age=0`, which disables browser HSTS; determine whether Cloudflare or Apache owns that header before enabling a suitable non-zero policy. Also verify port `8080` is restricted by loopback binding or the VPS firewall so clients cannot bypass Apache and spoof trusted proxy headers. `bootstrap/app.php` currently trusts all proxies because of the reverse-proxy architecture; that is safe only while direct container access is blocked.
+The application now supplies HSTS, CSP framing protection, content-type protection, a restricted browser Permissions Policy, and an appropriate referrer policy. HSTS defaults on when `APP_ENV=production`, uses one year by default, and is sent only when Laravel sees an HTTPS request. Keep `includeSubDomains` and `preload` disabled unless every affected subdomain is permanently HTTPS-ready. The Docker app port also defaults to loopback, and the deploy aborts if `docker compose port laravel.test 80` reports a non-loopback binding. This prevents clients bypassing Apache and spoofing the trusted proxy headers.
+
+After deploying this tranche, verify the final headers and binding. Cloudflare or Apache can still replace an application header; if the public result remains `max-age=0`, correct that upstream rule rather than weakening the Laravel policy:
+
+```bash
+curl --silent --show-error --head https://quote.tamlite.co.uk | grep -Ei 'strict-transport-security|content-security-policy|permissions-policy|referrer-policy|x-content-type-options|x-frame-options'
+docker compose port laravel.test 80
+```
+
+The binding must be `127.0.0.1:8080` (or `[::1]:8080`), never `0.0.0.0:8080` or `[::]:8080`. Do not set `APP_BIND_ADDRESS` to a public interface. `bootstrap/app.php` trusts proxy headers because of the reverse-proxy architecture; that remains safe only while direct container access is blocked.
 
 ## Current Production Release Baseline
 
@@ -107,7 +121,7 @@ The `0.2.4`/`0.2.5` feature tranche introduced the forward-only migrations liste
 
 ## Pre-deployment Quality and Security Gate
 
-The 7 September dependency-security refresh updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and compatible transitive packages. The refreshed lock passes **366 tests / 2,188 assertions**, the production Vite build, Composer validation/platform checks, and the full production-safe PDF health command. Both `composer audit --locked` and `npm audit --omit=dev` report no vulnerabilities locally.
+The 7 September dependency-security refresh updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and compatible transitive packages. With the response-header and deployment hardening, the reviewed tree passes **371 tests / 2,211 assertions**, the production Vite build, Composer validation/platform checks, and the full production-safe PDF health command. Both `composer audit --locked` and `npm audit --omit=dev` report no vulnerabilities locally.
 
 Production `0.2.12` installs this exact reviewed lock and the matching published Filament assets. Do **not** run `composer update` on the VPS: normal workflows use `composer install` and must retain the reviewed versions. This dependency refresh introduced no migrations and performed no database rewrite; deployment used the standard forward-only migration step.
 
@@ -122,7 +136,9 @@ vendor/bin/sail npm audit --omit=dev
 vendor/bin/sail artisan migrate:status
 ```
 
-Do not suppress future audit failures merely to make the gate green. Upgrade compatible packages locally, review `composer.lock`, and repeat the full test/build plus authentication/MFA, permissions, Calendar, Salesforce, Statistics, and PDF smoke checks. The GitHub production workflow does not yet enforce this gate automatically; adding a prerequisite CI job is a priority. The deploy should also move from `npm install` to deterministic `npm ci` once the revised workflow has been exercised outside production.
+Do not suppress future audit failures merely to make the gate green. Upgrade compatible packages locally, review `composer.lock`, and repeat the full test/build plus authentication/MFA, permissions, Calendar, Salesforce, Statistics, and PDF smoke checks. The GitHub production workflow now enforces this gate in an isolated GitHub-hosted `verify` job with a disposable MySQL service. It receives no production environment or secrets, and the self-hosted `deploy` job cannot begin until verification succeeds. Production asset installation also uses deterministic `npm ci`.
+
+This security/CI tranche introduces no database migration and does not alter production records. The normal deploy still takes its pre-deploy backup and runs only pending forward migrations with `migrate --force --no-interaction`.
 
 After the dependency release deploys, verify the installed production versions and runtime without changing business data:
 
@@ -631,7 +647,7 @@ Then remove Vite's local dev-server marker before building assets:
 
 ```bash
 rm -f public/hot
-docker compose exec -u sail laravel.test npm install
+docker compose exec -u sail laravel.test npm ci
 docker compose exec -u sail laravel.test npm run build
 ```
 
@@ -666,7 +682,7 @@ The production deploy script creates the Browsershot temp directory, fixes Puppe
 
 ```bash
 docker compose exec laravel.test sh -lc 'mkdir -p /var/www/html/storage/app/browsershot /home/sail/.cache/puppeteer && chown -R sail:sail /var/www/html/storage/app/browsershot /home/sail/.cache'
-docker compose exec -u sail laravel.test npm install
+docker compose exec -u sail laravel.test npm ci
 docker compose exec -u sail laravel.test npx puppeteer browsers install chrome-headless-shell
 docker compose exec laravel.test php artisan optimize:clear
 docker compose exec laravel.test php artisan app:diagnose-pdf-environment
@@ -697,13 +713,13 @@ Known production failures and fixes:
 
 - `mkdir(): Invalid path` means the Browsershot temp path is empty or cached incorrectly. Set `LARAVEL_PDF_TEMP_PATH=/var/www/html/storage/app/browsershot`, then run `docker compose exec laravel.test php artisan optimize:clear`.
 - `Could not find Chrome ... /root/.cache/puppeteer` means Puppeteer is looking in the wrong user/cache or the browser cache was not installed for the web runtime. Keep `PUPPETEER_CACHE_DIR=/home/sail/.cache/puppeteer`, ensure `/home/sail/.cache` is owned by `sail:sail`, and run Puppeteer install as the `sail` user.
-- `Cannot find module 'puppeteer'` means npm dependencies are missing inside the container. Run `docker compose exec -u sail laravel.test npm install`.
+- `Cannot find module 'puppeteer'` means npm dependencies are missing inside the container. Run `docker compose exec -u sail laravel.test npm ci`.
 
 Recovery commands:
 
 ```bash
 docker compose exec laravel.test sh -lc 'mkdir -p /var/www/html/storage/app/browsershot /home/sail/.cache/puppeteer && chown -R sail:sail /var/www/html/storage/app/browsershot /home/sail/.cache'
-docker compose exec -u sail laravel.test npm install
+docker compose exec -u sail laravel.test npm ci
 docker compose exec -u sail laravel.test npx puppeteer browsers install chrome-headless-shell
 docker compose exec laravel.test php artisan optimize:clear
 docker compose exec laravel.test php artisan app:diagnose-pdf-environment
@@ -941,6 +957,7 @@ The local `./deploy-production` helper bumps the tracked app version in `VERSION
 
 The deploy script:
 
+- runs only after the isolated GitHub-hosted verification job has passed Composer validation/platform/audit checks, `npm ci`, the production npm audit, asset compilation, and the complete test suite including PDF runtime tests
 - starts Docker services so the database is available
 - enables Laravel maintenance mode before taking the pre-deploy backups, preventing user writes after the rollback snapshot point; users receive Laravel's HTTP 503 maintenance response during the deployment
 - creates a compressed full pre-deploy MySQL backup in `/home/tamliteco/luxquote.app/backups`
@@ -948,10 +965,11 @@ The deploy script:
 - writes `backups/deploy-manifest-pending.env` after the backup is created, recording the previous commit and the backup paths for emergency rollback if the deploy fails mid-run
 - fetches and checks out `origin/production`
 - rebuilds/recreates Docker services with `docker compose up -d --build`
+- verifies the app container is published only on loopback and aborts before migrations if the binding is unsafe
 - removes `public/hot`
 - fixes container-side ownership using `sail:sail`
 - installs Composer dependencies
-- installs/builds npm assets as the `sail` user
+- installs/builds npm assets deterministically with `npm ci` as the `sail` user
 - verifies `qpdf`
 - verifies the PDF runtime with `app:diagnose-pdf-environment`
 - runs all pending migrations with `php artisan migrate --force --no-interaction`, then prints `migrate:status` in the deploy log

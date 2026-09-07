@@ -64,6 +64,32 @@ disable_maintenance_mode() {
     MAINTENANCE_MODE_ENABLED_BY_DEPLOY=false
 }
 
+verify_app_port_binding() {
+    local binding
+    local bindings
+
+    bindings="$(docker compose port laravel.test 80 2>/dev/null || true)"
+
+    if [ -z "$bindings" ]; then
+        log "ERROR: Docker did not report a published port for laravel.test port 80."
+        exit 1
+    fi
+
+    while IFS= read -r binding; do
+        case "$binding" in
+            127.0.0.1:* | \[::1\]:*)
+                ;;
+            *)
+                log "ERROR: Unsafe public application port binding detected: $binding"
+                log "The Laravel container must be bound to loopback so public traffic can only enter through Apache."
+                exit 1
+                ;;
+        esac
+    done <<< "$bindings"
+
+    log "Verified loopback-only application port binding: $(printf '%s' "$bindings" | tr '\n' ' ')"
+}
+
 trap 'restore_maintenance_state $?' EXIT
 
 manifest_var() {
@@ -284,6 +310,7 @@ deployed_commit="$(git rev-parse HEAD)"
 
 log "Building and starting Docker services"
 docker compose up -d --build
+verify_app_port_binding
 
 log "Removing local-only Vite dev marker"
 rm -f public/hot
@@ -297,7 +324,7 @@ log "Installing Composer dependencies without framework scripts"
 docker compose exec laravel.test composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
 
 log "Installing npm dependencies and building assets"
-docker compose exec -u sail laravel.test npm install
+docker compose exec -u sail laravel.test npm ci
 docker compose exec -u sail laravel.test npx puppeteer browsers install chrome-headless-shell
 docker compose exec -u sail laravel.test npm run build
 

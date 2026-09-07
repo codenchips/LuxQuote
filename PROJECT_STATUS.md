@@ -6,13 +6,21 @@ _Last updated: 7 September 2026_
 
 ## Monday Baseline Review — 7 September 2026
 
-The deployed `0.2.12` feature set is broad and stable. Its dependency-security refresh passes **366 tests / 2,188 assertions**, every tracked migration is applied locally, the production asset build and PDF health check succeed, and both Composer and npm audits report no vulnerabilities. The production workflow, maintenance cleanup, persistent-runner check, and public health check all completed successfully on 7 September. The next release should concentrate on the following items before another large feature tranche:
+The deployed `0.2.12` feature set is broad and stable. Its dependency-security refresh passes **366 tests / 2,188 assertions**, every tracked migration is applied locally, the production asset build and PDF health check succeed, and the Composer plus production npm dependency audits report no vulnerabilities. The production workflow, maintenance cleanup, persistent-runner check, and public health check all completed successfully on 7 September.
 
-1. **Remove or protect the public `/test-pdf` diagnostic route.** It currently performs a Browsershot render without authentication or rate limiting. That is unnecessary production attack surface and a potentially expensive denial-of-service endpoint.
-2. **Add a pre-deployment quality gate.** The production workflow currently deploys immediately when `production` is pushed. Require tests, the production asset build, `composer audit --locked`, and `npm audit --omit=dev` to pass before the VPS job enters maintenance mode.
-3. **Back up all persistent document storage off-server.** Database dumps do not contain Resource files, Document Pack uploads, or template snapshots. Back up `storage/app/private/resources`, `storage/app/private/document-packs`, and `storage/app/private/document-pack-templates`, encrypt the copy, send it off the VPS, and periodically perform a controlled restore-verification exercise.
-4. **Make catalogue replacement atomic.** `ProductImportService` validates the remote response before changing data, but then deletes the Products table and inserts the replacement rows without a database transaction. Wrap replacement and related price updates atomically so an insertion/database failure cannot leave the live catalogue empty.
-5. **Enforce a real password policy.** The Admin user form currently confirms passwords and limits their maximum length but has no minimum-strength validation. Apply Laravel's password rule consistently to account creation, password changes, and resets, and add focused tests.
+The next release has now completed the first security/operations tranche:
+
+- The unauthenticated `/test-pdf` Browsershot endpoint has been removed. `app:production-health-check` remains the non-public PDF runtime diagnostic.
+- Global application responses now receive a conservative CSP framing policy, Permissions Policy, Referrer Policy, content-type protection, same-origin framing protection, and cross-domain policy protection. HTTPS responses enable one-year HSTS automatically in production; subdomains and preload remain opt-in.
+- The production workflow now runs Composer validation/platform/audit checks, deterministic npm installation, the production npm audit, a Vite production build, the full PHPUnit suite, and real Browsershot/qpdf tests on an isolated GitHub-hosted runner. The self-hosted VPS deployment cannot start until that job passes.
+- Docker publishes the app/Vite, MySQL, Redis, Meilisearch, and Mailpit only on loopback by default. The production deploy explicitly checks the app port after container recreation and aborts if port `8080` is exposed on a non-loopback address.
+- PHP's `X-Powered-By` version banner is disabled. The hardened build passes **371 tests / 2,211 assertions**, asset compilation, application/PDF health checks, workflow linting, shell syntax checks, and dependency audits.
+
+The remaining near-term priorities before another large feature tranche are:
+
+1. **Back up all persistent document storage off-server.** Database dumps do not contain Resource files, Document Pack uploads, or template snapshots. Back up `storage/app/private/resources`, `storage/app/private/document-packs`, and `storage/app/private/document-pack-templates`, encrypt the copy, send it off the VPS, and periodically perform a controlled restore-verification exercise.
+2. **Make catalogue replacement atomic and harden the external API client.** Wrap product replacement and related price updates in a database transaction, then add explicit connect/request timeouts and bounded retries so database or transport failures cannot empty the live catalogue or hang a request indefinitely.
+3. **Enforce a real password policy.** The Admin user form currently confirms passwords and limits their maximum length but has no minimum-strength validation. Apply Laravel's password rule consistently to account creation, password changes, and resets, and add focused tests.
 
 ### Recommended product roadmap
 
@@ -22,7 +30,7 @@ The deployed `0.2.12` feature set is broad and stable. Its dependency-security r
 - **Resource usability and governance**: add folders/categories, tags, search/filtering, replacement/version history, and optional file-level/team visibility before the library becomes the authoritative source for sensitive documents.
 - **Integration resilience**: centralise Salesforce and product API clients with explicit connect/request timeouts, bounded retries with jitter, and last-success/stale-data indicators. The Visits calendar should retain a read-only last-known view when Salesforce is temporarily unavailable.
 - **Everyday UX**: add favourites/recent projects, clearer autosave/unsaved-state feedback, accessible keyboard/focus behaviour for custom modals and lightboxes, and responsive browser tests for the most-used project/output flows.
-- **Operational security**: after deploying the upgraded Filament build, require MFA for privileged groups, strengthen new-password rules, review security headers at Apache/application level, ensure Docker port `8080` is not publicly reachable, and replace the emergency CGI's shared query token/secondary static confirmation word with a server-managed high-entropy secret plus IP restriction and auditable access.
+- **Operational security**: after deploying the response-header/loopback build, verify the public HSTS value survives Cloudflare/Apache, require MFA for privileged groups, strengthen new-password rules, and replace the emergency CGI's shared query token/secondary static confirmation word with a server-managed high-entropy secret plus IP restriction and auditable access.
 
 ## Management Statistics — 7 September 2026
 
@@ -1014,10 +1022,10 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Known Gaps / Next Steps (reviewed 7 September 2026)
 
-- [ ] Remove `/test-pdf` from production or restrict it to authenticated administrators with rate limiting
-- [ ] Add mandatory test, asset-build, and dependency-audit checks before the production deploy job starts
+- [x] Remove the unauthenticated `/test-pdf` endpoint; use the CLI-only `app:production-health-check` diagnostic instead
+- [x] Add mandatory test, PDF runtime, asset-build, platform, and dependency-audit checks before the production deploy job starts
 - [ ] Replace the emergency CGI's shared URL token/static confirmation word with server-managed high-entropy authentication, IP restriction where practical, and access auditing
-- [ ] Verify production uses `APP_ENV=production` and `APP_DEBUG=false`; HTTPS-only/HttpOnly/SameSite cookies are present, but the public response currently reports `Strict-Transport-Security: max-age=0`, so enable an appropriate HSTS policy after checking Cloudflare/Apache ownership and confirm the firewall prevents direct public access to Docker port `8080`
+- [x] Add application security headers, production HSTS, loopback-only Docker publishing, and a deployment guard that rejects a publicly bound app port; recheck the final public HSTS header after release in case Cloudflare/Apache overrides it
 - [ ] Apply and test a consistent minimum password-strength rule for user creation, profile changes, and password resets
 - [ ] Complete the Project Tenders workflow: create/sync Salesforce `Tender__c` records and add tender-specific quote output and cover sheets
 - [ ] Continue Cover pricing review after beta feedback, especially how Cover values should appear in quote/schedule outputs and approval summaries
