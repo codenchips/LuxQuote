@@ -74,7 +74,7 @@ jobs:
         run: composer validate --strict
 
       - name: Install Composer dependencies
-        run: composer install --prefer-dist --no-interaction --no-progress
+        run: composer install --prefer-dist --no-interaction --no-progress --no-scripts
 
       - name: Check production PHP platform requirements
         run: composer check-platform-reqs --no-dev
@@ -88,14 +88,17 @@ jobs:
       - name: Audit production frontend dependencies
         run: npm audit --omit=dev
 
+      - name: Build production assets
+        run: npm run build
+
+      - name: Bootstrap Laravel packages
+        run: composer run-script post-autoload-dump
+
       - name: Install PDF runtime
         run: |
           sudo apt-get update
           sudo apt-get install --yes qpdf
           sudo env "PATH=$PATH" "PUPPETEER_CACHE_DIR=$PUPPETEER_CACHE_DIR" npx puppeteer browsers install chrome-headless-shell --install-deps
-
-      - name: Build production assets
-        run: npm run build
 
       - name: Run application test suite
         run: php artisan test --compact
