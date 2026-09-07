@@ -85,11 +85,11 @@ docker compose exec laravel.test php artisan config:show app.debug
 docker compose exec laravel.test php artisan config:show session.secure
 ```
 
-Verify Apache supplies HSTS, clickjacking/CSP framing protection, content-type protection, and an appropriate referrer policy. Also verify port `8080` is restricted by loopback binding or the VPS firewall so clients cannot bypass Apache and spoof trusted proxy headers. `bootstrap/app.php` currently trusts all proxies because of the reverse-proxy architecture; that is safe only while direct container access is blocked.
+Verify Apache/Cloudflare supplies HSTS, clickjacking/CSP framing protection, content-type protection, and an appropriate referrer policy. The public response checked after the `0.2.12` deployment returned `Strict-Transport-Security: max-age=0`, which disables browser HSTS; determine whether Cloudflare or Apache owns that header before enabling a suitable non-zero policy. Also verify port `8080` is restricted by loopback binding or the VPS firewall so clients cannot bypass Apache and spoof trusted proxy headers. `bootstrap/app.php` currently trusts all proxies because of the reverse-proxy architecture; that is safe only while direct container access is blocked.
 
 ## Current Production Release Baseline
 
-Version `0.2.11` is the current production-visible baseline as of 7 September 2026. It includes Resources, reusable Document Pack templates, three-month Activity History retention, management Statistics, loading/preset feedback, currency-symbol output, and 10-row Statistics table pagination. The earlier `0.2.5` commit followed a one-time reconciliation of divergent `main` and `production` histories; a manual database backup did not cause that divergence because backup archives are outside tracked release history.
+Version `0.2.12` is the current production-visible baseline as of 7 September 2026. It includes the tested dependency-security refresh alongside Resources, reusable Document Pack templates, three-month Activity History retention, management Statistics, loading/preset feedback, currency-symbol output, and 10-row Statistics table pagination. The `0.2.12` GitHub workflow completed the production deploy, maintenance cleanup, and persistent-runner check successfully; the public health endpoint returned HTTP 200 afterwards. The earlier `0.2.5` commit followed a one-time reconciliation of divergent `main` and `production` histories; a manual database backup did not cause that divergence because backup archives are outside tracked release history.
 
 This release deploys these forward-only migrations:
 
@@ -109,7 +109,7 @@ The `0.2.4`/`0.2.5` feature tranche introduced the forward-only migrations liste
 
 The 7 September dependency-security refresh updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and compatible transitive packages. The refreshed lock passes **366 tests / 2,188 assertions**, the production Vite build, Composer validation/platform checks, and the full production-safe PDF health command. Both `composer audit --locked` and `npm audit --omit=dev` report no vulnerabilities locally.
 
-Production remains on its existing versions until this lock and the matching published Filament assets are committed and deployed. Do **not** run `composer update` on the VPS: the normal workflow uses `composer install` and must install the exact reviewed lock. This dependency refresh introduces no migrations and performs no database rewrite; the deployment's standard forward-only migration step should report nothing pending for this change.
+Production `0.2.12` installs this exact reviewed lock and the matching published Filament assets. Do **not** run `composer update` on the VPS: normal workflows use `composer install` and must retain the reviewed versions. This dependency refresh introduced no migrations and performed no database rewrite; deployment used the standard forward-only migration step.
 
 Run this non-destructive gate locally before pushing `production`:
 

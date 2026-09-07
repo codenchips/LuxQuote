@@ -6,14 +6,13 @@ _Last updated: 7 September 2026_
 
 ## Monday Baseline Review — 7 September 2026
 
-The deployed `0.2.11` feature set is broad and stable. The dependency-security refresh prepared locally for the next release passes **366 tests / 2,188 assertions**, every tracked migration is applied locally, the production asset build and PDF health check succeed, and both Composer and npm audits report no vulnerabilities. Production remains on the `0.2.11` lock until that tested refresh is deployed. The next release should concentrate on the following items before another large feature tranche:
+The deployed `0.2.12` feature set is broad and stable. Its dependency-security refresh passes **366 tests / 2,188 assertions**, every tracked migration is applied locally, the production asset build and PDF health check succeed, and both Composer and npm audits report no vulnerabilities. The production workflow, maintenance cleanup, persistent-runner check, and public health check all completed successfully on 7 September. The next release should concentrate on the following items before another large feature tranche:
 
-1. **Deploy the tested PHP dependency refresh.** The next-release lock updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and their compatible transitive packages. The former 33-advisory Composer result is now zero locally; production receives these exact versions through the committed lock and normal deployment, never by running an ad-hoc update on the VPS.
-2. **Remove or protect the public `/test-pdf` diagnostic route.** It currently performs a Browsershot render without authentication or rate limiting. That is unnecessary production attack surface and a potentially expensive denial-of-service endpoint.
-3. **Add a pre-deployment quality gate.** The production workflow currently deploys immediately when `production` is pushed. Require tests, the production asset build, `composer audit --locked`, and `npm audit --omit=dev` to pass before the VPS job enters maintenance mode.
-4. **Back up all persistent document storage off-server.** Database dumps do not contain Resource files, Document Pack uploads, or template snapshots. Back up `storage/app/private/resources`, `storage/app/private/document-packs`, and `storage/app/private/document-pack-templates`, encrypt the copy, send it off the VPS, and periodically perform a controlled restore-verification exercise.
-5. **Make catalogue replacement atomic.** `ProductImportService` validates the remote response before changing data, but then deletes the Products table and inserts the replacement rows without a database transaction. Wrap replacement and related price updates atomically so an insertion/database failure cannot leave the live catalogue empty.
-6. **Enforce a real password policy.** The Admin user form currently confirms passwords and limits their maximum length but has no minimum-strength validation. Apply Laravel's password rule consistently to account creation, password changes, and resets, and add focused tests.
+1. **Remove or protect the public `/test-pdf` diagnostic route.** It currently performs a Browsershot render without authentication or rate limiting. That is unnecessary production attack surface and a potentially expensive denial-of-service endpoint.
+2. **Add a pre-deployment quality gate.** The production workflow currently deploys immediately when `production` is pushed. Require tests, the production asset build, `composer audit --locked`, and `npm audit --omit=dev` to pass before the VPS job enters maintenance mode.
+3. **Back up all persistent document storage off-server.** Database dumps do not contain Resource files, Document Pack uploads, or template snapshots. Back up `storage/app/private/resources`, `storage/app/private/document-packs`, and `storage/app/private/document-pack-templates`, encrypt the copy, send it off the VPS, and periodically perform a controlled restore-verification exercise.
+4. **Make catalogue replacement atomic.** `ProductImportService` validates the remote response before changing data, but then deletes the Products table and inserts the replacement rows without a database transaction. Wrap replacement and related price updates atomically so an insertion/database failure cannot leave the live catalogue empty.
+5. **Enforce a real password policy.** The Admin user form currently confirms passwords and limits their maximum length but has no minimum-strength validation. Apply Laravel's password rule consistently to account creation, password changes, and resets, and add focused tests.
 
 ### Recommended product roadmap
 
@@ -1015,11 +1014,10 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Known Gaps / Next Steps (reviewed 7 September 2026)
 
-- [ ] Deploy and production-smoke-test the locally verified dependency lock that resolves the Filament MFA bypass, Livewire XSS, Laravel signed-URL, Guzzle, CommonMark, and Symfony advisories
 - [ ] Remove `/test-pdf` from production or restrict it to authenticated administrators with rate limiting
 - [ ] Add mandatory test, asset-build, and dependency-audit checks before the production deploy job starts
 - [ ] Replace the emergency CGI's shared URL token/static confirmation word with server-managed high-entropy authentication, IP restriction where practical, and access auditing
-- [ ] Verify production uses `APP_ENV=production`, `APP_DEBUG=false`, HTTPS-only session cookies, appropriate security headers, and a firewall/loopback restriction preventing direct public access to Docker port `8080`
+- [ ] Verify production uses `APP_ENV=production` and `APP_DEBUG=false`; HTTPS-only/HttpOnly/SameSite cookies are present, but the public response currently reports `Strict-Transport-Security: max-age=0`, so enable an appropriate HSTS policy after checking Cloudflare/Apache ownership and confirm the firewall prevents direct public access to Docker port `8080`
 - [ ] Apply and test a consistent minimum password-strength rule for user creation, profile changes, and password resets
 - [ ] Complete the Project Tenders workflow: create/sync Salesforce `Tender__c` records and add tender-specific quote output and cover sheets
 - [ ] Continue Cover pricing review after beta feedback, especially how Cover values should appear in quote/schedule outputs and approval summaries
