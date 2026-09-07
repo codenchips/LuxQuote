@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.16 - 2026-09-07
+
+Version: `0.2.15` -> `0.2.16`
+
+Changes included:
+
+- `7c665f6` Stabilize clean environment verification
+
 ## 0.2.15 - 2026-09-07
 
 Version: `0.2.14` -> `0.2.15`
