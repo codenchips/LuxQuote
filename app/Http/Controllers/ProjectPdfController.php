@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Enums\ProjectRevisionStatus;
 use App\Models\ActivityLog;
+use App\Models\PdfGeneration;
 use App\Models\Project;
 use App\Models\ProjectRevision;
 use App\Models\ProjectTender;
 use App\Services\PdfDownloadUrlService;
+use App\Services\PdfGenerationDispatcher;
 use App\Services\ProjectDatasheetPdfService;
 use App\Services\ProjectExportFilenameService;
 use App\Services\ProjectLegalPdfService;
@@ -28,6 +30,119 @@ use Throwable;
 
 class ProjectPdfController extends Controller
 {
+    public function queueSchedule(Request $request, Project $project, PdfGenerationDispatcher $dispatcher): JsonResponse
+    {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless($request->user()->can('output.produce-unpriced-schedule'), 403);
+
+        $revision = $this->resolveRevision($request, $project);
+        $parameters = $this->queuedParameters($request, $revision);
+        $parameters['salesforce_upload'] = $request->boolean('salesforce_upload', true);
+        $generation = $dispatcher->dispatch(
+            $request->user(),
+            $project,
+            PdfGeneration::TypeSchedule,
+            $parameters,
+        );
+
+        return response()->json($dispatcher->response($generation), 202);
+    }
+
+    public function queueQuote(Request $request, Project $project, PdfGenerationDispatcher $dispatcher): JsonResponse
+    {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless(
+            $request->user()->can('pricing.view') && $request->user()->can('output.produce-quote'),
+            403,
+        );
+
+        $revision = $this->resolveRevision($request, $project);
+        abort_unless(
+            $revision->validated && $revision->status === ProjectRevisionStatus::Approved,
+            403,
+            'Quote PDF requires validation passed and quote approved.',
+        );
+
+        $tender = $this->resolveQuoteTender($request, $project);
+        $parameters = $this->queuedParameters($request, $revision);
+        $parameters['tender_id'] = $tender?->id;
+        $parameters['include_legal_page'] = $request->boolean('include_legal_page', true);
+        $parameters['include_cover'] = $this->shouldIncludeQuoteCover($request, $tender);
+        $generation = $dispatcher->dispatch(
+            $request->user(),
+            $project,
+            PdfGeneration::TypeQuote,
+            $parameters,
+        );
+
+        return response()->json($dispatcher->response($generation), 202);
+    }
+
+    public function queuePreparedQuote(Request $request, Project $project, PdfGenerationDispatcher $dispatcher): JsonResponse
+    {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless(
+            $request->user()->can('pricing.view') && $request->user()->can('output.produce-quote'),
+            403,
+        );
+
+        $revision = $this->resolveRevision($request, $project);
+        abort_unless(
+            $revision->validated && $revision->status === ProjectRevisionStatus::Approved,
+            403,
+            'Quote PDF requires validation passed and quote approved.',
+        );
+
+        $tender = $this->resolveQuoteTender($request, $project);
+        $parameters = $this->queuedParameters($request, $revision);
+        $parameters['tender_id'] = $tender?->id;
+        $parameters['include_cover'] = $this->shouldIncludeQuoteCover($request, $tender);
+        $parameters['include_legal_page'] = $request->boolean('include_legal_page', true);
+        $parameters['generation_batch_key'] = $this->generationBatchKey($request);
+        $parameters['generation_batch_size'] = $this->generationBatchSize($request, (bool) $parameters['include_cover']);
+        $datasheetToken = $request->string('datasheet_token')->toString();
+
+        if (preg_match('/^[A-Za-z0-9]{48}$/', $datasheetToken)) {
+            $parameters['datasheet_token'] = $datasheetToken;
+        }
+
+        $generation = $dispatcher->dispatch(
+            $request->user(),
+            $project,
+            PdfGeneration::TypePreparedQuote,
+            $parameters,
+        );
+
+        return response()->json($dispatcher->response($generation), 202);
+    }
+
+    public function queueQuoteDatasheets(Request $request, Project $project, PdfGenerationDispatcher $dispatcher): JsonResponse
+    {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless(
+            $request->user()->can('pricing.view') && $request->user()->can('output.produce-quote'),
+            403,
+        );
+
+        $revision = $this->resolveRevision($request, $project);
+        abort_unless(
+            $revision->validated && $revision->status === ProjectRevisionStatus::Approved,
+            403,
+            'Quote PDF requires validation passed and quote approved.',
+        );
+
+        $parameters = $this->queuedParameters($request, $revision);
+        $parameters['include_datasheets'] = true;
+        $generation = $dispatcher->dispatch(
+            $request->user(),
+            $project,
+            PdfGeneration::TypeDatasheets,
+            $parameters,
+        );
+
+        return response()->json($dispatcher->response($generation), 202);
+    }
+
     /**
      * Generate and download the lighting schedule PDF for a project revision.
      */
@@ -850,5 +965,24 @@ class ProjectPdfController extends Controller
     private function progressCacheKey(Request $request, string $token): string
     {
         return 'pdf-progress:'.$request->user()->id.':'.$token;
+    }
+
+    /** @return array<string, mixed> */
+    private function queuedParameters(Request $request, ProjectRevision $revision): array
+    {
+        $parameters = [
+            'revision' => $revision->id,
+            'include_datasheets' => $request->boolean('include_datasheets'),
+            'salesforce_upload' => $request->boolean('salesforce_upload'),
+            'generation_batch_key' => $this->generationBatchKey($request),
+        ];
+
+        $areaIds = $this->resolveSelectedAreaIds($request, $revision);
+
+        if ($areaIds !== []) {
+            $parameters['area_ids'] = $areaIds;
+        }
+
+        return $parameters;
     }
 }

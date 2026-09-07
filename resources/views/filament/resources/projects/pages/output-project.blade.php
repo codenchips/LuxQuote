@@ -1259,7 +1259,17 @@
                             return;
                         }
 
-                        window.open(this.directQuoteUrl(), '_blank', 'noopener');
+                        if (typeof window.luxQuoteGeneratePdf !== 'function') {
+                            this.error = 'PDF generation could not be started. Refresh the page and try again.';
+
+                            return;
+                        }
+
+                        window.luxQuoteGeneratePdf(this.directQuoteUrl(), {
+                            title: 'Generating quote PDF',
+                            message: 'Your quote PDF is being generated. Including datasheets can take a while.',
+                            openInNewTab: true,
+                        });
                     },
                     directQuoteUrl() {
                         const url = new URL(this.quoteUrl, window.location.origin);
@@ -1430,11 +1440,7 @@
                             body: JSON.stringify(payload),
                         });
 
-                        if (! response.ok) {
-                            throw new Error(`Quote generation failed with status ${response.status}.`);
-                        }
-
-                        return await response.json();
+                        return await this.queuedPdfResult(response, 'Quote');
                     },
                     async prepareDatasheets() {
                         const areaIds = this.outputAreaIds();
@@ -1456,11 +1462,24 @@
                             body: JSON.stringify(payload),
                         });
 
-                        if (! response.ok) {
-                            throw new Error(`Datasheet generation failed with status ${response.status}.`);
+                        return await this.queuedPdfResult(response, 'Datasheet');
+                    },
+                    async queuedPdfResult(response, label) {
+                        const payload = await response.json().catch(() => null);
+
+                        if (! response.ok || ! payload) {
+                            throw new Error(payload?.message || `${label} generation could not be started (status ${response.status}).`);
                         }
 
-                        return await response.json();
+                        if (! payload.status_url) {
+                            return payload;
+                        }
+
+                        if (typeof window.luxQuoteWaitForPdfGeneration !== 'function') {
+                            throw new Error(`${label} generation status could not be monitored. Refresh the page and try again.`);
+                        }
+
+                        return await window.luxQuoteWaitForPdfGeneration(payload);
                     },
                     async prepareZip(tokens) {
                         const response = await fetch(this.zipUrl, {

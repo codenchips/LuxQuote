@@ -30,6 +30,29 @@ services:
             - redis
             - meilisearch
             - mailpit            
+    queue:
+        image: 'sail-8.5/app'
+        restart: unless-stopped
+        command: php artisan queue:work database --queue=pdf,default --sleep=2 --tries=3 --timeout=${PDF_GENERATION_JOB_TIMEOUT:-900} --max-time=3600 --memory=512
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+            LARAVEL_PDF_TEMP_PATH: '${LARAVEL_PDF_TEMP_PATH:-/var/www/html/storage/app/browsershot}'
+            PUPPETEER_CACHE_DIR: '${PUPPETEER_CACHE_DIR:-/home/sail/.cache/puppeteer}'
+        volumes:
+            - '.:/var/www/html'
+            - 'sail-puppeteer:/home/sail/.cache/puppeteer'
+        networks:
+            - sail
+        depends_on:
+            - mysql
+            - redis
+        healthcheck:
+            test: ['CMD-SHELL', 'pgrep -f "[a]rtisan queue:work" >/dev/null']
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 10s
     mysql:
         image: 'mysql:8.4'
         restart: unless-stopped

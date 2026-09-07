@@ -101,6 +101,35 @@ docker compose port laravel.test 80
 
 The binding must be `127.0.0.1:8080` (or `[::1]:8080`), never `0.0.0.0:8080` or `[::]:8080`. Do not set `APP_BIND_ADDRESS` to a public interface. `bootstrap/app.php` trusts proxy headers because of the reverse-proxy architecture; that remains safe only while direct container access is blocked.
 
+## PDF Queue Worker
+
+Quote, Schedule, shared datasheet, and Document Pack generation requested through the application UI runs on the dedicated Compose `queue` service. The browser receives a persistent generation ID, polls its owner-scoped status, and downloads the prepared result when the worker finishes. Jobs receive three attempts with 15- and 60-second backoff; terminal failures show a safe message and a user-visible Retry action.
+
+Production must keep `QUEUE_CONNECTION=database`. The deploy checks this requirement, gives any active PDF job its configured timeout plus a 30-second grace period to stop cleanly during maintenance, applies only forward migrations, rebuilds Laravel caches, then recreates and verifies the worker before taking the site out of maintenance mode. Migration `2026_09_07_143616_create_pdf_generations_table` only creates the transient status table; it does not update or delete existing application records.
+
+Defaults, which may be overridden in production `.env`, are:
+
+```dotenv
+QUEUE_CONNECTION=database
+DB_QUEUE_RETRY_AFTER=960
+PDF_GENERATION_QUEUE=pdf
+PDF_GENERATION_JOB_TIMEOUT=900
+PDF_GENERATION_DOWNLOAD_RETENTION_MINUTES=60
+PDF_GENERATION_RECORD_RETENTION_DAYS=7
+```
+
+`DB_QUEUE_RETRY_AFTER` must always remain greater than `PDF_GENERATION_JOB_TIMEOUT`; otherwise a second worker could reserve a still-running job. Check the worker and backlog with:
+
+```bash
+cd /home/tamliteco/luxquote.app
+docker compose ps queue
+docker compose exec -T queue pgrep -f '[a]rtisan queue:work'
+docker compose exec -T queue php artisan queue:monitor database:pdf --max=25
+docker compose exec -T laravel.test php artisan queue:failed
+```
+
+The existing hourly `app:prune-generated-pdfs` task removes expired transient generation records and prepared files. `queue:prune-failed --hours=168` runs daily. Resource files, saved Document Pack inputs, and template snapshots are not transient and are not touched.
+
 ## Current Production Release Baseline
 
 Version `0.2.12` is the current production-visible baseline as of 7 September 2026. It includes the tested dependency-security refresh alongside Resources, reusable Document Pack templates, three-month Activity History retention, management Statistics, loading/preset feedback, currency-symbol output, and 10-row Statistics table pagination. The `0.2.12` GitHub workflow completed the production deploy, maintenance cleanup, and persistent-runner check successfully; the public health endpoint returned HTTP 200 afterwards. The earlier `0.2.5` commit followed a one-time reconciliation of divergent `main` and `production` histories; a manual database backup did not cause that divergence because backup archives are outside tracked release history.
@@ -121,7 +150,7 @@ The `0.2.4`/`0.2.5` feature tranche introduced the forward-only migrations liste
 
 ## Pre-deployment Quality and Security Gate
 
-The 7 September dependency-security refresh updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and compatible transitive packages. With the response-header and deployment hardening, the reviewed tree passes **371 tests / 2,211 assertions**, the production Vite build, Composer validation/platform checks, and the full production-safe PDF health command. Both `composer audit --locked` and `npm audit --omit=dev` report no vulnerabilities locally.
+The 7 September dependency-security refresh updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and compatible transitive packages. With the response-header, deployment, external API, and queued-PDF hardening, the reviewed tree passes **386 tests / 2,277 assertions**, the production Vite build, Composer validation/platform checks, and the full production-safe PDF health command. Both `composer audit --locked` and `npm audit --omit=dev` report no vulnerabilities locally.
 
 Production `0.2.12` installs this exact reviewed lock and the matching published Filament assets. Do **not** run `composer update` on the VPS: normal workflows use `composer install` and must retain the reviewed versions. This dependency refresh introduced no migrations and performed no database rewrite; deployment used the standard forward-only migration step.
 
@@ -916,7 +945,7 @@ Disk thresholds default to 85% for both disk space and inodes. Override them in 
 The Docker check expects these Compose services by default:
 
 ```text
-laravel.test mysql redis meilisearch
+laravel.test queue mysql redis meilisearch
 ```
 
 Override with `EXPECTED_SERVICES` if production service names change. The Docker check retries before alerting to avoid false positives during deploys or brief container recreates; defaults are `DOCKER_HEALTH_RETRIES=3` and `DOCKER_HEALTH_RETRY_DELAY_SECONDS=20`. The Salesforce check is read-only and does not push PDFs or update Opportunity Amounts.

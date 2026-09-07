@@ -12,6 +12,10 @@ Schedule::command('app:prune-generated-pdfs')
     ->hourlyAt(23)
     ->withoutOverlapping(10);
 
+Schedule::command('queue:prune-failed --hours=168')
+    ->dailyAt('01:51')
+    ->withoutOverlapping(10);
+
 Schedule::command('app:prune-activity-logs')
     ->dailyAt('01:41')
     ->withoutOverlapping(30);

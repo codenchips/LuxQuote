@@ -175,6 +175,8 @@ Quote and Schedule entries are stored in a template as dynamic placeholders and 
 
 The UI hides unavailable roles and disables blocked generation, while Livewire methods, the download controller, and the merge service enforce the same rules server-side. Pack and revision IDs must belong to the current project; non-admin users remain limited to Open projects or projects they own.
 
+User-triggered Quote, Schedule, shared-datasheet, and Document Pack PDF generation runs through the durable PDF queue. Queue submission, status polling, and manual retry routes repeat the relevant output capability and project-visibility checks server-side. Generation status and prepared download details are private to the user who requested them; even an administrator cannot inspect another user's queued download through these routes. A queued Document Pack is checked for Quote and Schedule sub-permissions before it is accepted and again when the worker generates it.
+
 ## Global Pricing Rule
 
 `pricing.view` is the global switch for price visibility.

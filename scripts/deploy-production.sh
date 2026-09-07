@@ -135,6 +135,15 @@ DB_PASSWORD="${DB_PASSWORD:-$(env_value DB_PASSWORD)}"
 DB_DATABASE="${DB_DATABASE:-laravel}"
 DB_USERNAME="${DB_USERNAME:-sail}"
 DB_PASSWORD="${DB_PASSWORD:-password}"
+pdf_generation_job_timeout="$(env_value PDF_GENERATION_JOB_TIMEOUT)"
+pdf_generation_job_timeout="${pdf_generation_job_timeout:-900}"
+
+if [[ ! "$pdf_generation_job_timeout" =~ ^[0-9]+$ ]]; then
+    log "ERROR: PDF_GENERATION_JOB_TIMEOUT must be a whole number of seconds."
+    exit 1
+fi
+
+pdf_worker_stop_timeout=$((pdf_generation_job_timeout + 30))
 
 mysql_query() {
     docker compose exec -T mysql mysql \
@@ -250,6 +259,11 @@ done
 
 enable_maintenance_mode
 
+if docker compose config --services | grep --fixed-strings --line-regexp --quiet queue; then
+    log "Stopping the PDF queue worker gracefully during deployment"
+    docker compose stop --timeout "$pdf_worker_stop_timeout" queue
+fi
+
 log "Backing up database"
 mkdir -p "$BACKUP_DIR"
 backup_timestamp="$(date +%Y%m%d-%H%M%S)"
@@ -308,8 +322,8 @@ git fetch origin "$DEPLOY_BRANCH"
 git checkout -B "$DEPLOY_BRANCH" "origin/$DEPLOY_BRANCH"
 deployed_commit="$(git rev-parse HEAD)"
 
-log "Building and starting Docker services"
-docker compose up -d --build
+log "Building and starting core Docker services"
+docker compose up -d --build laravel.test mysql redis meilisearch mailpit
 verify_app_port_binding
 
 log "Removing local-only Vite dev marker"
@@ -395,6 +409,23 @@ docker compose exec laravel.test php artisan optimize:clear
 docker compose exec laravel.test php artisan config:cache
 docker compose exec laravel.test php artisan route:cache
 docker compose exec laravel.test php artisan view:cache
+
+log "Starting the PDF queue worker with the deployed code"
+if ! docker compose exec -T laravel.test php artisan config:show queue.default | grep --extended-regexp --quiet 'database'; then
+    log "ERROR: Production QUEUE_CONNECTION must be database for durable PDF generation."
+    exit 1
+fi
+
+docker compose up -d --force-recreate queue
+
+if [ "$(docker compose ps --status running --services queue)" != "queue" ]; then
+    log "ERROR: The PDF queue worker did not start."
+    docker compose logs --tail=80 queue
+    exit 1
+fi
+
+docker compose exec -T queue pgrep -f '[a]rtisan queue:work' >/dev/null
+docker compose exec -T queue php artisan queue:monitor database:pdf --max=25
 
 disable_maintenance_mode
 

@@ -188,7 +188,7 @@ class OutputProject extends ViewRecord
     {
         abort_unless($this->canProduceQuote(), 403);
 
-        return route('projects.pdf.quote.prepare', [
+        return route('projects.pdf.quote.prepare.queue', [
             'project' => $this->record,
             'revision' => $this->record->active_revision_id,
         ]);
@@ -198,7 +198,7 @@ class OutputProject extends ViewRecord
     {
         abort_unless($this->canProduceQuote(), 403);
 
-        return route('projects.pdf.quote.datasheets.prepare', [
+        return route('projects.pdf.quote.datasheets.prepare.queue', [
             'project' => $this->record,
             'revision' => $this->record->active_revision_id,
         ]);

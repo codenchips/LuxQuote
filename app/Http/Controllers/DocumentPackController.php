@@ -5,16 +5,20 @@ namespace App\Http\Controllers;
 use App\Enums\DocumentPackItemRole;
 use App\Enums\DocumentPackItemSource;
 use App\Enums\PermissionKey;
+use App\Enums\ProjectRevisionStatus;
 use App\Models\ActivityLog;
 use App\Models\DocumentPack;
 use App\Models\DocumentPackItem;
 use App\Models\DocumentPackTemplateItem;
+use App\Models\PdfGeneration;
 use App\Models\Project;
 use App\Models\ProjectRevision;
 use App\Models\ResourceFile;
 use App\Services\DocumentPackPdfService;
 use App\Services\PdfDownloadUrlService;
+use App\Services\PdfGenerationDispatcher;
 use App\Services\ProjectLegalPdfService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -27,6 +31,54 @@ use Throwable;
 
 class DocumentPackController extends Controller
 {
+    public function queue(
+        Request $request,
+        Project $project,
+        DocumentPack $documentPack,
+        PdfGenerationDispatcher $dispatcher,
+    ): JsonResponse {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless($request->user()->can('output.produce-document-packs'), 403);
+        abort_unless($documentPack->project_id === $project->id, 404);
+
+        $revisionId = $request->integer('revision', $project->active_revision_id);
+        $revision = ProjectRevision::where('project_id', $project->id)->findOrFail($revisionId);
+        $hasItems = $documentPack->items()->exists();
+        $containsQuote = $documentPack->items()->where('role', DocumentPackItemRole::Quote->value)->exists();
+        $containsSchedule = $documentPack->items()->where('role', DocumentPackItemRole::UnpricedSchedule->value)->exists();
+
+        abort_unless($hasItems, 422, 'The document pack does not contain any documents.');
+        abort_if(
+            $containsQuote
+                && (! $request->user()->can('pricing.view') || ! $request->user()->can('output.produce-quote')),
+            403,
+        );
+        abort_if(
+            $containsQuote
+                && (! $revision->validated || $revision->status !== ProjectRevisionStatus::Approved),
+            403,
+            'Quote PDF requires validation passed and quote approved.',
+        );
+        abort_if(
+            $containsSchedule
+                && ! $request->user()->can('output.produce-unpriced-schedule'),
+            403,
+        );
+
+        $generation = $dispatcher->dispatch(
+            $request->user(),
+            $project,
+            PdfGeneration::TypeDocumentPack,
+            [
+                'revision' => $revisionId,
+                'document_pack_id' => $documentPack->id,
+                'generation_batch_key' => (string) Str::uuid(),
+            ],
+        );
+
+        return response()->json($dispatcher->response($generation), 202);
+    }
+
     public function __invoke(
         Request $request,
         Project $project,
@@ -56,7 +108,7 @@ class DocumentPackController extends Controller
                 'filename' => $generatedPack['filename'],
                 'contains_quote' => $containsQuote,
                 'document_count' => $documentPack->items()->count(),
-                'generation_batch_key' => (string) Str::uuid(),
+                'generation_batch_key' => $this->generationBatchKey($request),
             ],
         ]);
 
@@ -280,5 +332,12 @@ class DocumentPackController extends Controller
         }
 
         abort_if(! $project->isVisibleTo($user), 403);
+    }
+
+    private function generationBatchKey(Request $request): string
+    {
+        $batchKey = $request->string('generation_batch_key')->toString();
+
+        return preg_match('/^[A-Za-z0-9_-]{8,80}$/', $batchKey) ? $batchKey : (string) Str::uuid();
     }
 }

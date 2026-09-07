@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\PdfGeneration;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -28,11 +29,13 @@ class PruneGeneratedPdfs extends Command
         $outputRetentionMinutes = max(1, (int) config('document-packs.generated_pdf_cleanup.output_retention_hours', 24) * 60);
         $downloadRetentionMinutes = max(1, (int) config('document-packs.generated_pdf_cleanup.download_retention_minutes', 60));
         $tempRetentionMinutes = max(1, (int) config('document-packs.generated_pdf_cleanup.temp_retention_hours', 24) * 60);
+        $generationRetentionDays = max(1, (int) config('pdf-generation.record_retention_days', 7));
 
         $removedFiles = 0;
         $removedDirectories = 0;
         $reclaimedBytes = 0;
         $failures = 0;
+        $removedGenerationRecords = 0;
 
         foreach ($this->outputDirectories($root, $outputRetentionMinutes, $downloadRetentionMinutes) as $target) {
             $result = $this->pruneFiles($target['path'], $target['pattern'], $target['retention_minutes'], $dryRun);
@@ -48,6 +51,19 @@ class PruneGeneratedPdfs extends Command
             $failures += $result['failures'];
         }
 
+        try {
+            $expiredGenerations = PdfGeneration::query()
+                ->where('created_at', '<', now()->subDays($generationRetentionDays));
+            $removedGenerationRecords = $expiredGenerations->count();
+
+            if (! $dryRun) {
+                $expiredGenerations->delete();
+            }
+        } catch (Throwable $exception) {
+            $failures++;
+            $this->warn('Could not prune expired PDF generation records: '.$exception->getMessage());
+        }
+
         $verb = $dryRun ? 'Would remove' : 'Removed';
         $this->info(sprintf(
             '%s %d generated file(s) and %d temporary director%s (%s).',
@@ -57,6 +73,7 @@ class PruneGeneratedPdfs extends Command
             $removedDirectories === 1 ? 'y' : 'ies',
             $this->formatBytes($reclaimedBytes),
         ));
+        $this->info(sprintf('%s %d expired PDF generation record(s).', $verb, $removedGenerationRecords));
 
         if ($failures > 0) {
             $this->error("{$failures} generated storage item(s) could not be inspected or removed.");

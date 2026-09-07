@@ -7,35 +7,36 @@ document.addEventListener('click', async (event) => {
 
     event.preventDefault();
 
+    if (link.dataset.pdfGenerating === '1') {
+        return;
+    }
+
+    link.dataset.pdfGenerating = '1';
+
     const modal = window.luxQuotePdfGenerationModal ??= createPdfGenerationModal();
-    const startedAt = Date.now();
     const title = link.dataset.pdfTitle || 'Generating PDF';
     const message = link.dataset.pdfMessage || 'PDF generation is in progress. This can take a while.';
     const openInNewTab = link.target === '_blank';
-    const progressToken = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const pdfUrl = new URL(link.href);
 
-    pdfUrl.searchParams.set('pdf_progress_token', progressToken);
-    pdfUrl.searchParams.set('pdf_delivery_link', '1');
+    try {
+        await runQueuedPdfGeneration(pdfUrl, link, modal, title, message, openInNewTab);
+    } finally {
+        delete link.dataset.pdfGenerating;
+    }
+});
+
+async function runQueuedPdfGeneration(pdfUrl, link, modal, title, message, openInNewTab) {
+    const startedAt = Date.now();
 
     modal.open(title, message);
     const fallbackProgress = startFallbackProgress(modal);
-    const progressPoll = startProgressPolling(progressToken, modal);
 
     try {
-        const response = await fetch(pdfUrl, {
-            credentials: 'same-origin',
-            headers: {
-                Accept: 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-            },
+        const queued = await postPdfGeneration(pdfUrl);
+        const preparedPdf = await waitForPdfGeneration(queued, (progress) => {
+            modal.update(progress.progress, progress.message, { live: true });
         });
-
-        if (!response.ok) {
-            throw new Error(`PDF generation failed with status ${response.status}.`);
-        }
-
-        const preparedPdf = await response.json();
         const filename = preparedPdf.filename || link.dataset.pdfFilename || 'luxquote.pdf';
         const downloadUrl = preparedPdf.url;
 
@@ -45,9 +46,7 @@ document.addEventListener('click', async (event) => {
 
         await finishProgress(modal, Date.now() - startedAt);
 
-        if (openInNewTab) {
-            window.open(downloadUrl, '_blank', 'noopener');
-        } else {
+        if (!openInNewTab || !window.open(downloadUrl, '_blank', 'noopener')) {
             downloadPreparedPdf(downloadUrl, filename);
         }
 
@@ -56,12 +55,108 @@ document.addEventListener('click', async (event) => {
         modal.close();
         showPdfNotification(preparedPdf.notification);
     } catch (error) {
-        modal.fail(error instanceof Error ? error.message : 'The PDF could not be generated.');
+        const retryUrl = error instanceof Error ? error.retryUrl : null;
+
+        modal.fail(
+            error instanceof Error ? error.message : 'The PDF could not be generated.',
+            retryUrl
+                ? () => runQueuedPdfGeneration(new URL(retryUrl, window.location.origin), link, modal, title, message, openInNewTab)
+                : null,
+        );
     } finally {
         clearInterval(fallbackProgress);
-        clearInterval(progressPoll);
     }
-});
+}
+
+window.luxQuoteGeneratePdf = (url, options = {}) => {
+    const modal = window.luxQuotePdfGenerationModal ??= createPdfGenerationModal();
+    const virtualLink = {
+        dataset: {
+            pdfFilename: options.filename || '',
+        },
+    };
+
+    return runQueuedPdfGeneration(
+        new URL(url, window.location.origin),
+        virtualLink,
+        modal,
+        options.title || 'Generating PDF',
+        options.message || 'PDF generation is in progress. This can take a while.',
+        options.openInNewTab ?? true,
+    );
+};
+
+async function postPdfGeneration(url) {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const response = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+            Accept: 'application/json',
+            'X-CSRF-TOKEN': csrfToken,
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+    });
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok || !payload) {
+        throw new Error(payload?.message || `PDF generation could not be started (status ${response.status}).`);
+    }
+
+    return payload;
+}
+
+async function waitForPdfGeneration(initial, onProgress = null) {
+    let generation = initial;
+    let consecutivePollingFailures = 0;
+
+    while (generation?.status_url) {
+        onProgress?.(generation);
+
+        if (generation.status === 'completed') {
+            return generation.result;
+        }
+
+        if (generation.status === 'failed') {
+            const error = new Error(generation.error || generation.message || 'PDF generation failed. Please try again.');
+            error.retryUrl = generation.retry_url || null;
+
+            throw error;
+        }
+
+        await sleep(1000);
+
+        try {
+            const response = await fetch(generation.status_url, {
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const payload = await response.json().catch(() => null);
+
+            if (!response.ok || !payload) {
+                throw new Error(payload?.message || `PDF status could not be checked (status ${response.status}).`);
+            }
+
+            generation = payload;
+            consecutivePollingFailures = 0;
+        } catch (error) {
+            consecutivePollingFailures += 1;
+
+            if (consecutivePollingFailures >= 3) {
+                throw error;
+            }
+
+            await sleep(1500);
+        }
+    }
+
+    return generation;
+}
+
+window.luxQuoteWaitForPdfGeneration = waitForPdfGeneration;
 
 function showPdfNotification(notification) {
     if (!notification?.title || typeof window.FilamentNotification !== 'function') {
@@ -99,6 +194,9 @@ function createPdfGenerationModal() {
                     <button type="button" data-pdf-modal-close class="mt-5 hidden h-9 rounded-md border border-gray-300 px-3 text-sm font-semibold text-gray-700 dark:border-white/10 dark:text-gray-200">
                         Close
                     </button>
+                    <button type="button" data-pdf-modal-retry class="ml-2 mt-5 hidden h-9 rounded-md bg-orange-500 px-3 text-sm font-semibold text-gray-950 hover:bg-orange-400">
+                        Retry
+                    </button>
                 </div>
             </div>
         </div>
@@ -109,13 +207,22 @@ function createPdfGenerationModal() {
     const title = wrapper.querySelector('[data-pdf-modal-title]');
     const message = wrapper.querySelector('[data-pdf-modal-message]');
     const close = wrapper.querySelector('[data-pdf-modal-close]');
+    const retry = wrapper.querySelector('[data-pdf-modal-retry]');
     const spinner = wrapper.querySelector('.animate-spin');
     const bar = wrapper.querySelector('[data-pdf-modal-bar]');
     const percent = wrapper.querySelector('[data-pdf-modal-percent]');
     let currentPercent = 8;
     let liveProgress = false;
+    let retryHandler = null;
 
     close.addEventListener('click', () => wrapper.classList.add('hidden'));
+    retry.addEventListener('click', () => {
+        const handler = retryHandler;
+
+        retryHandler = null;
+        retry.classList.add('hidden');
+        handler?.();
+    });
 
     return {
         open(nextTitle, nextMessage) {
@@ -125,6 +232,8 @@ function createPdfGenerationModal() {
             liveProgress = false;
             this.update(8, nextMessage, { force: true });
             close.classList.add('hidden');
+            retry.classList.add('hidden');
+            retryHandler = null;
             spinner.classList.remove('hidden');
             wrapper.classList.remove('hidden');
             wrapper.classList.add('flex');
@@ -153,7 +262,7 @@ function createPdfGenerationModal() {
         hasLiveProgress() {
             return liveProgress;
         },
-        fail(nextMessage) {
+        fail(nextMessage, nextRetryHandler = null) {
             title.textContent = 'PDF generation failed';
             message.textContent = nextMessage;
             bar.style.width = '100%';
@@ -161,6 +270,8 @@ function createPdfGenerationModal() {
             currentPercent = 100;
             close.classList.remove('hidden');
             spinner.classList.add('hidden');
+            retryHandler = nextRetryHandler;
+            retry.classList.toggle('hidden', typeof nextRetryHandler !== 'function');
         },
     };
 }
@@ -198,38 +309,6 @@ function startFallbackProgress(modal) {
 
         if (progress >= target - 0.5 && stage < stages.length - 1) {
             stage += 1;
-        }
-    }, 700);
-}
-
-function startProgressPolling(token, modal) {
-    if (!token) {
-        return null;
-    }
-
-    return setInterval(async () => {
-        try {
-            const response = await fetch(`/pdf-progress/${encodeURIComponent(token)}`, {
-                credentials: 'same-origin',
-                headers: {
-                    Accept: 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-            });
-
-            if (!response.ok) {
-                return;
-            }
-
-            const progress = await response.json();
-
-            if (typeof progress.percent !== 'undefined') {
-                const hasLiveProgress = progress.percent > 8 || progress.complete || progress.message !== 'Starting PDF generation...';
-
-                modal.update(progress.percent, progress.message, { live: hasLiveProgress });
-            }
-        } catch {
-            // Keep the fallback bar moving if polling fails.
         }
     }, 700);
 }

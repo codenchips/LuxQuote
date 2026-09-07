@@ -2,12 +2,16 @@
 
 namespace Tests\Feature\Console\Commands;
 
+use App\Models\PdfGeneration;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class PruneGeneratedPdfsTest extends TestCase
 {
+    use RefreshDatabase;
+
     private string $cleanupRoot;
 
     protected function setUp(): void
@@ -20,6 +24,7 @@ class PruneGeneratedPdfsTest extends TestCase
             'document-packs.generated_pdf_cleanup.output_retention_hours' => 24,
             'document-packs.generated_pdf_cleanup.download_retention_minutes' => 60,
             'document-packs.generated_pdf_cleanup.temp_retention_hours' => 24,
+            'pdf-generation.record_retention_days' => 7,
         ]);
     }
 
@@ -70,6 +75,19 @@ class PruneGeneratedPdfsTest extends TestCase
 
         $this->assertFileExists($oldLegalPdf);
         $this->assertDirectoryExists($oldTempDirectory);
+    }
+
+    public function test_command_prunes_only_expired_pdf_generation_records(): void
+    {
+        $expired = PdfGeneration::factory()->create(['created_at' => now()->subDays(8)]);
+        $fresh = PdfGeneration::factory()->create(['created_at' => now()->subDays(6)]);
+
+        $this->artisan('app:prune-generated-pdfs')
+            ->expectsOutputToContain('Removed 1 expired PDF generation record(s).')
+            ->assertSuccessful();
+
+        $this->assertDatabaseMissing('pdf_generations', ['id' => $expired->id]);
+        $this->assertDatabaseHas('pdf_generations', ['id' => $fresh->id]);
     }
 
     public function test_cleanup_is_registered_with_the_scheduler(): void

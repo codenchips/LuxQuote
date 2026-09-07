@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DocumentPackController;
+use App\Http\Controllers\PdfGenerationController;
 use App\Http\Controllers\ProjectPdfController;
 use App\Http\Controllers\ResourceFileController;
 use App\Models\Project;
@@ -18,15 +19,23 @@ Route::get('/resources/{resourceFile}/file', ResourceFileController::class)
 Route::middleware('auth')->group(function (): void {
     Route::get('/projects/{project}/pdf/schedule', [ProjectPdfController::class, 'schedule'])
         ->name('projects.pdf.schedule');
+    Route::post('/projects/{project}/pdf/schedule', [ProjectPdfController::class, 'queueSchedule'])
+        ->name('projects.pdf.schedule.queue');
 
     Route::get('/projects/{project}/pdf/quote', [ProjectPdfController::class, 'quote'])
         ->name('projects.pdf.quote');
+    Route::post('/projects/{project}/pdf/quote', [ProjectPdfController::class, 'queueQuote'])
+        ->name('projects.pdf.quote.queue');
 
     Route::post('/projects/{project}/pdf/quote/prepare', [ProjectPdfController::class, 'prepareQuote'])
         ->name('projects.pdf.quote.prepare');
+    Route::post('/projects/{project}/pdf/quote/prepare/queue', [ProjectPdfController::class, 'queuePreparedQuote'])
+        ->name('projects.pdf.quote.prepare.queue');
 
     Route::post('/projects/{project}/pdf/quote/datasheets/prepare', [ProjectPdfController::class, 'prepareQuoteDatasheets'])
         ->name('projects.pdf.quote.datasheets.prepare');
+    Route::post('/projects/{project}/pdf/quote/datasheets/prepare/queue', [ProjectPdfController::class, 'queueQuoteDatasheets'])
+        ->name('projects.pdf.quote.datasheets.prepare.queue');
 
     Route::post('/projects/{project}/pdf/quote/zip', [ProjectPdfController::class, 'zipPreparedQuotes'])
         ->name('projects.pdf.quote.zip');
@@ -45,6 +54,13 @@ Route::middleware('auth')->group(function (): void {
 
     Route::get('/projects/{project}/document-packs/{documentPack}', DocumentPackController::class)
         ->name('projects.document-packs.download');
+    Route::post('/projects/{project}/document-packs/{documentPack}', [DocumentPackController::class, 'queue'])
+        ->name('projects.document-packs.queue');
+
+    Route::get('/pdf-generations/{pdfGeneration}', [PdfGenerationController::class, 'show'])
+        ->name('pdf-generations.show');
+    Route::post('/pdf-generations/{pdfGeneration}/retry', [PdfGenerationController::class, 'retry'])
+        ->name('pdf-generations.retry');
 
     Route::get('/projects/{project}/document-packs/{documentPack}/items/{documentPackItem}/file', [DocumentPackController::class, 'uploadedItem'])
         ->name('projects.document-packs.items.file');

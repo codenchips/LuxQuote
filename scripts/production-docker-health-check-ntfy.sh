@@ -2,7 +2,7 @@
 set -uo pipefail
 
 APP_DIR="${APP_DIR:-/home/tamliteco/luxquote.app}"
-EXPECTED_SERVICES="${EXPECTED_SERVICES:-laravel.test mysql redis meilisearch}"
+EXPECTED_SERVICES="${EXPECTED_SERVICES:-laravel.test queue mysql redis meilisearch}"
 DOCKER_HEALTH_RETRIES="${DOCKER_HEALTH_RETRIES:-3}"
 DOCKER_HEALTH_RETRY_DELAY_SECONDS="${DOCKER_HEALTH_RETRY_DELAY_SECONDS:-20}"
 NTFY_URL="${NTFY_URL:-https://ntfy.sh/LuxQuoteDocker}"
@@ -49,6 +49,8 @@ run_checks() {
 
             docker compose exec -T mysql sh -lc 'mysqladmin ping -h 127.0.0.1 -u"$MYSQL_USER" -p"$MYSQL_PASSWORD"'
             docker compose exec -T redis redis-cli ping
+            docker compose exec -T queue pgrep -f '[a]rtisan queue:work'
+            docker compose exec -T queue php artisan queue:monitor database:pdf --max=25
         } 2>&1
     )
 }

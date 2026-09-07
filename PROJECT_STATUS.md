@@ -14,23 +14,34 @@ The next release has now completed the first security/operations tranche:
 - Global application responses now receive a conservative CSP framing policy, Permissions Policy, Referrer Policy, content-type protection, same-origin framing protection, and cross-domain policy protection. HTTPS responses enable one-year HSTS automatically in production; subdomains and preload remain opt-in.
 - The production workflow now runs Composer validation/platform/audit checks, deterministic npm installation, the production npm audit, a Vite production build, the full PHPUnit suite, and real Browsershot/qpdf tests on an isolated GitHub-hosted runner. The self-hosted VPS deployment cannot start until that job passes.
 - Docker publishes the app/Vite, MySQL, Redis, Meilisearch, and Mailpit only on loopback by default. The production deploy explicitly checks the app port after container recreation and aborts if port `8080` is exposed on a non-loopback address.
-- PHP's `X-Powered-By` version banner is disabled. The hardened build passes **371 tests / 2,211 assertions**, asset compilation, application/PDF health checks, workflow linting, shell syntax checks, and dependency audits.
+- PHP's `X-Powered-By` version banner is disabled. The current hardened build passes **386 tests / 2,277 assertions**, asset compilation, application/PDF health checks, workflow linting, shell syntax checks, and dependency audits.
+- Quote, Schedule, shared datasheet, and Document Pack PDF requests now run through a persistent database queue. Users receive live queued/processing/retry status, bounded automatic attempts, safe terminal errors, and a manual Retry action instead of holding an Apache request open during long external/Puppeteer work.
 
 The remaining near-term priorities before another large feature tranche are:
 
 1. **Back up all persistent document storage off-server.** Database dumps do not contain Resource files, Document Pack uploads, or template snapshots. Back up `storage/app/private/resources`, `storage/app/private/document-packs`, and `storage/app/private/document-pack-templates`, encrypt the copy, send it off the VPS, and periodically perform a controlled restore-verification exercise.
-2. **Make catalogue replacement atomic and harden the external API client.** Wrap product replacement and related price updates in a database transaction, then add explicit connect/request timeouts and bounded retries so database or transport failures cannot empty the live catalogue or hang a request indefinitely.
+2. **Completed for the next release: catalogue and external API resilience.** Product replacement and related price updates are transactional, while Salesforce, catalogue, and datasheet clients now use explicit connect/request timeouts and bounded retries where replay is safe.
 3. **Enforce a real password policy.** The Admin user form currently confirms passwords and limits their maximum length but has no minimum-strength validation. Apply Laravel's password rule consistently to account creation, password changes, and resets, and add focused tests.
 
 ### Recommended product roadmap
 
-- **Reliability first**: move Quote, Schedule, datasheet, and Document Pack generation into durable queued jobs with retries, cancellation, persistent progress, and a recent-download area. This shortens web requests and makes external/Puppeteer failures recoverable.
+- **Reliability next**: build on the durable Quote, Schedule, datasheet, and Document Pack queue with cancellation and a recent-download area. The current queue already removes long external/Puppeteer work from browser requests and supplies automatic/manual retry handling.
 - **Statistics scale-up**: current 10-row pagination is browser-side presentation; large reports still load and aggregate the full selected range. Move large tables and aggregates server-side, add short-lived filter-keyed caching, drill-down links, and previous-period comparison before adding exports.
 - **Document standards**: build the planned Admin Document Pack Template manager with explicit edit/delete permissions, version history, replacement of static snapshots, and activity logging.
 - **Resource usability and governance**: add folders/categories, tags, search/filtering, replacement/version history, and optional file-level/team visibility before the library becomes the authoritative source for sensitive documents.
 - **Integration resilience**: centralise Salesforce and product API clients with explicit connect/request timeouts, bounded retries with jitter, and last-success/stale-data indicators. The Visits calendar should retain a read-only last-known view when Salesforce is temporarily unavailable.
 - **Everyday UX**: add favourites/recent projects, clearer autosave/unsaved-state feedback, accessible keyboard/focus behaviour for custom modals and lightboxes, and responsive browser tests for the most-used project/output flows.
 - **Operational security**: after deploying the response-header/loopback build, verify the public HSTS value survives Cloudflare/Apache, require MFA for privileged groups, strengthen new-password rules, and replace the emergency CGI's shared query token/secondary static confirmation word with a server-managed high-entropy secret plus IP restriction and auditable access.
+
+## Durable PDF Generation — 7 September 2026
+
+- **Queued outputs**: normal UI requests for Quote, Schedule, tender Quote preparation, shared datasheet preparation, and combined Document Packs create a persistent `pdf_generations` record and dispatch `GeneratePdf` to the dedicated `pdf` queue. Existing PDF builders remain the single source of document rules.
+- **Resilience**: each job allows three attempts with 15- and 60-second backoff and a 900-second per-attempt ceiling. The database queue reservation defaults to 960 seconds so a slow job cannot be picked up by a second worker while it is still active.
+- **External datasheets**: the remote datasheet generation script remains an external dependency. It now runs outside the browser/proxy request; transport/download retries occur inside the client, and a failed queued attempt can be tried again automatically without leaving the UI stuck.
+- **User feedback**: the generation modal polls persisted status, tolerates brief polling failures, shows queued/processing/retry/completed states, and offers a Retry button after a terminal failure. Tender batches use the same queue status endpoint and surface safe errors while retaining their existing Generate action as a fresh retry.
+- **Security**: queue submission and retry preserve project/revision scoping plus Quote, Schedule, pricing, and Document Pack permissions. Status/result endpoints are restricted to the requesting user.
+- **Operations**: Compose includes a restartable `queue` service sharing the application and Puppeteer volumes. Deployment stops any old worker, applies forward migrations and caches, then recreates and verifies the worker before leaving maintenance mode. Docker monitoring checks both its process and the `database:pdf` backlog.
+- **Retention**: prepared download tokens/files remain available for 60 minutes by default; transient generation records are removed after seven days by the existing hourly PDF cleanup. Failed Laravel queue records are pruned after seven days.
 
 ## Management Statistics — 7 September 2026
 
@@ -260,7 +271,7 @@ The remaining near-term priorities before another large feature tranche are:
 
 - **PDF 500s reported on the VPS**: The immediate production failure seen on 6 July was environment drift in the PDF runtime. `app:diagnose-pdf-environment` first failed with `mkdir(): Invalid path`, then with Puppeteer unable to find the expected Chrome binary. Recovery was to set `LARAVEL_PDF_TEMP_PATH=/var/www/html/storage/app/browsershot`, clear config, create/chown the temp directory, and install Puppeteer's `chrome-headless-shell` as the `sail` user with the cache under `/home/sail/.cache/puppeteer`.
 - **Production deploy runner incident**: GitHub Actions jobs were stuck waiting for the `self-hosted, luxquote-production` runner. After runner recreation, follow-up failures were caused by runner-side SSH trust/key state: `known_hosts` needed GitHub and the deploy key expected at `/root/.ssh/luxquote_github_repo_deploy` needed to be available inside the runner container. `DEPLOYMENT.md` records the recovery checklist.
-- **Primary stability concern**: Quote, schedule, datasheet-inclusive PDFs, and document packs are still generated synchronously in web requests. The deploy and cron smoke tests verify Browsershot, qpdf, legal-page merge, and basic production health, but they still do not replace queued/background generation for long-running datasheet or document-pack jobs.
+- **PDF stability concern addressed in the next release**: Quote, schedule, datasheet-inclusive PDFs, and document packs requested through the UI now run on a durable database queue. Browsershot, qpdf, and remote datasheet work no longer holds the browser request open; users receive persisted progress, automatic retries, safe errors, and a manual Retry action.
 
 ## Production Monitoring Added — 7 July 2026
 
@@ -1029,12 +1040,12 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 - [ ] Apply and test a consistent minimum password-strength rule for user creation, profile changes, and password resets
 - [ ] Complete the Project Tenders workflow: create/sync Salesforce `Tender__c` records and add tender-specific quote output and cover sheets
 - [ ] Continue Cover pricing review after beta feedback, especially how Cover values should appear in quote/schedule outputs and approval summaries
-- [ ] Move long-running PDF/document-pack generation toward queued jobs with polling/download links so browser/proxy timeouts and remote datasheet delays do not surface as user-facing 500 errors
+- [x] Move Quote, Schedule, remote datasheet, and Document Pack generation to durable queued jobs with polling/download links, bounded retries, safe errors, and manual retry
 - [ ] Add structured logging around PDF generation with project reference, revision, document type, include-datasheets flag, progress token, qpdf step, datasheet endpoint result, and exception class/message
 - [ ] Review VPS resources and Docker health: memory/swap, disk pressure, MySQL restart history, Apache proxy timeout, and whether long PDF requests are being killed or timed out
 - [ ] Add encrypted off-server database and persistent-file backups with automated integrity checks and controlled restore verification; keep emergency recovery volume-preserving unless a deliberate restore is chosen
-- [ ] Make Product catalogue replacement transactional so a mid-import database failure cannot leave Products empty or partially populated
-- [ ] Add explicit connect/request timeouts and bounded retry policies to external API clients, with visible last-success/stale-data status where useful
+- [x] Make Product catalogue replacement transactional so a mid-import database failure cannot leave Products empty or partially populated
+- [x] Add explicit connect/request timeouts and bounded retry policies to Salesforce, Product catalogue, and datasheet API clients; last-success/stale-data indicators remain a later enhancement
 - [ ] No two-way sync yet — Salesforce projects are imported once at creation; changes in Salesforce are not reflected back
 - [ ] Validation currently covers duplicate SKU, missing SKU, price mismatch, and manual flags; output-readiness and other approval rules remain to be added
 - [ ] Build the Admin Document Pack Template management/versioning workflow and add dedicated edit/delete permissions

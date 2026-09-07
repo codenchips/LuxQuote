@@ -11,10 +11,6 @@ use ZipArchive;
 
 class PdfDownloadUrlService
 {
-    private const TokenMinutes = 10;
-
-    private const CleanupMinutes = 30;
-
     /**
      * @param  array{path: string, filename: string}  $pdf
      */
@@ -87,7 +83,7 @@ class PdfDownloadUrlService
             'user_id' => $userId,
             'mime_type' => 'application/zip',
             'disposition' => 'attachment',
-        ], now()->addMinutes(self::TokenMinutes));
+        ], now()->addMinutes($this->tokenMinutes()));
 
         return [
             'url' => route('pdf.downloads.show', [
@@ -139,7 +135,7 @@ class PdfDownloadUrlService
             'user_id' => $userId,
             'mime_type' => $mimeType,
             'disposition' => $disposition,
-        ], now()->addMinutes(self::TokenMinutes));
+        ], now()->addMinutes($this->tokenMinutes()));
 
         return [
             'url' => route('pdf.downloads.show', [
@@ -201,12 +197,22 @@ class PdfDownloadUrlService
             return;
         }
 
-        $oldestAllowedTimestamp = now()->subMinutes(self::CleanupMinutes)->getTimestamp();
+        $oldestAllowedTimestamp = now()->subMinutes($this->cleanupMinutes())->getTimestamp();
 
         foreach (File::files($directory) as $file) {
             if ($file->getMTime() < $oldestAllowedTimestamp) {
                 File::delete($file->getPathname());
             }
         }
+    }
+
+    private function tokenMinutes(): int
+    {
+        return max(10, (int) config('pdf-generation.download_retention_minutes', 60));
+    }
+
+    private function cleanupMinutes(): int
+    {
+        return $this->tokenMinutes() + 30;
     }
 }
