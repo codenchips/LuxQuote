@@ -98,7 +98,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes qpdf
-          sudo env "PATH=$PATH" "PUPPETEER_CACHE_DIR=$PUPPETEER_CACHE_DIR" npx puppeteer browsers install chrome-headless-shell --install-deps
+          sudo env "PATH=$PATH" "PUPPETEER_CACHE_DIR=$PUPPETEER_CACHE_DIR" npx puppeteer browsers install chrome --install-deps
+
+          chrome_path="$(node --input-type=module -e 'import puppeteer from "puppeteer"; process.stdout.write(await puppeteer.executablePath());')"
+          test -x "$chrome_path"
+          echo "PUPPETEER_EXECUTABLE_PATH=$chrome_path" >> "$GITHUB_ENV"
 
       - name: Run application test suite
         run: php artisan test --compact
