@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.15 - 2026-09-07
+
+Version: `0.2.14` -> `0.2.15`
+
+Changes included:
+
+- `73ec78d` Pin CI PDF browser executable
+
 ## 0.2.14 - 2026-09-07
 
 Version: `0.2.13` -> `0.2.14`
