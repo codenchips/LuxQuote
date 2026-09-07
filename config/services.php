@@ -46,12 +46,27 @@ return [
         'jwt_private_key_path' => env('SALESFORCE_JWT_PRIVATE_KEY_PATH'),
         'visits_calendar_id' => env('SALESFORCE_VISITS_CALENDAR_ID', '023J7000000YLWi'),
         'visits_calendar_name' => env('SALESFORCE_VISITS_CALENDAR_NAME', 'Visits'),
+        'timeout' => (int) env('SALESFORCE_HTTP_TIMEOUT', 30),
+        'connect_timeout' => (int) env('SALESFORCE_HTTP_CONNECT_TIMEOUT', 5),
+        'retry_attempts' => (int) env('SALESFORCE_HTTP_RETRY_ATTEMPTS', 3),
+        'retry_delay_ms' => (int) env('SALESFORCE_HTTP_RETRY_DELAY_MS', 250),
+    ],
+
+    'product_catalogue' => [
+        'endpoint' => env('PRODUCT_CATALOGUE_ENDPOINT', 'https://tcms.tamlite.co.uk/api/luxquote_data'),
+        'timeout' => (int) env('PRODUCT_CATALOGUE_HTTP_TIMEOUT', 30),
+        'connect_timeout' => (int) env('PRODUCT_CATALOGUE_HTTP_CONNECT_TIMEOUT', 5),
+        'retry_attempts' => (int) env('PRODUCT_CATALOGUE_HTTP_RETRY_ATTEMPTS', 3),
+        'retry_delay_ms' => (int) env('PRODUCT_CATALOGUE_HTTP_RETRY_DELAY_MS', 250),
     ],
 
     'datasheets' => [
         'endpoint' => env('DATASHEET_MERGE_ENDPOINT', 'https://tamlite.co.uk/ci_index.php/download_schedule'),
         'public_base_url' => env('DATASHEET_MERGE_PUBLIC_BASE_URL', 'https://tamlite.co.uk/pdfmerge'),
         'timeout' => (int) env('DATASHEET_MERGE_TIMEOUT', 60),
+        'connect_timeout' => (int) env('DATASHEET_MERGE_CONNECT_TIMEOUT', 5),
+        'retry_attempts' => (int) env('DATASHEET_MERGE_RETRY_ATTEMPTS', 3),
+        'retry_delay_ms' => (int) env('DATASHEET_MERGE_RETRY_DELAY_MS', 250),
     ],
 
 ];

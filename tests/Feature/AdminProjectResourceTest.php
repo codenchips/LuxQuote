@@ -2178,7 +2178,9 @@ class AdminProjectResourceTest extends TestCase
             }
         });
 
-        Http::fake(function (Request $request) {
+        $datasheetDownloadAttempts = 0;
+
+        Http::fake(function (Request $request) use (&$datasheetDownloadAttempts) {
             if ($request->url() === 'https://tamlite.co.uk/ci_index.php/download_schedule') {
                 return Http::response(str_repeat(' ', 1024).implode("\n", [
                     '{"step":0,"total":2,"message":"Page 0 of 2 generated."}',
@@ -2188,6 +2190,12 @@ class AdminProjectResourceTest extends TestCase
             }
 
             if ($request->url() === 'https://tamlite.co.uk/pdfmerge/datasheet-project.pdf') {
+                $datasheetDownloadAttempts++;
+
+                if ($datasheetDownloadAttempts === 1) {
+                    return Http::response([], 503);
+                }
+
                 return Http::response(self::pdfFixtureContent(), 200, [
                     'Content-Type' => 'application/pdf',
                 ]);
@@ -2221,6 +2229,7 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame('DS-001', $datasheetRequest->data()['info_project_id']);
         $this->assertTrue($datasheetRequest->data()['include_datasheets']);
         $this->assertFalse($datasheetRequest->data()['include_schedule']);
+        $this->assertSame(2, $datasheetDownloadAttempts);
         $this->assertJson($datasheetRequest->data()['skus']);
         $this->assertSame([
             [

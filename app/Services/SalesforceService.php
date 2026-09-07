@@ -3,6 +3,9 @@
 namespace App\Services;
 
 use App\Models\Project;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -39,6 +42,25 @@ class SalesforceService
     private const AUTH_CACHE_TTL_BUFFER_SECONDS = 60;
 
     private const AUTH_CACHE_DEFAULT_SECONDS = 3600;
+
+    private function request(bool $retryTransientFailures = true): PendingRequest
+    {
+        $request = Http::timeout(max(1, (int) config('services.salesforce.timeout', 30)))
+            ->connectTimeout(max(1, (int) config('services.salesforce.connect_timeout', 5)));
+
+        if (! $retryTransientFailures) {
+            return $request;
+        }
+
+        return $request->retry(
+            max(1, (int) config('services.salesforce.retry_attempts', 3)),
+            max(0, (int) config('services.salesforce.retry_delay_ms', 250)),
+            static fn (Throwable $exception): bool => $exception instanceof ConnectionException
+                || ($exception instanceof RequestException && in_array($exception->response->status(), [408, 429], true))
+                || ($exception instanceof RequestException && $exception->response->serverError()),
+            throw: false,
+        );
+    }
 
     /**
      * Authenticate and return the token + instance URL.
@@ -77,7 +99,7 @@ class SalesforceService
         }
 
         try {
-            $response = Http::asForm()->post($tokenUrl, [
+            $response = $this->request()->asForm()->post($tokenUrl, [
                 'grant_type' => 'client_credentials',
                 'client_id' => config('services.salesforce.client_id'),
                 'client_secret' => config('services.salesforce.client_secret'),
@@ -157,7 +179,7 @@ class SalesforceService
         }
 
         try {
-            $response = Http::asForm()->post($tokenUrl, [
+            $response = $this->request()->asForm()->post($tokenUrl, [
                 'grant_type' => self::JWT_BEARER_GRANT_TYPE,
                 'assertion' => $assertion,
             ]);
@@ -339,7 +361,8 @@ class SalesforceService
     private function soqlQuery(array $auth, string $soql, bool $logFailure = true): ?array
     {
         try {
-            $response = Http::withToken($auth['token'])
+            $response = $this->request()
+                ->withToken($auth['token'])
                 ->acceptJson()
                 ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/query/', [
                     'q' => $soql,
@@ -369,7 +392,19 @@ class SalesforceService
             return null;
         }
 
-        return $response->json();
+        $payload = $response->json();
+
+        if (! is_array($payload)) {
+            if ($logFailure) {
+                Log::error('Salesforce SOQL query returned an unexpected response.', [
+                    'soql' => $soql,
+                ]);
+            }
+
+            return null;
+        }
+
+        return $payload;
     }
 
     /**
@@ -690,11 +725,22 @@ class SalesforceService
             return ['success' => false, 'message' => 'No matching Salesforce Opportunity was found for this project.'];
         }
 
-        $response = Http::withToken($auth['token'])
-            ->acceptJson()
-            ->patch("{$auth['instanceUrl']}/services/data/".self::API_VERSION."/sobjects/Opportunity/{$opportunityId}", [
-                'Amount' => round($amount, 2),
+        try {
+            $response = $this->request(retryTransientFailures: false)
+                ->withToken($auth['token'])
+                ->acceptJson()
+                ->patch("{$auth['instanceUrl']}/services/data/".self::API_VERSION."/sobjects/Opportunity/{$opportunityId}", [
+                    'Amount' => round($amount, 2),
+                ]);
+        } catch (Throwable $exception) {
+            Log::error('Salesforce Opportunity amount update request failed', [
+                'project_id' => $project->id,
+                'opportunity_id' => $opportunityId,
+                'exception' => $exception,
             ]);
+
+            return ['success' => false, 'message' => 'Salesforce could not be reached. The Opportunity was not updated.'];
+        }
 
         if ($response->failed()) {
             Log::error('Salesforce Opportunity amount update failed', [
@@ -768,22 +814,33 @@ class SalesforceService
 
         $metadataJson = json_encode($metadata, JSON_THROW_ON_ERROR);
 
-        $response = Http::withToken($auth['token'])
-            ->acceptJson()
-            ->asMultipart()
-            ->post("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/ContentVersion', [
-                [
-                    'name' => 'entity_content',
-                    'contents' => $metadataJson,
-                    'headers' => ['Content-Type' => 'application/json'],
-                ],
-                [
-                    'name' => 'VersionData',
-                    'contents' => $pdfContent,
-                    'filename' => $filename,
-                    'headers' => ['Content-Type' => 'application/pdf'],
-                ],
+        try {
+            $response = $this->request(retryTransientFailures: false)
+                ->withToken($auth['token'])
+                ->acceptJson()
+                ->asMultipart()
+                ->post("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/ContentVersion', [
+                    [
+                        'name' => 'entity_content',
+                        'contents' => $metadataJson,
+                        'headers' => ['Content-Type' => 'application/json'],
+                    ],
+                    [
+                        'name' => 'VersionData',
+                        'contents' => $pdfContent,
+                        'filename' => $filename,
+                        'headers' => ['Content-Type' => 'application/pdf'],
+                    ],
+                ]);
+        } catch (Throwable $exception) {
+            Log::error('Salesforce file upload request failed', [
+                'project_id' => $project->id,
+                'opportunity_id' => $opportunityId,
+                'exception' => $exception,
             ]);
+
+            return ['success' => false, 'message' => 'Salesforce could not be reached. The PDF was not uploaded.'];
+        }
 
         if ($response->failed()) {
             Log::error('Salesforce file upload failed', [
@@ -1179,7 +1236,8 @@ class SalesforceService
                 }
             }
 
-            $response = Http::withToken($auth['token'])
+            $response = $this->request(retryTransientFailures: false)
+                ->withToken($auth['token'])
                 ->acceptJson()
                 ->post("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Event', $payload);
 
@@ -1282,7 +1340,8 @@ class SalesforceService
             }
         }
 
-        $response = Http::withToken($auth['token'])
+        $response = $this->request(retryTransientFailures: false)
+            ->withToken($auth['token'])
             ->acceptJson()
             ->patch("{$auth['instanceUrl']}/services/data/".self::API_VERSION."/sobjects/Event/{$eventId}", $payload);
 
@@ -1334,7 +1393,8 @@ class SalesforceService
                 ];
             }
 
-            $response = Http::withToken($auth['token'])
+            $response = $this->request(retryTransientFailures: false)
+                ->withToken($auth['token'])
                 ->acceptJson()
                 ->delete("{$auth['instanceUrl']}/services/data/".self::API_VERSION."/sobjects/Event/{$eventId}");
 
@@ -1385,7 +1445,8 @@ class SalesforceService
         }
 
         try {
-            $response = Http::withToken($auth['token'])
+            $response = $this->request()
+                ->withToken($auth['token'])
                 ->acceptJson()
                 ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Event/describe');
         } catch (Throwable $exception) {
@@ -1721,20 +1782,7 @@ class SalesforceService
      */
     private function fetchAllAccountFieldsUsingAuth(array $auth, string $accountId): ?array
     {
-        $describe = Http::withToken($auth['token'])
-            ->acceptJson()
-            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/Account/describe');
-
-        if ($describe->failed()) {
-            Log::error('Salesforce Account describe failed', [
-                'status' => $describe->status(),
-                'body' => $describe->body(),
-            ]);
-
-            return null;
-        }
-
-        $fieldNames = array_column($describe->json()['fields'] ?? [], 'name');
+        $fieldNames = array_column($this->describeObjectUsingAuth($auth, 'Account')['fields'] ?? [], 'name');
 
         if (empty($fieldNames)) {
             return null;
@@ -1756,20 +1804,7 @@ class SalesforceService
      */
     private function fetchAllUserFieldsUsingAuth(array $auth, array $userIds): ?array
     {
-        $describe = Http::withToken($auth['token'])
-            ->acceptJson()
-            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION.'/sobjects/User/describe');
-
-        if ($describe->failed()) {
-            Log::error('Salesforce User describe failed', [
-                'status' => $describe->status(),
-                'body' => $describe->body(),
-            ]);
-
-            return null;
-        }
-
-        $fieldNames = array_column($describe->json()['fields'] ?? [], 'name');
+        $fieldNames = array_column($this->describeObjectUsingAuth($auth, 'User')['fields'] ?? [], 'name');
 
         if (empty($fieldNames)) {
             return null;
@@ -1792,26 +1827,53 @@ class SalesforceService
      */
     private function describeFieldNames(array $auth, string $object): ?array
     {
-        $describe = Http::withToken($auth['token'])
-            ->acceptJson()
-            ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION."/sobjects/{$object}/describe");
+        $describe = $this->describeObjectUsingAuth($auth, $object);
 
-        if ($describe->failed()) {
-            Log::error('Salesforce object describe failed', [
-                'object' => $object,
-                'status' => $describe->status(),
-                'body' => $describe->body(),
-            ]);
-
+        if ($describe === null) {
             return null;
         }
 
-        return collect($describe->json()['fields'] ?? [])
+        return collect($describe['fields'] ?? [])
             ->pluck('name')
             ->filter(fn (mixed $field): bool => is_string($field) && filled($field))
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array{token: string, instanceUrl: string}  $auth
+     * @return array<string, mixed>|null
+     */
+    private function describeObjectUsingAuth(array $auth, string $object): ?array
+    {
+        try {
+            $response = $this->request()
+                ->withToken($auth['token'])
+                ->acceptJson()
+                ->get("{$auth['instanceUrl']}/services/data/".self::API_VERSION."/sobjects/{$object}/describe");
+        } catch (Throwable $exception) {
+            Log::error('Salesforce object describe request failed', [
+                'object' => $object,
+                'exception' => $exception,
+            ]);
+
+            return null;
+        }
+
+        if ($response->failed()) {
+            Log::error('Salesforce object describe failed', [
+                'object' => $object,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            return null;
+        }
+
+        $payload = $response->json();
+
+        return is_array($payload) ? $payload : null;
     }
 
     /**

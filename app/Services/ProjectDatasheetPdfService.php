@@ -5,12 +5,17 @@ namespace App\Services;
 use App\Models\Project;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Symfony\Component\Process\Process;
+use Throwable;
 
 class ProjectDatasheetPdfService
 {
@@ -140,11 +145,21 @@ class ProjectDatasheetPdfService
         ?int $progressUserId,
         array $areaIds = [],
     ): string {
-        $response = Http::asForm()
-            ->acceptJson()
-            ->timeout((int) config('services.datasheets.timeout', 60))
-            ->withOptions(['stream' => true])
-            ->post((string) config('services.datasheets.endpoint'), $this->formPayload($project, $revision, $projectSlug, $areaIds));
+        try {
+            $response = $this->datasheetRequest(retryTransientFailures: false)
+                ->asForm()
+                ->acceptJson()
+                ->withOptions(['stream' => true])
+                ->post((string) config('services.datasheets.endpoint'), $this->formPayload($project, $revision, $projectSlug, $areaIds));
+        } catch (Throwable $exception) {
+            Log::error('Datasheet generation API request failed.', [
+                'project_id' => $project->id,
+                'revision_id' => $revision->id,
+                'exception' => $exception,
+            ]);
+
+            throw new RuntimeException('The datasheet service could not be reached. Please try again.', previous: $exception);
+        }
 
         if (! $response->successful()) {
             throw new RuntimeException('The datasheet PDF could not be generated.');
@@ -163,13 +178,40 @@ class ProjectDatasheetPdfService
     {
         $url = rtrim((string) config('services.datasheets.public_base_url'), '/').'/'.ltrim($filename, '/');
 
-        $response = Http::timeout((int) config('services.datasheets.timeout', 60))->get($url);
+        try {
+            $response = $this->datasheetRequest()->get($url);
+        } catch (Throwable $exception) {
+            Log::error('Generated datasheet PDF download request failed.', [
+                'exception' => $exception,
+            ]);
+
+            throw new RuntimeException('The generated datasheet PDF could not be downloaded. Please try again.', previous: $exception);
+        }
 
         if (! $response->successful() || blank($response->body())) {
             throw new RuntimeException('The datasheet PDF could not be downloaded.');
         }
 
         File::put($destinationPath, $response->body());
+    }
+
+    private function datasheetRequest(bool $retryTransientFailures = true): PendingRequest
+    {
+        $request = Http::timeout(max(1, (int) config('services.datasheets.timeout', 60)))
+            ->connectTimeout(max(1, (int) config('services.datasheets.connect_timeout', 5)));
+
+        if (! $retryTransientFailures) {
+            return $request;
+        }
+
+        return $request->retry(
+            max(1, (int) config('services.datasheets.retry_attempts', 3)),
+            max(0, (int) config('services.datasheets.retry_delay_ms', 250)),
+            static fn (Throwable $exception): bool => $exception instanceof ConnectionException
+                || ($exception instanceof RequestException && in_array($exception->response->status(), [408, 429], true))
+                || ($exception instanceof RequestException && $exception->response->serverError()),
+            throw: false,
+        );
     }
 
     /**

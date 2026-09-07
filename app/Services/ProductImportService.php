@@ -5,14 +5,17 @@ namespace App\Services;
 use App\Enums\ProjectRevisionStatus;
 use App\Models\AppSetting;
 use App\Models\Product;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
+use Throwable;
 
 class ProductImportService
 {
-    private const API_URL = 'https://tcms.tamlite.co.uk/api/luxquote_data';
-
     public const LastPulledAtSettingKey = 'products_last_pulled_at';
 
     private const MaxProductPrice = 99999999.99;
@@ -48,11 +51,22 @@ class ProductImportService
      *
      * @return int The number of products imported.
      *
-     * @throws RuntimeException if the API request fails.
+     * @throws RuntimeException if the API request, payload validation, or replacement fails.
      */
     public function import(): int
     {
-        $response = Http::timeout(30)->post(self::API_URL);
+        try {
+            $response = $this->catalogueRequest()->post((string) config('services.product_catalogue.endpoint'));
+        } catch (Throwable $exception) {
+            Log::error('Product catalogue API could not be reached.', [
+                'exception' => $exception,
+            ]);
+
+            throw new RuntimeException(
+                'Product API could not be reached. The existing catalogue was left unchanged.',
+                previous: $exception,
+            );
+        }
 
         if ($response->failed()) {
             throw new RuntimeException("Product API request failed with status {$response->status()}.");
@@ -60,7 +74,11 @@ class ProductImportService
 
         $payload = $response->json();
 
-        if (! isset($payload['columns'], $payload['data'])) {
+        if (! is_array($payload)
+            || ! isset($payload['columns'], $payload['data'])
+            || ! is_array($payload['columns'])
+            || ! is_array($payload['data'])
+            || array_any($payload['data'], fn (mixed $row): bool => ! is_array($row))) {
             throw new RuntimeException('Unexpected API response structure.');
         }
 
@@ -73,16 +91,48 @@ class ProductImportService
         )));
         $records = $this->uniqueRecordsBySku($records);
 
-        Product::query()->delete();
-
-        foreach (array_chunk($records, 500) as $chunk) {
-            Product::insert($chunk);
+        if ($records === []) {
+            throw new RuntimeException('Product API response contained no valid products.');
         }
 
-        $this->populateMissingProjectLinePrices();
-        $this->recordSuccessfulPull();
+        try {
+            return DB::transaction(function () use ($records): int {
+                Product::query()->delete();
 
-        return count($records);
+                foreach (array_chunk($records, 500) as $chunk) {
+                    Product::insert($chunk);
+                }
+
+                $this->populateMissingProjectLinePrices();
+                $this->recordSuccessfulPull();
+
+                return count($records);
+            });
+        } catch (Throwable $exception) {
+            Log::error('Product catalogue replacement failed and was rolled back.', [
+                'exception' => $exception,
+                'product_count' => count($records),
+            ]);
+
+            throw new RuntimeException(
+                'Product catalogue could not be replaced. The existing catalogue was left unchanged.',
+                previous: $exception,
+            );
+        }
+    }
+
+    private function catalogueRequest(): PendingRequest
+    {
+        return Http::timeout(max(1, (int) config('services.product_catalogue.timeout', 30)))
+            ->connectTimeout(max(1, (int) config('services.product_catalogue.connect_timeout', 5)))
+            ->retry(
+                max(1, (int) config('services.product_catalogue.retry_attempts', 3)),
+                max(0, (int) config('services.product_catalogue.retry_delay_ms', 250)),
+                static fn (Throwable $exception): bool => $exception instanceof ConnectionException
+                    || ($exception instanceof RequestException && in_array($exception->response->status(), [408, 429], true))
+                    || ($exception instanceof RequestException && $exception->response->serverError()),
+                throw: false,
+            );
     }
 
     /**

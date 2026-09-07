@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Project;
 use App\Services\ProductImportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Tests\TestCase;
@@ -15,6 +16,13 @@ use Tests\TestCase;
 class ProductImportTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['services.product_catalogue.retry_delay_ms' => 0]);
+    }
 
     private function apiResponse(array $extra = []): array
     {
@@ -239,6 +247,43 @@ class ProductImportTest extends TestCase
         app(ProductImportService::class)->import();
     }
 
+    public function test_import_retries_transient_api_failures_before_replacing_the_catalogue(): void
+    {
+        Http::fakeSequence()
+            ->push(null, 503)
+            ->push(['message' => 'Please slow down'], 429)
+            ->push($this->apiResponse(), 200);
+
+        $count = app(ProductImportService::class)->import();
+
+        $this->assertSame(2, $count);
+        $this->assertDatabaseCount('products', 2);
+        Http::assertSentCount(3);
+    }
+
+    public function test_import_handles_connection_failure_without_removing_existing_products(): void
+    {
+        $existingProduct = Product::factory()->create(['sku' => 'EXISTING-001']);
+
+        Http::fake(Http::failedConnection('Catalogue timed out.'));
+
+        try {
+            app(ProductImportService::class)->import();
+        } catch (RuntimeException $exception) {
+            $this->assertSame(
+                'Product API could not be reached. The existing catalogue was left unchanged.',
+                $exception->getMessage(),
+            );
+            $this->assertDatabaseCount('products', 1);
+            $this->assertDatabaseHas('products', ['id' => $existingProduct->id, 'sku' => 'EXISTING-001']);
+            Http::assertSentCount(3);
+
+            return;
+        }
+
+        $this->fail('A catalogue connection failure should abort the import.');
+    }
+
     public function test_import_throws_on_unexpected_response_structure(): void
     {
         Http::fake(['*' => Http::response(['unexpected' => true], 200)]);
@@ -247,6 +292,83 @@ class ProductImportTest extends TestCase
         $this->expectExceptionMessage('Unexpected API response structure.');
 
         app(ProductImportService::class)->import();
+    }
+
+    public function test_import_rejects_an_empty_catalogue_without_removing_existing_products(): void
+    {
+        $existingProduct = Product::factory()->create(['sku' => 'EXISTING-001']);
+
+        Http::fake(['*' => Http::response($this->apiResponse(['data' => []]), 200)]);
+
+        try {
+            app(ProductImportService::class)->import();
+        } catch (RuntimeException $exception) {
+            $this->assertSame('Product API response contained no valid products.', $exception->getMessage());
+            $this->assertDatabaseCount('products', 1);
+            $this->assertDatabaseHas('products', ['id' => $existingProduct->id, 'sku' => 'EXISTING-001']);
+
+            return;
+        }
+
+        $this->fail('An empty catalogue should not replace existing products.');
+    }
+
+    public function test_import_rolls_back_the_catalogue_and_pull_time_when_a_later_insert_fails(): void
+    {
+        $existingProduct = Product::factory()->create(['sku' => 'EXISTING-001']);
+        AppSetting::query()->create([
+            'key' => ProductImportService::LastPulledAtSettingKey,
+            'value' => ['pulled_at' => '2026-01-01T09:00:00+00:00'],
+        ]);
+
+        $rows = collect(range(1, 501))
+            ->map(fn (int $number): array => [
+                'id' => (string) $number,
+                'site' => 'Tamlite',
+                'product' => "Imported Product {$number}",
+                'sku' => sprintf('IMPORT-%04d', $number),
+                'cost' => '10.00',
+                'description' => "Imported description {$number}",
+                'type' => 'Test',
+            ])
+            ->all();
+
+        Http::fake(['*' => Http::response($this->apiResponse(['data' => $rows]), 200)]);
+
+        $productInsertCount = 0;
+        DB::connection()->beforeExecuting(function (string $query) use (&$productInsertCount): void {
+            if (! str_starts_with(strtolower($query), 'insert into `products`')) {
+                return;
+            }
+
+            $productInsertCount++;
+
+            if ($productInsertCount === 2) {
+                throw new RuntimeException('Simulated second product chunk failure.');
+            }
+        });
+
+        try {
+            app(ProductImportService::class)->import();
+        } catch (RuntimeException $exception) {
+            $this->assertSame(
+                'Product catalogue could not be replaced. The existing catalogue was left unchanged.',
+                $exception->getMessage(),
+            );
+            $this->assertSame('Simulated second product chunk failure.', $exception->getPrevious()?->getMessage());
+            $this->assertSame(2, $productInsertCount);
+            $this->assertDatabaseCount('products', 1);
+            $this->assertDatabaseHas('products', ['id' => $existingProduct->id, 'sku' => 'EXISTING-001']);
+            $this->assertDatabaseMissing('products', ['sku' => 'IMPORT-0001']);
+            $this->assertSame(
+                '2026-01-01T09:00:00+00:00',
+                AppSetting::query()->where('key', ProductImportService::LastPulledAtSettingKey)->value('value')['pulled_at'] ?? null,
+            );
+
+            return;
+        }
+
+        $this->fail('A failed catalogue insert should abort the import.');
     }
 
     public function test_artisan_command_imports_products(): void

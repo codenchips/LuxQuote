@@ -29,6 +29,7 @@ class SalesforceServiceTest extends TestCase
             'services.salesforce.jwt_private_key' => null,
             'services.salesforce.jwt_private_key_path' => null,
             'services.salesforce.jwt_subject' => null,
+            'services.salesforce.retry_delay_ms' => 0,
         ]);
     }
 
@@ -234,6 +235,41 @@ class SalesforceServiceTest extends TestCase
         Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
             && str_contains($request->url(), '/services/data/v65.0/query/')
             && ($request->data()['q'] ?? null) === "SELECT Id, Name, Type FROM Calendar WHERE Type = 'Public' ORDER BY Name ASC LIMIT 25");
+    }
+
+    public function test_salesforce_queries_retry_transient_failures(): void
+    {
+        $queryAttempts = 0;
+
+        Http::fake(function (Request $request) use (&$queryAttempts) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response([
+                    'access_token' => 'live-test-token',
+                    'instance_url' => 'https://example.my.salesforce.com',
+                    'expires_in' => 3600,
+                ]);
+            }
+
+            $queryAttempts++;
+
+            if ($queryAttempts === 1) {
+                return Http::response(['message' => 'Temporarily unavailable'], 503);
+            }
+
+            return Http::response([
+                'records' => [[
+                    'Id' => '023000000000001AAA',
+                    'Name' => 'Visits',
+                    'Type' => 'Public',
+                ]],
+            ]);
+        });
+
+        $result = app(SalesforceService::class)->fetchPublicCalendars(25);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('Visits', $result['records'][0]['Name']);
+        $this->assertSame(2, $queryAttempts);
     }
 
     public function test_fetch_public_calendars_handles_authentication_connection_failure_without_throwing(): void
@@ -671,7 +707,9 @@ class SalesforceServiceTest extends TestCase
 
     public function test_update_calendar_booking_handles_connection_failure_without_throwing(): void
     {
-        Http::fake(function (Request $request) {
+        $updateAttempts = 0;
+
+        Http::fake(function (Request $request) use (&$updateAttempts) {
             if (str_contains($request->url(), '/services/oauth2/token')) {
                 return Http::response([
                     'access_token' => 'live-test-token',
@@ -688,6 +726,8 @@ class SalesforceServiceTest extends TestCase
                 return Http::response([], 403);
             }
 
+            $updateAttempts++;
+
             throw new ConnectionException('Salesforce timed out.');
         });
 
@@ -699,6 +739,7 @@ class SalesforceServiceTest extends TestCase
 
         $this->assertFalse($result['success']);
         $this->assertSame('Salesforce could not be reached. The event has not been updated.', $result['message']);
+        $this->assertSame(1, $updateAttempts);
     }
 
     public function test_update_calendar_booking_verifies_calendar_ownership_and_allows_only_editable_fields(): void
