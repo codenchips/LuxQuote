@@ -126,6 +126,20 @@ class DocumentPackController extends Controller
             $tender,
             $includeCover,
         );
+        $generatedItemOptions = $documentPack->items
+            ->filter(fn (DocumentPackItem $item): bool => $item->role->source() === DocumentPackItemSource::Generated)
+            ->map(function (DocumentPackItem $item) use ($revision): array {
+                $options = app(DocumentPackGeneratedOptionsService::class)->resolve($item->configuration, $revision);
+
+                return [
+                    'role' => $item->role->value,
+                    'area_scope' => $options['area_scope'],
+                    'area_count' => count($options['area_names']),
+                    'include_datasheets' => $options['include_datasheets'],
+                    'datasheet_count' => $options['datasheet_count'],
+                ];
+            })
+            ->values();
 
         ActivityLog::create([
             'user_id' => $request->user()->id,
@@ -142,6 +156,8 @@ class DocumentPackController extends Controller
                 'tender_id' => $tender?->id,
                 'tender_account_name' => $tender?->account_name,
                 'include_cover' => $includeCover,
+                'include_datasheets' => $generatedItemOptions->contains('include_datasheets', true),
+                'generated_item_options' => $generatedItemOptions->all(),
                 'document_count' => $documentPack->items()->count(),
                 'generation_batch_key' => $this->generationBatchKey($request),
                 'generation_batch_size' => $this->generationBatchSize($request, $includeCover),

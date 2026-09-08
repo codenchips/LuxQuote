@@ -710,7 +710,7 @@
                 <div class="flex flex-col gap-4 border-b border-gray-200 px-5 py-4 dark:border-white/10 md:flex-row md:items-center md:justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-950 dark:text-white">Output History</h2>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Previously generated quote and schedule PDFs for this project.</p>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Previously generated quote, schedule, and document pack PDFs for this project.</p>
                     </div>
 
                     <div class="relative w-full md:w-72">
@@ -736,7 +736,7 @@
                             {{ $outputHistorySearch ? 'No matching PDFs found' : 'No generated PDFs yet' }}
                         </p>
                         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                            {{ $outputHistorySearch ? 'Try a different search term.' : 'Generated quotes and schedules will appear here.' }}
+                            {{ $outputHistorySearch ? 'Try a different search term.' : 'Generated quotes, schedules, and document packs will appear here.' }}
                         </p>
                     </div>
                 @else
@@ -767,13 +767,17 @@
                                         <td class="whitespace-nowrap px-5 py-4">{{ $row['scope'] }}</td>
                                         <td class="max-w-64 truncate px-5 py-4">{{ $row['tender'] ?? '—' }}</td>
                                         <td class="whitespace-nowrap px-5 py-4">
-                                            <span @class([
-                                                'inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold',
-                                                'border-sky-500/30 bg-sky-500/15 text-sky-200' => $row['included_datasheets'],
-                                                'border-gray-500/30 bg-gray-500/10 text-gray-300' => ! $row['included_datasheets'],
-                                            ])>
-                                                {{ $row['included_datasheets'] ? 'Yes' : 'No' }}
-                                            </span>
+                                            @if($row['included_datasheets'] === null)
+                                                <span class="inline-flex rounded-md border border-gray-500/30 bg-gray-500/10 px-2.5 py-1 text-xs font-semibold text-gray-300" title="This detail was not recorded for older document pack outputs.">—</span>
+                                            @else
+                                                <span @class([
+                                                    'inline-flex rounded-md border px-2.5 py-1 text-xs font-semibold',
+                                                    'border-sky-500/30 bg-sky-500/15 text-sky-200' => $row['included_datasheets'],
+                                                    'border-gray-500/30 bg-gray-500/10 text-gray-300' => ! $row['included_datasheets'],
+                                                ])>
+                                                    {{ $row['included_datasheets'] ? 'Yes' : 'No' }}
+                                                </span>
+                                            @endif
                                         </td>
                                         <td class="whitespace-nowrap px-5 py-4">{{ $row['generated_at'] }}</td>
                                         <td class="whitespace-nowrap px-5 py-4 text-right">

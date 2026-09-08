@@ -159,7 +159,7 @@ Document packs deliberately separate editing from output:
 
 - `output.manage-document-packs` allows a user to create, rename, reorder, update, and delete packs, uploaded Custom PDFs, and template/generated pack entries.
 - `output.produce-document-packs` allows a user to request the merged PDF download.
-- `output.history.view` allows a user to see the Output page History tab and regenerate previously generated Quote/Schedule PDFs from the logged output options.
+- `output.history.view` allows a user to see the Output page History tab and regenerate previously generated Quote, Schedule, and Document Pack PDFs from the logged output options.
 
 These permissions do not bypass the permissions of generated contents:
 
@@ -176,6 +176,8 @@ Quote and Schedule entries are stored in a template as dynamic placeholders and 
 Each generated Quote or Schedule item can store its own area scope and Include datasheets choice. These options use the existing `output.manage-document-packs` capability; they do not introduce a broader output permission. Selected areas are saved by name so a template can resolve them against the destination revision. Missing or renamed areas require the user to refresh the item before generation, and the queue/controller repeat that validation server-side.
 
 When a saved pack contains a Quote and the project has Tenders, generation uses the same Tender selection pattern as Quick Output. Every selected Tender produces a separate complete pack with its own Quote cover sheet; clearing all selections produces one pack without a cover sheet. Tender IDs must belong to the current project and are checked at queue submission and again by the PDF service. Quote, pricing, approval, and document-pack generation permissions remain mandatory.
+
+Successful Document Pack generations appear alongside Quotes and Schedules in Output History. New records snapshot the pack name, revision, Tender/cover choice, and whether any generated pack item included datasheets. Older retained pack logs remain visible, with details that were not historically recorded shown as unavailable. Regeneration is offered only while the referenced pack still exists and the user retains the pack plus contained-output permissions.
 
 The UI hides unavailable roles and disables blocked generation, while Livewire methods, the download controller, and the merge service enforce the same rules server-side. Pack and revision IDs must belong to the current project; non-admin users remain limited to Open projects or projects they own.
 

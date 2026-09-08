@@ -150,7 +150,7 @@ The `0.2.4`/`0.2.5` feature tranche introduced the forward-only migrations liste
 
 ## Pre-deployment Quality and Security Gate
 
-The 7–8 September dependency-security and PDF-output refresh updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and compatible transitive packages. With the response-header, deployment, external API, queued-PDF, and Document Pack hardening, the reviewed tree passes **395 tests / 2,324 assertions**, the production Vite build, Composer validation/platform checks, and the full production-safe PDF health command. Both `composer audit --locked` and `npm audit --omit=dev` report no vulnerabilities locally.
+The 7–8 September dependency-security and PDF-output refresh updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and compatible transitive packages. With the response-header, deployment, external API, queued-PDF, and Document Pack hardening, the reviewed tree passes **396 tests / 2,332 assertions**, the production Vite build, Composer validation/platform checks, and the full production-safe PDF health command. Both `composer audit --locked` and `npm audit --omit=dev` report no vulnerabilities locally.
 
 Production `0.2.12` installs this exact reviewed lock and the matching published Filament assets. Do **not** run `composer update` on the VPS: normal workflows use `composer install` and must retain the reviewed versions. This dependency refresh introduced no migrations and performed no database rewrite; deployment used the standard forward-only migration step.
 

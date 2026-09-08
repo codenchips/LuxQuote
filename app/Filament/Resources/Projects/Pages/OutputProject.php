@@ -265,7 +265,7 @@ class OutputProject extends ViewRecord
     }
 
     /**
-     * @return array<int, array{user: string, revision: string, type: string, type_classes: string, scope: string, included_datasheets: bool, tender: string|null, filename: string, generated_at: string, regenerate_url: string|null}>
+     * @return array<int, array{user: string, revision: string, type: string, type_classes: string, scope: string, included_datasheets: bool|null, tender: string|null, filename: string, generated_at: string, regenerate_url: string|null}>
      */
     public function outputHistoryRows(): array
     {
@@ -306,7 +306,7 @@ class OutputProject extends ViewRecord
     }
 
     /**
-     * @return array<int, array{user: string, revision: string, type: string, type_classes: string, scope: string, included_datasheets: bool, tender: string|null, filename: string, generated_at: string, regenerate_url: string|null}>
+     * @return array<int, array{user: string, revision: string, type: string, type_classes: string, scope: string, included_datasheets: bool|null, tender: string|null, filename: string, generated_at: string, regenerate_url: string|null}>
      */
     private function filteredOutputHistoryRows(): array
     {
@@ -325,7 +325,9 @@ class OutputProject extends ViewRecord
                     $row['type'],
                     $row['scope'],
                     $row['tender'] ?? '',
-                    $row['included_datasheets'] ? 'datasheets yes included' : 'datasheets no',
+                    $row['included_datasheets'] === null
+                        ? 'datasheets unknown'
+                        : ($row['included_datasheets'] ? 'datasheets yes included' : 'datasheets no'),
                     $row['filename'],
                     $row['generated_at'],
                 ]))->lower()->toString();
@@ -337,7 +339,7 @@ class OutputProject extends ViewRecord
     }
 
     /**
-     * @return array<int, array{user: string, revision: string, type: string, type_classes: string, scope: string, included_datasheets: bool, tender: string|null, filename: string, generated_at: string, regenerate_url: string|null}>
+     * @return array<int, array{user: string, revision: string, type: string, type_classes: string, scope: string, included_datasheets: bool|null, tender: string|null, filename: string, generated_at: string, regenerate_url: string|null}>
      */
     private function allOutputHistoryRows(): array
     {
@@ -348,22 +350,30 @@ class OutputProject extends ViewRecord
         $revisions = $this->record->revisions()
             ->get(['id', 'revision_number'])
             ->keyBy('revision_number');
+        $documentPacks = $this->record->documentPacks()
+            ->with('items:id,document_pack_id,role')
+            ->get()
+            ->keyBy('id');
 
         $liveLogs = ActivityLog::query()
             ->withinRetention()
             ->where('project_id', $this->record->id)
-            ->whereIn('action_type', ['quote_pdf.generated', 'schedule_pdf.generated'])
+            ->whereIn('action_type', ['quote_pdf.generated', 'schedule_pdf.generated', 'document_pack.generated'])
             ->with('user:id,name,email')
             ->latest()
             ->limit(100)
             ->get();
 
         return $liveLogs
-            ->map(function (ActivityLog $log) use ($revisions): array {
+            ->map(function (ActivityLog $log) use ($documentPacks, $revisions): array {
                 $payload = $log->payload ?? [];
                 $isQuote = $log->action_type === 'quote_pdf.generated';
+                $isDocumentPack = $log->action_type === 'document_pack.generated';
                 $revisionNumber = (int) ($payload['revision_number'] ?? $log->revision_number ?? 0);
                 $revision = $revisions->get($revisionNumber);
+                $documentPack = $isDocumentPack
+                    ? $documentPacks->get((int) ($payload['document_pack_id'] ?? 0))
+                    : null;
                 $areaIds = collect($payload['area_ids'] ?? [])
                     ->map(fn (mixed $areaId): int => (int) $areaId)
                     ->filter(fn (int $areaId): bool => $areaId > 0)
@@ -376,18 +386,24 @@ class OutputProject extends ViewRecord
                 return [
                     'user' => $log->user?->name ?: Str::before($log->user_email_snapshot, '@'),
                     'revision' => (string) ($payload['revision_label'] ?? ($revision?->label() ?? ProjectRevision::labelForNumber($revisionNumber))),
-                    'type' => $isQuote ? 'Quote' : 'Schedule',
-                    'type_classes' => $isQuote
-                        ? 'border-sky-500/30 bg-sky-500/15 text-sky-200'
-                        : 'border-emerald-500/30 bg-emerald-500/15 text-emerald-200',
-                    'scope' => $areaCount === null ? 'Full Project' : $areaCount.' '.Str::plural('Area', $areaCount),
-                    'included_datasheets' => (bool) ($payload['include_datasheets'] ?? str_contains((string) ($payload['filename'] ?? ''), 'with-datasheets')),
+                    'type' => $isDocumentPack ? 'Document Pack' : ($isQuote ? 'Quote' : 'Schedule'),
+                    'type_classes' => match (true) {
+                        $isDocumentPack => 'border-violet-500/30 bg-violet-500/15 text-violet-200',
+                        $isQuote => 'border-sky-500/30 bg-sky-500/15 text-sky-200',
+                        default => 'border-emerald-500/30 bg-emerald-500/15 text-emerald-200',
+                    },
+                    'scope' => $isDocumentPack
+                        ? (string) ($payload['document_pack_name'] ?? 'Document Pack')
+                        : ($areaCount === null ? 'Full Project' : $areaCount.' '.Str::plural('Area', $areaCount)),
+                    'included_datasheets' => $isDocumentPack && ! array_key_exists('include_datasheets', $payload)
+                        ? null
+                        : (bool) ($payload['include_datasheets'] ?? str_contains((string) ($payload['filename'] ?? ''), 'with-datasheets')),
                     'tender' => filled($payload['tender_account_name'] ?? null)
                         ? (string) $payload['tender_account_name']
                         : (filled($payload['tender'] ?? null) ? (string) $payload['tender'] : null),
                     'filename' => (string) ($payload['filename'] ?? ''),
                     'generated_at' => $this->formatOutputHistoryDate($log->created_at),
-                    'regenerate_url' => $this->outputHistoryRegenerateUrl($log, $revision?->id, $areaIds),
+                    'regenerate_url' => $this->outputHistoryRegenerateUrl($log, $revision?->id, $areaIds, $documentPack),
                 ];
             })
             ->all();
@@ -1643,10 +1659,44 @@ class OutputProject extends ViewRecord
     /**
      * @param  array<int, int>  $areaIds
      */
-    private function outputHistoryRegenerateUrl(ActivityLog $log, ?int $revisionId, array $areaIds): ?string
-    {
+    private function outputHistoryRegenerateUrl(
+        ActivityLog $log,
+        ?int $revisionId,
+        array $areaIds,
+        ?DocumentPack $documentPack = null,
+    ): ?string {
         $payload = $log->payload ?? [];
         $isQuote = $log->action_type === 'quote_pdf.generated';
+        $isDocumentPack = $log->action_type === 'document_pack.generated';
+
+        if ($isDocumentPack) {
+            if (! $this->canProduceDocumentPacks() || $documentPack === null) {
+                return null;
+            }
+
+            if ($documentPack->items->contains(fn (DocumentPackItem $item): bool => $item->role === DocumentPackItemRole::Quote) && ! $this->canProduceQuote()) {
+                return null;
+            }
+
+            if ($documentPack->items->contains(fn (DocumentPackItem $item): bool => $item->role === DocumentPackItemRole::UnpricedSchedule) && ! $this->canProduceUnpricedSchedule()) {
+                return null;
+            }
+
+            $parameters = [
+                'project' => $this->record,
+                'documentPack' => $documentPack,
+                'revision' => $revisionId ?? (int) $this->record->active_revision_id,
+            ];
+
+            if ((bool) ($payload['include_cover'] ?? false) && filled($payload['tender_id'] ?? null)) {
+                $parameters['tender_id'] = (int) $payload['tender_id'];
+                $parameters['include_cover'] = true;
+            } else {
+                $parameters['include_cover'] = false;
+            }
+
+            return route('projects.document-packs.download', $parameters);
+        }
 
         if ($isQuote && ! $this->canProduceQuote()) {
             return null;

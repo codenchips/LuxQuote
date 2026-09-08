@@ -6,6 +6,7 @@ use App\Enums\DocumentPackItemRole;
 use App\Enums\DocumentPackItemSource;
 use App\Enums\ProjectRevisionStatus;
 use App\Filament\Resources\Projects\Pages\OutputProject;
+use App\Models\ActivityLog;
 use App\Models\DocumentPack;
 use App\Models\DocumentPackItem;
 use App\Models\Permission;
@@ -1062,7 +1063,54 @@ class AdminDocumentPackTest extends TestCase
             'revision_number' => 1,
         ]);
 
+        $historyRow = Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->instance()
+            ->outputHistoryRows()[0];
+
+        $this->assertSame('Document Pack', $historyRow['type']);
+        $this->assertSame('Customer Pack', $historyRow['scope']);
+        $this->assertFalse($historyRow['included_datasheets']);
+        $this->assertSame(route('projects.document-packs.download', [
+            'project' => $project,
+            'documentPack' => $pack,
+            'revision' => $project->active_revision_id,
+            'include_cover' => false,
+        ]), $historyRow['regenerate_url']);
+
         File::delete($response->baseResponse->getFile()->getPathname());
+    }
+
+    public function test_existing_document_pack_activity_is_visible_in_output_history(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $pack = DocumentPack::factory()->for($project)->create([
+            'created_by' => $admin->id,
+            'name' => 'Legacy Pack Log',
+        ]);
+        ActivityLog::query()->create([
+            'user_id' => $admin->id,
+            'project_id' => $project->id,
+            'action_type' => 'document_pack.generated',
+            'user_email_snapshot' => $admin->email,
+            'project_name_snapshot' => $project->name,
+            'revision_number' => $project->activeRevision->revision_number,
+            'payload' => [
+                'document_pack_id' => $pack->id,
+                'document_pack_name' => $pack->name,
+                'filename' => 'legacy-document-pack.pdf',
+            ],
+        ]);
+        $this->actingAs($admin);
+
+        $historyRow = Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->instance()
+            ->outputHistoryRows()[0];
+
+        $this->assertSame('Document Pack', $historyRow['type']);
+        $this->assertSame('Legacy Pack Log', $historyRow['scope']);
+        $this->assertNull($historyRow['included_datasheets']);
+        $this->assertNotNull($historyRow['regenerate_url']);
     }
 
     public static function makePdf(string $text): string
