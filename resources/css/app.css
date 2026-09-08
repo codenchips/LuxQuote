@@ -27,6 +27,11 @@
     --color-primary-950: var(--primary-950);
 }
 
+/* Filament focuses this programmatic skip-link target after some modal renders. */
+#fi-main-content:focus {
+    outline: none;
+}
+
 @media (min-width: 1024px) {
     .fi-body.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar:not(.fi-sidebar-open) {
         width: 4.125rem;

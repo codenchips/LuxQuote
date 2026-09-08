@@ -14,6 +14,9 @@
         $canFlagValidationLines = $this->canFlagValidationLines();
         $canMergeValidationLines = $this->canMergeValidationLines();
         $canApproveValidationLines = $this->canApproveValidationLines();
+        $comparisonOptions = $this->revisionComparisonOptions;
+        $selectedComparisonIds = collect($selectedComparisonRevisionIds)->map(fn ($id) => (int) $id)->unique()->values();
+        $comparison = $revisionComparisonModalOpen ? $this->revisionComparison : [];
         $validatedLineGridColumns = $canViewPrices && $projectHasCover
             ? '130px 1fr 70px 95px 210px 95px 1.4fr 110px'
             : ($canViewPrices
@@ -320,6 +323,218 @@
                 </div>
             @endforelse
         </div>
+
+        @if($revisionCompareSelectionModalOpen)
+        <div
+            x-data
+            x-on:keydown.escape.window="$wire.closeRevisionCompareSelectionModal()"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="revision-compare-selection-title"
+            class="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        >
+            <div
+                class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                wire:click="closeRevisionCompareSelectionModal"
+            ></div>
+
+            <div class="relative z-10 w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
+                <div class="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+                    <div>
+                        <h2 id="revision-compare-selection-title" class="text-base font-semibold text-gray-900 dark:text-white">Compare revisions</h2>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Select exactly two revisions. The older revision will be shown first.</p>
+                    </div>
+                    <button
+                        type="button"
+                        wire:click="closeRevisionCompareSelectionModal"
+                        class="rounded-md p-1 text-gray-400 transition hover:text-gray-700 dark:hover:text-gray-200"
+                        aria-label="Close revision selection"
+                    >
+                        <x-heroicon-o-x-mark class="h-5 w-5" />
+                    </button>
+                </div>
+
+                <div class="max-h-[55vh] divide-y divide-gray-200 overflow-y-auto px-6 py-2 dark:divide-gray-700">
+                    @foreach($comparisonOptions as $revisionOption)
+                        @php
+                            $revisionSelected = $selectedComparisonIds->contains($revisionOption['id']);
+                            $selectionLimitReached = $selectedComparisonIds->count() >= 2 && ! $revisionSelected;
+                        @endphp
+                        <label class="flex items-center gap-4 py-4 {{ $selectionLimitReached ? 'cursor-not-allowed opacity-50' : 'cursor-pointer' }}">
+                            <input
+                                type="checkbox"
+                                wire:model.live="selectedComparisonRevisionIds"
+                                value="{{ $revisionOption['id'] }}"
+                                @disabled($selectionLimitReached)
+                                class="h-5 w-5 rounded border-gray-300 text-orange-600 focus:ring-orange-500 dark:border-gray-600 dark:bg-gray-800"
+                            />
+                            <span class="min-w-0 flex-1">
+                                <span class="flex flex-wrap items-center gap-2">
+                                    <span class="font-semibold text-gray-950 dark:text-white">{{ $revisionOption['label'] }}</span>
+                                    <span class="rounded-md border border-gray-300 px-2 py-0.5 text-xs text-gray-600 dark:border-gray-600 dark:text-gray-300">{{ $revisionOption['status'] }}</span>
+                                    @if($revisionOption['active'])
+                                        <span class="rounded-md bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800 dark:bg-orange-500/15 dark:text-orange-300">Active</span>
+                                    @endif
+                                </span>
+                                <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">Created {{ $revisionOption['created_at'] }}</span>
+                            </span>
+                        </label>
+                    @endforeach
+                </div>
+
+                <div class="flex items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 px-6 py-4 dark:border-gray-700 dark:bg-gray-900">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">{{ $selectedComparisonIds->count() }} of 2 selected</span>
+                    <div class="flex items-center gap-3">
+                        <x-filament::button wire:click="closeRevisionCompareSelectionModal" color="gray">
+                            Cancel
+                        </x-filament::button>
+                        <x-filament::button
+                            wire:click="compareSelectedRevisions"
+                            wire:loading.attr="disabled"
+                            wire:target="compareSelectedRevisions"
+                            :disabled="$selectedComparisonIds->count() !== 2"
+                        >
+                            Compare revisions
+                        </x-filament::button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endif
+
+        @if($revisionComparisonModalOpen && $comparison !== [])
+        <div
+            x-data
+            x-on:keydown.escape.window="$wire.closeRevisionComparisonModal()"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="revision-comparison-title"
+            class="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-6"
+        >
+            <div
+                class="absolute inset-0 bg-black/75 backdrop-blur-sm"
+                wire:click="closeRevisionComparisonModal"
+            ></div>
+
+            <div class="relative z-10 flex h-[92vh] w-full max-w-[96rem] flex-col overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-gray-200 dark:bg-[#0d1117] dark:ring-gray-700">
+                <div class="flex flex-wrap items-start justify-between gap-4 border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+                    <div>
+                        <h2 id="revision-comparison-title" class="text-lg font-semibold text-gray-950 dark:text-white">
+                            {{ $comparison['from']['label'] }} <span class="text-gray-400">→</span> {{ $comparison['to']['label'] }}
+                        </h2>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Read-only revision comparison · red was removed or replaced · green was added</p>
+                    </div>
+                    <button
+                        type="button"
+                        wire:click="closeRevisionComparisonModal"
+                        class="rounded-md p-1 text-gray-400 transition hover:text-gray-700 dark:hover:text-gray-200"
+                        aria-label="Close revision comparison"
+                    >
+                        <x-heroicon-o-x-mark class="h-6 w-6" />
+                    </button>
+                </div>
+
+                <div class="flex flex-wrap gap-x-5 gap-y-2 border-b border-gray-200 bg-gray-50 px-6 py-3 text-xs font-medium text-gray-600 dark:border-gray-700 dark:bg-white/[0.03] dark:text-gray-300">
+                    <span class="text-green-700 dark:text-green-400">+{{ $comparison['summary']['areas_added'] }} areas</span>
+                    <span class="text-red-700 dark:text-red-400">−{{ $comparison['summary']['areas_removed'] }} areas</span>
+                    <span>{{ $comparison['summary']['areas_changed'] }} areas changed</span>
+                    <span class="text-green-700 dark:text-green-400">+{{ $comparison['summary']['lines_added'] }} lines</span>
+                    <span class="text-red-700 dark:text-red-400">−{{ $comparison['summary']['lines_removed'] }} lines</span>
+                    <span>{{ $comparison['summary']['lines_changed'] }} lines changed</span>
+                </div>
+
+                <div class="flex-1 overflow-auto p-4 font-mono text-[13px] leading-6 sm:p-6">
+                    @if(collect($comparison['summary'])->sum() === 0)
+                        <div class="rounded-lg border border-gray-200 px-5 py-12 text-center font-sans text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                            These revisions contain no differences.
+                        </div>
+                    @endif
+
+                    <div class="space-y-5">
+                        @foreach($comparison['areas'] as $areaIndex => $areaDiff)
+                            @php
+                                $areaName = $areaDiff['to_name'] ?? $areaDiff['from_name'] ?? 'Untitled area';
+                                $areaTone = match($areaDiff['status']) {
+                                    'added' => 'border-green-300 dark:border-green-800',
+                                    'removed' => 'border-red-300 dark:border-red-800',
+                                    'changed' => 'border-amber-300 dark:border-amber-800',
+                                    default => 'border-gray-200 dark:border-gray-700',
+                                };
+                            @endphp
+                            <section wire:key="comparison-area-{{ $areaIndex }}" class="overflow-hidden rounded-lg border {{ $areaTone }}">
+                                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-gray-100 px-4 py-2 dark:border-gray-700 dark:bg-[#161b22]">
+                                    <span class="font-semibold text-purple-700 dark:text-purple-300">@@ Area: {{ $areaName }} @@</span>
+                                    @if($areaDiff['status'] !== 'unchanged')
+                                        <span class="font-sans text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ $areaDiff['status'] }}</span>
+                                    @endif
+                                </div>
+
+                                @if($areaDiff['status'] === 'changed' && ($areaDiff['from_name'] !== $areaDiff['to_name'] || $areaDiff['from_position'] !== $areaDiff['to_position']))
+                                    @if($areaDiff['from_name'] !== $areaDiff['to_name'])
+                                        <div class="grid grid-cols-[1.25rem_7rem_1fr] bg-red-50 px-4 text-red-900 dark:bg-red-950/35 dark:text-red-200"><span>-</span><span>Area name</span><span>{{ $areaDiff['from_name'] }}</span></div>
+                                        <div class="grid grid-cols-[1.25rem_7rem_1fr] bg-green-50 px-4 text-green-900 dark:bg-green-950/35 dark:text-green-200"><span>+</span><span>Area name</span><span>{{ $areaDiff['to_name'] }}</span></div>
+                                    @endif
+                                    @if($areaDiff['from_position'] !== $areaDiff['to_position'])
+                                        <div class="grid grid-cols-[1.25rem_7rem_1fr] bg-red-50 px-4 text-red-900 dark:bg-red-950/35 dark:text-red-200"><span>-</span><span>Area order</span><span>{{ $areaDiff['from_position'] }}</span></div>
+                                        <div class="grid grid-cols-[1.25rem_7rem_1fr] bg-green-50 px-4 text-green-900 dark:bg-green-950/35 dark:text-green-200"><span>+</span><span>Area order</span><span>{{ $areaDiff['to_position'] }}</span></div>
+                                    @endif
+                                @endif
+
+                                <div class="divide-y divide-gray-200 dark:divide-gray-800">
+                                    @forelse($areaDiff['lines'] as $lineIndex => $lineDiff)
+                                        @php
+                                            $lineLabel = $lineDiff['to_label'] ?? $lineDiff['from_label'] ?? 'Untitled line';
+                                        @endphp
+                                        <div wire:key="comparison-line-{{ $areaIndex }}-{{ $lineIndex }}" class="py-2">
+                                            @if($lineDiff['status'] === 'added')
+                                                <div class="grid grid-cols-[1.25rem_minmax(7rem,11rem)_1fr] bg-green-50 px-4 text-green-900 dark:bg-green-950/35 dark:text-green-200">
+                                                    <span>+</span>
+                                                    <span>{{ $lineLabel }}</span>
+                                                    <span class="truncate">{{ $lineDiff['fields']['description']['to'] ?? 'Added line' }} · Qty {{ $lineDiff['fields']['qty']['to'] ?? '—' }}</span>
+                                                </div>
+                                            @elseif($lineDiff['status'] === 'removed')
+                                                <div class="grid grid-cols-[1.25rem_minmax(7rem,11rem)_1fr] bg-red-50 px-4 text-red-900 dark:bg-red-950/35 dark:text-red-200">
+                                                    <span>-</span>
+                                                    <span>{{ $lineLabel }}</span>
+                                                    <span class="truncate">{{ $lineDiff['fields']['description']['from'] ?? 'Removed line' }} · Qty {{ $lineDiff['fields']['qty']['from'] ?? '—' }}</span>
+                                                </div>
+                                            @elseif($lineDiff['status'] === 'changed')
+                                                <div class="px-4 font-semibold text-amber-700 dark:text-amber-300">~ Line: {{ $lineLabel }}</div>
+                                                @foreach($lineDiff['fields'] as $field)
+                                                    @if($field['changed'])
+                                                        <div class="grid grid-cols-[1.25rem_minmax(7rem,11rem)_1fr] bg-red-50 px-4 text-red-900 dark:bg-red-950/35 dark:text-red-200">
+                                                            <span>-</span><span>{{ $field['label'] }}</span><span class="whitespace-pre-wrap break-words">{{ $field['from'] }}</span>
+                                                        </div>
+                                                        <div class="grid grid-cols-[1.25rem_minmax(7rem,11rem)_1fr] bg-green-50 px-4 text-green-900 dark:bg-green-950/35 dark:text-green-200">
+                                                            <span>+</span><span>{{ $field['label'] }}</span><span class="whitespace-pre-wrap break-words">{{ $field['to'] }}</span>
+                                                        </div>
+                                                    @endif
+                                                @endforeach
+                                            @else
+                                                <div class="grid grid-cols-[1.25rem_minmax(7rem,11rem)_1fr] px-4 text-gray-500 dark:text-gray-400">
+                                                    <span>&nbsp;</span>
+                                                    <span>{{ $lineLabel }}</span>
+                                                    <span class="truncate">{{ $lineDiff['fields']['description']['to'] ?? 'Unchanged' }} · Qty {{ $lineDiff['fields']['qty']['to'] ?? '—' }}</span>
+                                                </div>
+                                            @endif
+                                        </div>
+                                    @empty
+                                        <div class="px-4 py-4 font-sans text-sm text-gray-500 dark:text-gray-400">No lines in this area.</div>
+                                    @endforelse
+                                </div>
+                            </section>
+                        @endforeach
+                    </div>
+                </div>
+
+                <div class="flex justify-end border-t border-gray-200 bg-gray-50 px-6 py-4 dark:border-gray-700 dark:bg-[#161b22]">
+                    <x-filament::button wire:click="closeRevisionComparisonModal" color="gray">
+                        Close
+                    </x-filament::button>
+                </div>
+            </div>
+        </div>
+        @endif
 
         @if($approveRevisionModalOpen)
         <div

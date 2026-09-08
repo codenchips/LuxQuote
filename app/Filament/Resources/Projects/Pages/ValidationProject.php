@@ -8,6 +8,7 @@ use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ActivityLog;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
+use App\Services\ProjectRevisionComparisonService;
 use App\Services\ProjectRevisionValidator;
 use App\Services\SalesforcePushControl;
 use App\Services\SalesforceService;
@@ -45,6 +46,13 @@ class ValidationProject extends ViewRecord
 
     public string $flagIssueNote = '';
 
+    public bool $revisionCompareSelectionModalOpen = false;
+
+    public bool $revisionComparisonModalOpen = false;
+
+    /** @var array<int, int|string> */
+    public array $selectedComparisonRevisionIds = [];
+
     public function mount(int|string $record): void
     {
         parent::mount($record);
@@ -72,8 +80,16 @@ class ValidationProject extends ViewRecord
 
     protected function getHeaderActions(): array
     {
+        $compareAction = Action::make('compareRevisions')
+            ->label('Compare')
+            ->icon('heroicon-o-arrows-right-left')
+            ->color('gray')
+            ->visible(fn (): bool => $this->canCompareRevisions() && $this->record->revisions()->count() >= 2)
+            ->action('openRevisionCompareSelectionModal');
+
         if ($this->activeRevisionApproved) {
             return [
+                $compareAction,
                 Action::make('unapproveRevision')
                     ->label('Unapprove Revision')
                     ->icon('heroicon-o-arrow-uturn-left')
@@ -88,6 +104,7 @@ class ValidationProject extends ViewRecord
         }
 
         return [
+            $compareAction,
             Action::make('openApproveRevisionModal')
                 ->label('Approve Revision')
                 ->icon('heroicon-o-check-badge')
@@ -264,6 +281,94 @@ class ValidationProject extends ViewRecord
     public function activeRevisionReadyForApproval(): bool
     {
         return $this->revisionReadyForApproval($this->activeRevision());
+    }
+
+    /**
+     * @return array<int, array{id: int, label: string, status: string, created_at: string, active: bool}>
+     */
+    #[Computed]
+    public function revisionComparisonOptions(): array
+    {
+        return $this->record->revisions()
+            ->orderByDesc('revision_number')
+            ->get()
+            ->map(fn (ProjectRevision $revision): array => [
+                'id' => $revision->id,
+                'label' => $revision->label(),
+                'status' => $revision->status->label(),
+                'created_at' => $revision->created_at?->format('d M Y H:i') ?? 'Unknown',
+                'active' => $revision->id === $this->record->active_revision_id,
+            ])
+            ->all();
+    }
+
+    /** @return array<string, mixed> */
+    #[Computed]
+    public function revisionComparison(): array
+    {
+        $revisions = $this->selectedComparisonRevisions();
+
+        if ($revisions->count() !== 2) {
+            return [];
+        }
+
+        return $this->comparisonService()->compare(
+            $revisions->first(),
+            $revisions->last(),
+            $this->canViewPrices(),
+        );
+    }
+
+    public function openRevisionCompareSelectionModal(): void
+    {
+        abort_unless($this->canCompareRevisions(), 403);
+
+        if ($this->record->revisions()->count() < 2) {
+            Notification::make()
+                ->title('Two revisions are required')
+                ->body('Create another revision before using comparison mode.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $this->selectedComparisonRevisionIds = $this->defaultComparisonRevisionIds();
+        unset($this->revisionComparison);
+        $this->revisionCompareSelectionModalOpen = true;
+    }
+
+    public function closeRevisionCompareSelectionModal(): void
+    {
+        $this->revisionCompareSelectionModalOpen = false;
+    }
+
+    public function compareSelectedRevisions(): void
+    {
+        abort_unless($this->canCompareRevisions(), 403);
+
+        $revisions = $this->selectedComparisonRevisions();
+
+        if ($revisions->count() !== 2) {
+            Notification::make()
+                ->title('Select exactly two revisions')
+                ->body('Choose the two revisions you want to compare.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $this->selectedComparisonRevisionIds = $revisions->pluck('id')->all();
+        unset($this->revisionComparison);
+        $this->revisionCompareSelectionModalOpen = false;
+        $this->revisionComparisonModalOpen = true;
+    }
+
+    public function closeRevisionComparisonModal(): void
+    {
+        $this->revisionComparisonModalOpen = false;
+        unset($this->revisionComparison);
     }
 
     public function runValidation(): void
@@ -759,6 +864,53 @@ class ValidationProject extends ViewRecord
             && $this->lineQuery($revision)->where('approved', false)->doesntExist();
     }
 
+    /** @return Collection<int, ProjectRevision> */
+    private function selectedComparisonRevisions(): Collection
+    {
+        $revisionIds = collect($this->selectedComparisonRevisionIds)
+            ->filter(fn (mixed $revisionId): bool => is_numeric($revisionId))
+            ->map(fn (mixed $revisionId): int => (int) $revisionId)
+            ->unique()
+            ->values();
+
+        if ($revisionIds->count() !== 2) {
+            return collect();
+        }
+
+        return $this->record->revisions()
+            ->whereKey($revisionIds)
+            ->orderBy('revision_number')
+            ->get();
+    }
+
+    /** @return array<int, int> */
+    private function defaultComparisonRevisionIds(): array
+    {
+        $revisions = $this->record->revisions()
+            ->orderBy('revision_number')
+            ->get();
+
+        if ($revisions->count() === 2) {
+            return $revisions->pluck('id')->all();
+        }
+
+        $activeRevision = $revisions->firstWhere('id', $this->record->active_revision_id);
+
+        if ($activeRevision === null) {
+            return $revisions->take(-2)->pluck('id')->all();
+        }
+
+        $previousRevision = $revisions
+            ->where('revision_number', '<', $activeRevision->revision_number)
+            ->last()
+            ?? $revisions->first(fn (ProjectRevision $revision): bool => $revision->id !== $activeRevision->id);
+
+        return collect([$previousRevision, $activeRevision])
+            ->filter()
+            ->pluck('id')
+            ->all();
+    }
+
     private function repairInvalidApprovedRevision(): void
     {
         $revision = $this->activeRevision();
@@ -988,6 +1140,11 @@ class ValidationProject extends ViewRecord
         return app(ProjectRevisionValidator::class);
     }
 
+    private function comparisonService(): ProjectRevisionComparisonService
+    {
+        return app(ProjectRevisionComparisonService::class);
+    }
+
     public function canViewPrices(): bool
     {
         return auth()->user()?->can('pricing.view') ?? false;
@@ -1036,5 +1193,10 @@ class ValidationProject extends ViewRecord
     public function canApproveRevision(): bool
     {
         return auth()->user()?->can('revisions.approve') ?? false;
+    }
+
+    public function canCompareRevisions(): bool
+    {
+        return auth()->user()?->can('validation.view') ?? false;
     }
 }

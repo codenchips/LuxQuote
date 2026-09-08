@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\Project;
 use App\Models\ProjectLine;
 use App\Models\User;
+use App\Services\ProjectRevisionComparisonService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -739,6 +740,223 @@ class AdminProjectValidationTest extends TestCase
         Livewire::test(ListActivityLogs::class)
             ->assertSee('Matched and approved quote price')
             ->assertSee('MATCH-PRICE-SKU');
+    }
+
+    public function test_admin_can_compare_two_project_revisions_area_by_area_and_line_by_line(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $product = Product::factory()->create([
+            'sku' => 'COMPARE-SKU',
+            'price' => 12.34,
+        ]);
+        $this->createLine($project, $product->sku, qty: 371, unitPrice: 12.34);
+        $this->createLine($project, 'REMOVED-DIFF-SKU', qty: 7, sortOrder: 1);
+        $firstRevision = $project->activeRevision;
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('createNewRevision');
+
+        $project->refresh();
+        $secondRevision = $project->activeRevision;
+        $secondRevision->areas()->first()->lines()->first()->update([
+            'qty' => 842,
+            'unit_price' => 56.78,
+        ]);
+        $secondRevision->areas()->first()->lines()->where('code', 'REMOVED-DIFF-SKU')->delete();
+        $newArea = $secondRevision->areas()->create([
+            'project_id' => $project->id,
+            'name' => 'New comparison area',
+            'sort_order' => 1,
+        ]);
+        $newArea->lines()->create([
+            'code' => 'ADDED-DIFF-SKU',
+            'description' => 'Added only in P2',
+            'qty' => 3,
+            'type' => ProjectLineType::Standard,
+            'sort_order' => 0,
+        ]);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertActionVisible('compareRevisions')
+            ->call('openRevisionCompareSelectionModal')
+            ->assertSet('revisionCompareSelectionModalOpen', true)
+            ->assertSet('selectedComparisonRevisionIds', [$firstRevision->id, $secondRevision->id])
+            ->assertSee('Select exactly two revisions')
+            ->set('selectedComparisonRevisionIds', [$secondRevision->id, $firstRevision->id])
+            ->call('compareSelectedRevisions')
+            ->assertSet('revisionCompareSelectionModalOpen', false)
+            ->assertSet('revisionComparisonModalOpen', true)
+            ->assertSee('P1')
+            ->assertSee('P2')
+            ->assertSee('COMPARE-SKU')
+            ->assertSee('371')
+            ->assertSee('842')
+            ->assertSee('Unit price')
+            ->assertSee('£12.34')
+            ->assertSee('£56.78')
+            ->assertSee('New comparison area')
+            ->assertSee('ADDED-DIFF-SKU')
+            ->assertSee('Added only in P2 · Qty 3')
+            ->assertSee('REMOVED-DIFF-SKU')
+            ->assertSee('REMOVED-DIFF-SKU description · Qty 7')
+            ->assertDontSee('Order')
+            ->assertSee('+1 areas')
+            ->assertSee('+1 lines')
+            ->assertSee('−1 lines');
+    }
+
+    public function test_compare_action_is_hidden_until_the_project_has_two_revisions(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertActionHidden('compareRevisions');
+    }
+
+    public function test_compare_dialog_defaults_to_the_active_and_previous_revisions(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        Livewire::test(ViewProject::class, ['record' => $project->id])->call('createNewRevision');
+        $project->refresh();
+        $previousRevision = $project->activeRevision;
+        Livewire::test(ViewProject::class, ['record' => $project->id])->call('createNewRevision');
+        $project->refresh();
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->call('openRevisionCompareSelectionModal')
+            ->assertSet('selectedComparisonRevisionIds', [$previousRevision->id, $project->active_revision_id]);
+    }
+
+    public function test_validation_approval_metadata_is_not_treated_as_a_revision_difference(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $product = Product::factory()->create([
+            'sku' => 'METADATA-ONLY-SKU',
+            'price' => 12.34,
+        ]);
+        $line = $this->createLine($project, $product->sku, unitPrice: 12.34);
+        $line->update([
+            'approved' => true,
+            'approved_at' => now(),
+            'approved_by' => $admin->id,
+            'validation_note' => 'Approved in the earlier revision.',
+        ]);
+        $firstRevision = $project->activeRevision;
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])->call('createNewRevision');
+        $project->refresh();
+        $secondRevision = $project->activeRevision;
+        $secondRevision->areas()->first()->lines()->first()->update([
+            'approved' => false,
+            'approved_at' => null,
+            'approved_by' => null,
+            'validation_note' => null,
+        ]);
+
+        $comparison = app(ProjectRevisionComparisonService::class)->compare($firstRevision, $secondRevision, true);
+
+        $this->assertSame(0, $comparison['summary']['areas_changed']);
+        $this->assertSame(0, $comparison['summary']['lines_changed']);
+        $this->assertArrayNotHasKey('approval', $comparison['areas'][0]['lines'][0]['fields']);
+        $this->assertArrayNotHasKey('validation_note', $comparison['areas'][0]['lines'][0]['fields']);
+    }
+
+    public function test_revision_comparison_uses_effective_cover_values_instead_of_storage_values(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'has_cover' => true,
+            'cover_1' => 5,
+            'cover_2' => 8,
+            'cover_3' => 5,
+        ]);
+        $product = Product::factory()->create([
+            'sku' => 'EFFECTIVE-COVER-SKU',
+            'price' => 12.34,
+        ]);
+        $this->createLine($project, $product->sku, qty: 3, unitPrice: 12.34);
+        $firstRevision = $project->activeRevision;
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])->call('createNewRevision');
+        $project->refresh();
+        $secondRevision = $project->activeRevision;
+        $secondRevision->areas()->first()->lines()->first()->update([
+            'qty' => 4,
+            'cover_1' => 5,
+            'cover_2' => 8,
+            'cover_3' => 5,
+        ]);
+
+        $comparison = app(ProjectRevisionComparisonService::class)->compare($firstRevision, $secondRevision, true);
+        $changedFields = collect($comparison['areas'][0]['lines'][0]['fields'])
+            ->where('changed', true)
+            ->keys()
+            ->all();
+
+        $this->assertSame(['qty'], $changedFields);
+        $this->assertSame(1, $comparison['summary']['lines_changed']);
+    }
+
+    public function test_revision_comparison_requires_two_revisions_from_the_current_project(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        Livewire::test(ViewProject::class, ['record' => $project->id])->call('createNewRevision');
+        $project->refresh();
+
+        $otherProject = Project::factory()->for($admin)->create();
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->call('openRevisionCompareSelectionModal')
+            ->set('selectedComparisonRevisionIds', [$project->active_revision_id, $otherProject->active_revision_id])
+            ->call('compareSelectedRevisions')
+            ->assertSet('revisionCompareSelectionModalOpen', true)
+            ->assertSet('revisionComparisonModalOpen', false)
+            ->assertNotified('Select exactly two revisions');
+    }
+
+    public function test_revision_comparison_hides_pricing_from_users_without_pricing_view(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $product = Product::factory()->create([
+            'sku' => 'PRIVATE-PRICE-SKU',
+            'price' => 12.34,
+        ]);
+        $this->createLine($project, $product->sku, unitPrice: 12.34);
+        $firstRevision = $project->activeRevision;
+
+        $this->actingAs($admin);
+        Livewire::test(ViewProject::class, ['record' => $project->id])->call('createNewRevision');
+        $project->refresh();
+        $secondRevision = $project->activeRevision;
+        $secondRevision->areas()->first()->lines()->first()->update(['unit_price' => 98.76]);
+
+        $this->actingAs(User::factory()->technical()->create());
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->call('openRevisionCompareSelectionModal')
+            ->set('selectedComparisonRevisionIds', [$firstRevision->id, $secondRevision->id])
+            ->call('compareSelectedRevisions')
+            ->assertSet('revisionComparisonModalOpen', true)
+            ->assertDontSee('Unit price')
+            ->assertDontSee('£98.76');
     }
 
     private function createLine(
