@@ -14,6 +14,7 @@ use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
+use App\Models\ProjectTender;
 use App\Models\ResourceFile;
 use App\Models\User;
 use App\Services\DocumentPackGeneratedOptionsService;
@@ -868,6 +869,49 @@ class AdminDocumentPackTest extends TestCase
         File::delete($generated['path'], $datasheetsPath, $mergedPath);
     }
 
+    public function test_document_pack_generation_passes_the_selected_tender_to_the_quote_cover(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $project->activeRevision->update([
+            'validated' => true,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+        $tender = ProjectTender::query()->create([
+            'project_id' => $project->id,
+            'salesforce_account_id' => '001-pack-tender',
+            'account_name' => 'Pack Tender',
+            'created_by_id' => $admin->id,
+        ]);
+        $pack = DocumentPack::factory()->for($project)->create(['created_by' => $admin->id]);
+        DocumentPackItem::factory()->for($pack)->create([
+            'role' => DocumentPackItemRole::Quote,
+            'source_type' => DocumentPackItemSource::Generated,
+            'configuration' => [
+                'version' => 1,
+                'area_scope' => 'all',
+                'area_names' => [],
+                'include_datasheets' => false,
+            ],
+        ]);
+
+        $projectPdfService = Mockery::mock(ProjectSchedulePdfService::class);
+        $projectPdfService->shouldReceive('quoteContent')
+            ->once()
+            ->withArgs(fn (Project $generatedProject, ProjectRevision $revision, ?ProjectTender $generatedTender, bool $includeCover, array $areaIds): bool => $generatedProject->is($project)
+                && $revision->is($project->activeRevision)
+                && $generatedTender?->is($tender)
+                && $includeCover
+                && $areaIds === [])
+            ->andReturn(self::makePdf('Quote with selected tender cover'));
+
+        $generated = (new DocumentPackPdfService($projectPdfService))
+            ->generate($pack, $project->activeRevision, $admin, $tender, true);
+
+        $this->assertFileExists($generated['path']);
+        File::delete($generated['path']);
+    }
+
     public function test_invalid_external_pdf_is_rejected(): void
     {
         $this->expectException(RuntimeException::class);
@@ -951,6 +995,34 @@ class AdminDocumentPackTest extends TestCase
         ]);
 
         $this->assertNotNull($component->instance()->getDocumentPackDownloadUrl());
+    }
+
+    public function test_pack_with_a_quote_and_tenders_opens_the_tender_selection_flow(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $project->activeRevision->update([
+            'validated' => true,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+        ProjectTender::query()->create([
+            'project_id' => $project->id,
+            'salesforce_account_id' => '001-dialog-tender',
+            'account_name' => 'Dialog Tender',
+            'created_by_id' => $admin->id,
+        ]);
+        $pack = DocumentPack::factory()->for($project)->create(['created_by' => $admin->id]);
+        DocumentPackItem::factory()->for($pack)->create([
+            'role' => DocumentPackItemRole::Quote,
+            'source_type' => DocumentPackItemSource::Generated,
+        ]);
+        $this->actingAs($admin);
+
+        Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->set('outputTab', 'packs')
+            ->assertSee('Dialog Tender')
+            ->assertSee('openDocumentPackTenderDialog', escape: false)
+            ->assertSee('Choose Tenders for Document Pack');
     }
 
     public function test_saved_document_pack_downloads_as_one_pdf_and_is_logged(): void

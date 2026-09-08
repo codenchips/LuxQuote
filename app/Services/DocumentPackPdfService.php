@@ -8,6 +8,7 @@ use App\Enums\ProjectRevisionStatus;
 use App\Models\DocumentPack;
 use App\Models\DocumentPackItem;
 use App\Models\ProjectRevision;
+use App\Models\ProjectTender;
 use App\Models\User;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
@@ -37,9 +38,15 @@ class DocumentPackPdfService
     /**
      * @return array{path: string, filename: string}
      */
-    public function generate(DocumentPack $documentPack, ProjectRevision $revision, User $user): array
-    {
+    public function generate(
+        DocumentPack $documentPack,
+        ProjectRevision $revision,
+        User $user,
+        ?ProjectTender $tender = null,
+        bool $includeQuoteCover = false,
+    ): array {
         abort_unless($documentPack->project_id === $revision->project_id, 404);
+        abort_if($tender !== null && $tender->project_id !== $documentPack->project_id, 404);
 
         $items = $documentPack->items()->get();
         abort_if($items->isEmpty(), 422, 'The document pack does not contain any documents.');
@@ -61,6 +68,8 @@ class DocumentPackPdfService
                     workingDirectory: $workingDirectory,
                     index: $index,
                     datasheetPaths: $datasheetPaths,
+                    tender: $tender,
+                    includeQuoteCover: $includeQuoteCover,
                 );
             }
 
@@ -118,6 +127,8 @@ class DocumentPackPdfService
         string $workingDirectory,
         int $index,
         array &$datasheetPaths,
+        ?ProjectTender $tender,
+        bool $includeQuoteCover,
     ): string {
         $role = $item->role;
         abort_unless($role instanceof DocumentPackItemRole, 422, 'The document pack contains an unsupported document role.');
@@ -142,7 +153,7 @@ class DocumentPackPdfService
         $areaIds = $options['area_ids'] ?? [];
 
         $content = match ($role) {
-            DocumentPackItemRole::Quote => $this->quoteContent($revision, $user, $areaIds),
+            DocumentPackItemRole::Quote => $this->quoteContent($revision, $user, $areaIds, $tender, $includeQuoteCover),
             DocumentPackItemRole::UnpricedSchedule => $this->scheduleContent($revision, $user, $areaIds),
             DocumentPackItemRole::StandardLegalPage => File::get($this->projectLegalPdfService->legalPagePath()),
             default => throw new RuntimeException('The generated document role is not supported.'),
@@ -171,8 +182,13 @@ class DocumentPackPdfService
     }
 
     /** @param array<int, int> $areaIds */
-    private function quoteContent(ProjectRevision $revision, User $user, array $areaIds): string
-    {
+    private function quoteContent(
+        ProjectRevision $revision,
+        User $user,
+        array $areaIds,
+        ?ProjectTender $tender,
+        bool $includeCover,
+    ): string {
         abort_unless($user->can('pricing.view') && $user->can('output.produce-quote'), 403);
         abort_unless(
             $revision->validated && $revision->status === ProjectRevisionStatus::Approved,
@@ -180,7 +196,13 @@ class DocumentPackPdfService
             'Quote PDF requires validation passed and quote approved.',
         );
 
-        return $this->projectPdfService->quoteContent($revision->project, $revision, areaIds: $areaIds);
+        return $this->projectPdfService->quoteContent(
+            $revision->project,
+            $revision,
+            tender: $tender,
+            includeCover: $includeCover,
+            areaIds: $areaIds,
+        );
     }
 
     /** @param array<int, int> $areaIds */

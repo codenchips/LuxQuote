@@ -31,6 +31,11 @@
         $preparedQuoteZipUrl = $canProduceQuote ? $this->getPreparedQuoteZipUrl() : null;
         $documentPackDownloadUrl = $this->getDocumentPackDownloadUrl();
         $documentPackGenerationBlockReason = $this->documentPackGenerationBlockReason();
+        $documentPackContainsQuote = collect($documentPackItems)
+            ->contains(fn (array $item): bool => ($item['role'] ?? null) === \App\Enums\DocumentPackItemRole::Quote->value);
+        $documentPackZipUrl = $selectedDocumentPackId
+            ? route('projects.document-packs.zip', ['project' => $this->record, 'documentPack' => $selectedDocumentPackId, 'revision' => $generationRevisionId])
+            : null;
         $selectedGenerationRevision = $this->selectedGenerationRevision();
         $documentPackOptionsItem = $documentPackOptionsItemKey !== null
             ? ($documentPackItems[$documentPackOptionsItemKey] ?? null)
@@ -60,6 +65,8 @@
             prepareUrl: @js($preparedQuoteUrl),
             prepareDatasheetsUrl: @js($preparedQuoteDatasheetsUrl),
             zipUrl: @js($preparedQuoteZipUrl),
+            documentPackUrl: @js($documentPackDownloadUrl),
+            documentPackZipUrl: @js($documentPackZipUrl),
             includeDatasheets: @js($includeQuoteDatasheets),
             includeLegalPage: @js($includeQuoteLegalPage),
             includeScheduleDatasheets: @js($includeScheduleDatasheets),
@@ -666,7 +673,17 @@
                         Save Pack
                     </button>
 
-                    @if($documentPackDownloadUrl)
+                    @if($documentPackDownloadUrl && $documentPackContainsQuote && $hasQuoteTenders)
+                        <button
+                            data-testid="generate-document-pack"
+                            type="button"
+                            x-on:click="openDocumentPackTenderDialog(@js($documentPackDownloadUrl), @js($documentPackZipUrl))"
+                            class="fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action h-10 w-full whitespace-nowrap sm:w-56"
+                        >
+                            <x-heroicon-o-document-arrow-down class="h-4 w-4" />
+                            Generate Combined PDF
+                        </button>
+                    @elseif($documentPackDownloadUrl)
                         <a
                             data-testid="generate-document-pack"
                             data-pdf-generation
@@ -1082,8 +1099,14 @@
             >
                 <div class="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4 dark:border-white/10">
                     <div>
-                        <h2 id="quote-tender-title" class="text-lg font-semibold text-gray-950 dark:text-white">Choose Tenders</h2>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Select the contractors that need their own quote cover sheet.</p>
+                        <h2 id="quote-tender-title" class="text-lg font-semibold text-gray-950 dark:text-white">
+                            <span x-show="generationMode === 'quote'">Choose Tenders</span>
+                            <span x-show="generationMode === 'document-pack'">Choose Tenders for Document Pack</span>
+                        </h2>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            <span x-show="generationMode === 'quote'">Select the contractors that need their own quote cover sheet.</span>
+                            <span x-show="generationMode === 'document-pack'">A separate combined document pack will be generated for each selected tender.</span>
+                        </p>
                     </div>
                     <button type="button" x-on:click="! generating && close()" class="rounded-md p-1 text-gray-400 transition hover:text-gray-700 dark:hover:text-gray-200">
                         <x-heroicon-o-x-mark class="h-6 w-6" />
@@ -1119,7 +1142,7 @@
                                 </div>
                                 <div class="min-w-32 text-right text-sm">
                                     <template x-if="results[tender.id]?.url">
-                                        <a x-bind:href="results[tender.id].url" target="_blank" class="font-semibold text-sky-500 hover:text-sky-400">Download PDF</a>
+                                        <a x-bind:href="results[tender.id].url" target="_blank" class="font-semibold text-sky-500 hover:text-sky-400" x-text="generationMode === 'document-pack' ? 'Download pack' : 'Download PDF'"></a>
                                     </template>
                                     <template x-if="! results[tender.id]?.url">
                                         <span class="inline-flex justify-end text-gray-400">
@@ -1148,7 +1171,7 @@
                     <div class="flex items-center gap-2">
                         <button type="button" x-on:click="close()" x-bind:disabled="generating" class="h-10 rounded-md border border-gray-300 px-4 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">Close</button>
                         <button type="button" x-on:click="generate()" x-bind:disabled="generating" class="fi-color fi-color-primary fi-bg-color-400 hover:fi-bg-color-300 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-900 hover:fi-text-color-800 dark:fi-text-color-950 dark:hover:fi-text-color-950 fi-btn fi-size-md fi-ac-btn-action disabled:opacity-70">
-                            <span x-show="! generating">Generate</span>
+                            <span x-show="! generating" x-text="generationMode === 'document-pack' ? 'Generate packs' : 'Generate'"></span>
                             <span x-show="generating">Generating...</span>
                         </button>
                     </div>
@@ -1211,6 +1234,9 @@
                     prepareUrl: config.prepareUrl,
                     prepareDatasheetsUrl: config.prepareDatasheetsUrl,
                     zipUrl: config.zipUrl,
+                    documentPackUrl: config.documentPackUrl,
+                    documentPackZipUrl: config.documentPackZipUrl,
+                    generationMode: 'quote',
                     csrfToken: config.csrfToken,
                     init() {
                         this.selectAllAreas();
@@ -1286,7 +1312,8 @@
                             url.searchParams.append('area_ids[]', areaId);
                         }
                     },
-                    openTenderDialog() {
+                    openTenderDialog(mode = 'quote') {
+                        this.generationMode = mode;
                         this.error = null;
                         this.results = {};
                         this.status = {};
@@ -1300,6 +1327,17 @@
                         }
 
                         this.open = true;
+                    },
+                    openDocumentPackTenderDialog(documentPackUrl, documentPackZipUrl) {
+                        if (! documentPackUrl) {
+                            this.error = 'Save the document pack before generating it.';
+
+                            return;
+                        }
+
+                        this.documentPackUrl = documentPackUrl;
+                        this.documentPackZipUrl = documentPackZipUrl;
+                        this.openTenderDialog('document-pack');
                     },
                     generateQuote() {
                         if (this.tenders.length > 0) {
@@ -1370,12 +1408,13 @@
                     },
                     footerMessage() {
                         const completed = Object.values(this.results).filter((result) => result?.url).length;
+                        const outputLabel = this.generationMode === 'document-pack' ? 'document packs' : 'quote PDFs';
 
                         if (this.generating) {
-                            return `Generated ${completed} of ${this.selectedQuoteCoverOptions().length} quote PDFs`;
+                            return `Generated ${completed} of ${this.selectedQuoteCoverOptions().length} ${outputLabel}`;
                         }
 
-                        return completed > 0 ? `${completed} quote PDFs ready.` : 'No quote PDFs generated yet.';
+                        return completed > 0 ? `${completed} ${outputLabel} ready.` : `No ${outputLabel} generated yet.`;
                     },
                     baseStatus(tenderId) {
                         const text = this.status[tenderId] || 'Ready';
@@ -1403,6 +1442,12 @@
                         }
                     },
                     async generate() {
+                        if (this.generationMode === 'document-pack') {
+                            await this.generateDocumentPacks();
+
+                            return;
+                        }
+
                         this.generating = true;
                         this.error = null;
                         this.results = {};
@@ -1453,6 +1498,98 @@
                             this.generating = false;
                             this.stopDots();
                         }
+                    },
+                    async generateDocumentPacks() {
+                        this.generating = true;
+                        this.error = null;
+                        this.results = {};
+                        this.zipDownload = null;
+                        this.startDots();
+                        this.generationBatchKey = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+                        const selectedTenders = this.selectedQuoteCoverOptions();
+                        this.generationBatchSize = selectedTenders.length;
+
+                        try {
+                            if (selectedTenders.length === 0) {
+                                const prepared = await this.prepareDocumentPack(null, false);
+                                window.open(prepared.url, '_blank', 'noopener');
+                                this.open = false;
+
+                                return;
+                            }
+
+                            const tokens = [];
+
+                            for (const tender of selectedTenders) {
+                                this.status[tender.id] = 'Generating...';
+                                const prepared = await this.prepareDocumentPack(tender.id, true);
+                                this.results[tender.id] = prepared;
+                                this.status[tender.id] = 'Ready';
+
+                                if (prepared.token) {
+                                    tokens.push(prepared.token);
+                                }
+                            }
+
+                            if (tokens.length > 1) {
+                                this.zipDownload = await this.prepareDocumentPackZip(tokens);
+                            }
+                        } catch (error) {
+                            this.error = error instanceof Error ? error.message : 'The document packs could not be generated.';
+                        } finally {
+                            this.generating = false;
+                            this.stopDots();
+                        }
+                    },
+                    async prepareDocumentPack(tenderId, includeCover) {
+                        const payload = {
+                            include_cover: includeCover,
+                            generation_batch_key: this.generationBatchKey,
+                            generation_batch_size: this.generationBatchSize,
+                        };
+
+                        if (tenderId) {
+                            payload.tender_id = tenderId;
+                        }
+
+                        const response = await fetch(this.documentPackUrl, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                Accept: 'application/json',
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': this.csrfToken,
+                                'X-Requested-With': 'XMLHttpRequest',
+                            },
+                            body: JSON.stringify(payload),
+                        });
+
+                        return await this.queuedPdfResult(response, 'Document pack');
+                    },
+                    async prepareDocumentPackZip(tokens) {
+                        if (! this.documentPackZipUrl) {
+                            throw new Error('The document pack ZIP could not be prepared.');
+                        }
+
+                        const response = await fetch(this.documentPackZipUrl, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                Accept: 'application/json',
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': this.csrfToken,
+                                'X-Requested-With': 'XMLHttpRequest',
+                            },
+                            body: JSON.stringify({ tokens }),
+                        });
+
+                        if (! response.ok) {
+                            const payload = await response.json().catch(() => null);
+                            throw new Error(payload?.message || `Document pack ZIP generation failed with status ${response.status}.`);
+                        }
+
+                        return await response.json();
                     },
                     async prepareQuote(tenderId, includeCover, datasheetToken = null) {
                         const payload = {

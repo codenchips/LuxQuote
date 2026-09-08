@@ -56,6 +56,8 @@ Route::middleware('auth')->group(function (): void {
         ->name('projects.document-packs.download');
     Route::post('/projects/{project}/document-packs/{documentPack}', [DocumentPackController::class, 'queue'])
         ->name('projects.document-packs.queue');
+    Route::post('/projects/{project}/document-packs/{documentPack}/zip', [DocumentPackController::class, 'zip'])
+        ->name('projects.document-packs.zip');
 
     Route::get('/pdf-generations/{pdfGeneration}', [PdfGenerationController::class, 'show'])
         ->name('pdf-generations.show');

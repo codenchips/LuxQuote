@@ -747,11 +747,19 @@ class OutputProject extends ViewRecord
     {
         abort_unless($this->canManageDocumentPacks(), 403);
 
-        $this->documentPackOptionAreaIds = $this->generationRevision()?->areas()
+        $revision = $this->generationRevision();
+
+        if ($revision === null) {
+            $this->documentPackOptionAreaIds = [];
+
+            return;
+        }
+
+        $this->documentPackOptionAreaIds = $revision->areas()
             ->orderBy('sort_order')
             ->pluck('id')
             ->map(fn (mixed $areaId): int => (int) $areaId)
-            ->all() ?? [];
+            ->all();
     }
 
     public function saveDocumentPackGeneratedOptions(): void

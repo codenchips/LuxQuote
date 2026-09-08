@@ -42,6 +42,22 @@ class DocumentPackGeneratedOptionsService
 
         $allAreasSelected = $areaIds->count() === $areas->count();
 
+        if (! $allAreasSelected) {
+            $duplicateSelectedNames = $areas
+                ->filter(fn (ProjectArea $area): bool => $areaIds->contains((int) $area->id))
+                ->map(fn (ProjectArea $area): string => Str::lower(Str::squish($area->name)))
+                ->filter(fn (string $name): bool => $name !== '')
+                ->filter(fn (string $name): bool => $areas
+                    ->filter(fn (ProjectArea $area): bool => Str::lower(Str::squish($area->name)) === $name)
+                    ->count() > 1);
+
+            if ($duplicateSelectedNames->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'documentPackOptionAreaIds' => 'Selected areas must have unique names before they can be reused across revisions or projects.',
+                ]);
+            }
+        }
+
         return [
             'version' => 1,
             'area_scope' => $allAreasSelected ? 'all' : 'selected',
@@ -141,6 +157,14 @@ class DocumentPackGeneratedOptionsService
                 configured: true,
                 includeDatasheets: $includeDatasheets,
                 message: 'One or more saved areas are not available in this revision. Refresh this item.',
+            );
+        }
+
+        if ($matchingAreas->count() !== $requestedNames->count()) {
+            return $this->invalidResult(
+                configured: true,
+                includeDatasheets: $includeDatasheets,
+                message: 'One or more saved area names are ambiguous in this revision. Rename the duplicate areas, then refresh this item.',
             );
         }
 

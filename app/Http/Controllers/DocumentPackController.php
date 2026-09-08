@@ -13,11 +13,13 @@ use App\Models\DocumentPackTemplateItem;
 use App\Models\PdfGeneration;
 use App\Models\Project;
 use App\Models\ProjectRevision;
+use App\Models\ProjectTender;
 use App\Models\ResourceFile;
 use App\Services\DocumentPackGeneratedOptionsService;
 use App\Services\DocumentPackPdfService;
 use App\Services\PdfDownloadUrlService;
 use App\Services\PdfGenerationDispatcher;
+use App\Services\ProjectExportFilenameService;
 use App\Services\ProjectLegalPdfService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -67,6 +69,12 @@ class DocumentPackController extends Controller
             403,
         );
 
+        $tender = $containsQuote ? $this->resolveTender($request, $project) : null;
+        $includeCover = $containsQuote && $request->boolean('include_cover');
+        abort_if($includeCover && $tender === null, 422, 'Select a tender before including a quote cover sheet.');
+        abort_if(! $containsQuote && ($request->filled('tender_id') || $request->boolean('include_cover')), 422, 'This document pack does not contain a quote.');
+        $tender = $includeCover ? $tender : null;
+
         foreach ($items as $item) {
             if ($item->role->source() !== DocumentPackItemSource::Generated) {
                 continue;
@@ -83,7 +91,10 @@ class DocumentPackController extends Controller
             [
                 'revision' => $revisionId,
                 'document_pack_id' => $documentPack->id,
-                'generation_batch_key' => (string) Str::uuid(),
+                'tender_id' => $tender?->id,
+                'include_cover' => $includeCover,
+                'generation_batch_key' => $this->generationBatchKey($request),
+                'generation_batch_size' => $this->generationBatchSize($request, $includeCover),
             ],
         );
 
@@ -103,8 +114,18 @@ class DocumentPackController extends Controller
 
         $revisionId = $request->integer('revision', $project->active_revision_id);
         $revision = ProjectRevision::where('project_id', $project->id)->findOrFail($revisionId);
-        $generatedPack = $pdfService->generate($documentPack, $revision, $request->user());
         $containsQuote = $documentPack->items()->where('role', DocumentPackItemRole::Quote->value)->exists();
+        $tender = $containsQuote ? $this->resolveTender($request, $project) : null;
+        $includeCover = $containsQuote && $request->boolean('include_cover');
+        abort_if($includeCover && $tender === null, 422, 'Select a tender before including a quote cover sheet.');
+        $tender = $includeCover ? $tender : null;
+        $generatedPack = $pdfService->generate(
+            $documentPack,
+            $revision,
+            $request->user(),
+            $tender,
+            $includeCover,
+        );
 
         ActivityLog::create([
             'user_id' => $request->user()->id,
@@ -118,8 +139,12 @@ class DocumentPackController extends Controller
                 'document_pack_name' => $documentPack->name,
                 'filename' => $generatedPack['filename'],
                 'contains_quote' => $containsQuote,
+                'tender_id' => $tender?->id,
+                'tender_account_name' => $tender?->account_name,
+                'include_cover' => $includeCover,
                 'document_count' => $documentPack->items()->count(),
                 'generation_batch_key' => $this->generationBatchKey($request),
+                'generation_batch_size' => $this->generationBatchSize($request, $includeCover),
             ],
         ]);
 
@@ -134,6 +159,35 @@ class DocumentPackController extends Controller
         return response()
             ->download($generatedPack['path'], $generatedPack['filename'], ['Content-Type' => 'application/pdf'])
             ->deleteFileAfterSend(true);
+    }
+
+    public function zip(
+        Request $request,
+        Project $project,
+        DocumentPack $documentPack,
+        PdfDownloadUrlService $downloads,
+    ): JsonResponse {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless($request->user()->can('output.produce-document-packs'), 403);
+        abort_unless($documentPack->project_id === $project->id, 404);
+
+        $revisionId = $request->integer('revision', $project->active_revision_id);
+        $revision = ProjectRevision::where('project_id', $project->id)->findOrFail($revisionId);
+        $tokens = collect($request->input('tokens', []))
+            ->filter(fn (mixed $token): bool => is_string($token) && preg_match('/^[A-Za-z0-9]{48}$/', $token))
+            ->values()
+            ->all();
+
+        abort_if($tokens === [], 422, 'No document pack PDFs were supplied for the ZIP file.');
+
+        $filename = app(ProjectExportFilenameService::class)->make(
+            $project,
+            $revision,
+            ProjectExportFilenameService::DocumentPack,
+            'zip',
+        );
+
+        return response()->json($downloads->registerZip($tokens, $request->user()->id, $filename));
     }
 
     public function uploadedItem(
@@ -350,5 +404,23 @@ class DocumentPackController extends Controller
         $batchKey = $request->string('generation_batch_key')->toString();
 
         return preg_match('/^[A-Za-z0-9_-]{8,80}$/', $batchKey) ? $batchKey : (string) Str::uuid();
+    }
+
+    private function generationBatchSize(Request $request, bool $includeCover): int
+    {
+        $size = $request->integer('generation_batch_size');
+
+        return $size > 0 && $size <= 100 ? $size : ($includeCover ? 1 : 0);
+    }
+
+    private function resolveTender(Request $request, Project $project): ?ProjectTender
+    {
+        $tenderId = $request->integer('tender_id');
+
+        if ($tenderId <= 0) {
+            return null;
+        }
+
+        return $project->tenders()->findOrFail($tenderId);
     }
 }

@@ -4,12 +4,14 @@ namespace Tests\Feature;
 
 use App\Enums\DocumentPackItemRole;
 use App\Enums\DocumentPackItemSource;
+use App\Enums\ProjectRevisionStatus;
 use App\Http\Controllers\DocumentPackController;
 use App\Http\Controllers\ProjectPdfController;
 use App\Jobs\GeneratePdf;
 use App\Models\DocumentPack;
 use App\Models\PdfGeneration;
 use App\Models\Project;
+use App\Models\ProjectTender;
 use App\Models\User;
 use App\Services\DocumentPackPdfService;
 use App\Services\PdfDownloadUrlService;
@@ -94,6 +96,89 @@ class PdfGenerationQueueTest extends TestCase
             ->assertForbidden();
 
         $this->assertDatabaseCount('pdf_generations', 0);
+    }
+
+    public function test_document_pack_queue_records_the_selected_tender_and_cover_choice(): void
+    {
+        Queue::fake();
+
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $project->activeRevision->update([
+            'validated' => true,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+        $tender = ProjectTender::query()->create([
+            'project_id' => $project->id,
+            'salesforce_account_id' => '001-test-tender',
+            'account_name' => 'Tender Contractor',
+            'created_by_id' => $admin->id,
+        ]);
+        $pack = DocumentPack::factory()->for($project)->create(['created_by' => $admin->id]);
+        $pack->items()->create([
+            'role' => DocumentPackItemRole::Quote,
+            'source_type' => DocumentPackItemSource::Generated,
+            'sort_order' => 0,
+        ]);
+
+        $this->actingAs($admin)
+            ->postJson(route('projects.document-packs.queue', [
+                'project' => $project,
+                'documentPack' => $pack,
+                'revision' => $project->active_revision_id,
+            ]), [
+                'tender_id' => $tender->id,
+                'include_cover' => true,
+                'generation_batch_key' => 'document-pack-batch-123',
+                'generation_batch_size' => 2,
+            ])
+            ->assertAccepted();
+
+        $parameters = PdfGeneration::query()->sole()->parameters;
+        $this->assertSame($tender->id, $parameters['tender_id']);
+        $this->assertTrue($parameters['include_cover']);
+        $this->assertSame('document-pack-batch-123', $parameters['generation_batch_key']);
+        $this->assertSame(2, $parameters['generation_batch_size']);
+        Queue::assertPushedOn('pdf', GeneratePdf::class);
+    }
+
+    public function test_document_pack_queue_rejects_a_tender_from_another_project(): void
+    {
+        Queue::fake();
+
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $project->activeRevision->update([
+            'validated' => true,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+        $otherProject = Project::factory()->for($admin)->create();
+        $otherTender = ProjectTender::query()->create([
+            'project_id' => $otherProject->id,
+            'salesforce_account_id' => '001-other-tender',
+            'account_name' => 'Other Contractor',
+            'created_by_id' => $admin->id,
+        ]);
+        $pack = DocumentPack::factory()->for($project)->create(['created_by' => $admin->id]);
+        $pack->items()->create([
+            'role' => DocumentPackItemRole::Quote,
+            'source_type' => DocumentPackItemSource::Generated,
+            'sort_order' => 0,
+        ]);
+
+        $this->actingAs($admin)
+            ->postJson(route('projects.document-packs.queue', [
+                'project' => $project,
+                'documentPack' => $pack,
+                'revision' => $project->active_revision_id,
+            ]), [
+                'tender_id' => $otherTender->id,
+                'include_cover' => true,
+            ])
+            ->assertNotFound();
+
+        $this->assertDatabaseCount('pdf_generations', 0);
+        Queue::assertNothingPushed();
     }
 
     public function test_generation_status_is_scoped_to_the_requesting_user(): void
