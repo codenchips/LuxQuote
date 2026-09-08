@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.17 - 2026-09-08
+
+Version: `0.2.16` -> `0.2.17`
+
+Changes included:
+
+- `c7b288f` Products fetch transaactionally with rollback. Salesforce queries retry and fail gracefully
+- `d75589e` PDF Queue system
+- `e27c68a` Document packs allow configuration of quotes and shedules
+- `6317406` Document packs offer Tender options
+- `99c5306` Document packs included in output  history
+- `08bc427` Validation bugfix
+- `611c7d7` Revision diff on validation
+- `ded76ea` Document queued output and revision comparison release
+
 ## 0.2.16 - 2026-09-07
 
 Version: `0.2.15` -> `0.2.16`
