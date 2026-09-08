@@ -48,12 +48,19 @@ class AdminDocumentPackTemplateTest extends TestCase
             ->call('addDocumentPackResource', $resource->id)
             ->call('addDocumentPackItem', $resourceKey);
         $scheduleKey = array_key_last($component->get('documentPackItems'));
+        $areaIds = $project->activeRevision->areas()->pluck('id')->all();
         $component
             ->call('selectDocumentPackRole', $scheduleKey, DocumentPackItemRole::UnpricedSchedule->value)
+            ->set('documentPackOptionAreaIds', $areaIds)
+            ->set('documentPackOptionIncludeDatasheets', true)
+            ->call('saveDocumentPackGeneratedOptions')
             ->call('addDocumentPackItem', $scheduleKey);
         $quoteKey = array_key_last($component->get('documentPackItems'));
         $component
             ->call('selectDocumentPackRole', $quoteKey, DocumentPackItemRole::Quote->value)
+            ->set('documentPackOptionAreaIds', $areaIds)
+            ->set('documentPackOptionIncludeDatasheets', false)
+            ->call('saveDocumentPackGeneratedOptions')
             ->set('documentPackTemplateName', 'Standard Customer Pack')
             ->set('documentPackTemplateVisibilityTarget', ProjectVisibility::Open->value)
             ->call('saveDocumentPackAsTemplate')
@@ -75,6 +82,10 @@ class AdminDocumentPackTemplateTest extends TestCase
         $this->assertNotSame($resource->file_path, $staticItem->file_path);
         $this->assertStringStartsWith(DocumentPackTemplateItem::Directory.'/', $staticItem->file_path);
         Storage::disk('local')->assertExists($staticItem->file_path);
+
+        $scheduleItem = $template->items->firstWhere('role', DocumentPackItemRole::UnpricedSchedule);
+        $this->assertSame('all', $scheduleItem->configuration['area_scope']);
+        $this->assertTrue($scheduleItem->configuration['include_datasheets']);
 
         $resource->delete();
         Storage::disk('local')->assertMissing($resource->file_path);
@@ -153,6 +164,61 @@ class AdminDocumentPackTemplateTest extends TestCase
         $template->delete();
         Storage::disk('local')->assertMissing($templatePath);
         Storage::disk('local')->assertExists($packStaticItem->file_path);
+    }
+
+    public function test_generated_area_and_datasheet_options_survive_template_reuse(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $area = $project->activeRevision->areas()->firstOrFail();
+        $area->update(['name' => 'Reception']);
+        $area->lines()->create([
+            'code' => 'RECEPTION-1',
+            'description' => 'Reception fitting',
+            'qty' => 1,
+            'sort_order' => 0,
+        ]);
+        $template = DocumentPackTemplate::factory()->for($admin, 'owner')->create([
+            'name' => 'Reception Pack',
+            'visibility' => ProjectVisibility::Open,
+        ]);
+        $configuration = [
+            'version' => 1,
+            'area_scope' => 'selected',
+            'area_names' => ['Reception'],
+            'include_datasheets' => true,
+        ];
+        DocumentPackTemplateItem::factory()->for($template, 'documentPackTemplate')->create([
+            'role' => DocumentPackItemRole::UnpricedSchedule,
+            'source_type' => DocumentPackItemSource::Generated,
+            'configuration' => $configuration,
+        ]);
+        $this->actingAs($admin);
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->set('outputTab', 'packs')
+            ->set('selectedDocumentPackTemplateId', $template->id)
+            ->call('useSelectedDocumentPackTemplate')
+            ->assertHasNoErrors()
+            ->assertSee('1 datasheet');
+        $itemKey = array_key_first($component->get('documentPackItems'));
+
+        $component
+            ->assertSet("documentPackItems.{$itemKey}.configuration.area_scope", 'selected')
+            ->assertSet("documentPackItems.{$itemKey}.configuration.area_names", ['Reception'])
+            ->assertSet("documentPackItems.{$itemKey}.configuration.include_datasheets", true)
+            ->set('documentPackName', 'Applied Reception Pack')
+            ->call('saveDocumentPack')
+            ->assertHasNoErrors();
+
+        $savedConfiguration = DocumentPack::query()
+            ->where('project_id', $project->id)
+            ->sole()
+            ->items()
+            ->sole()
+            ->configuration;
+
+        $this->assertEquals($configuration, $savedConfiguration);
     }
 
     public function test_template_visibility_matches_open_private_owner_and_team_rules(): void

@@ -14,6 +14,7 @@ use App\Models\PdfGeneration;
 use App\Models\Project;
 use App\Models\ProjectRevision;
 use App\Models\ResourceFile;
+use App\Services\DocumentPackGeneratedOptionsService;
 use App\Services\DocumentPackPdfService;
 use App\Services\PdfDownloadUrlService;
 use App\Services\PdfGenerationDispatcher;
@@ -43,9 +44,10 @@ class DocumentPackController extends Controller
 
         $revisionId = $request->integer('revision', $project->active_revision_id);
         $revision = ProjectRevision::where('project_id', $project->id)->findOrFail($revisionId);
-        $hasItems = $documentPack->items()->exists();
-        $containsQuote = $documentPack->items()->where('role', DocumentPackItemRole::Quote->value)->exists();
-        $containsSchedule = $documentPack->items()->where('role', DocumentPackItemRole::UnpricedSchedule->value)->exists();
+        $items = $documentPack->items()->get();
+        $hasItems = $items->isNotEmpty();
+        $containsQuote = $items->contains(fn (DocumentPackItem $item): bool => $item->role === DocumentPackItemRole::Quote);
+        $containsSchedule = $items->contains(fn (DocumentPackItem $item): bool => $item->role === DocumentPackItemRole::UnpricedSchedule);
 
         abort_unless($hasItems, 422, 'The document pack does not contain any documents.');
         abort_if(
@@ -64,6 +66,15 @@ class DocumentPackController extends Controller
                 && ! $request->user()->can('output.produce-unpriced-schedule'),
             403,
         );
+
+        foreach ($items as $item) {
+            if ($item->role->source() !== DocumentPackItemSource::Generated) {
+                continue;
+            }
+
+            $options = app(DocumentPackGeneratedOptionsService::class)->resolve($item->configuration, $revision);
+            abort_unless($options['valid'], 422, $options['message'] ?? 'The generated document options need refreshing.');
+        }
 
         $generation = $dispatcher->dispatch(
             $request->user(),

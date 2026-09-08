@@ -11,17 +11,22 @@ use App\Models\DocumentPackItem;
 use App\Models\Permission;
 use App\Models\PermissionGroup;
 use App\Models\Project;
+use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
 use App\Models\ResourceFile;
 use App\Models\User;
+use App\Services\DocumentPackGeneratedOptionsService;
 use App\Services\DocumentPackPdfService;
+use App\Services\ProjectDatasheetPdfService;
 use App\Services\ProjectSchedulePdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
+use Mockery;
 use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Process\Process;
@@ -88,6 +93,115 @@ class AdminDocumentPackTest extends TestCase
             DocumentPackItemRole::Quote->value => 'Quote',
             DocumentPackItemRole::UnpricedSchedule->value => 'Schedule',
         ], $component->instance()->documentPackRoleOptions());
+    }
+
+    public function test_generated_document_options_are_selected_displayed_and_saved(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $groundFloor = $project->activeRevision->areas()->firstOrFail();
+        $groundFloor->update(['name' => 'Ground Floor']);
+        $firstFloor = ProjectArea::create([
+            'project_id' => $project->id,
+            'project_revision_id' => $project->active_revision_id,
+            'name' => 'First Floor',
+            'sort_order' => 1,
+        ]);
+        $groundFloor->lines()->create([
+            'code' => 'GROUND-1',
+            'description' => 'Ground fitting',
+            'qty' => 2,
+            'sort_order' => 0,
+        ]);
+        $firstFloor->lines()->create([
+            'code' => 'FIRST-1',
+            'description' => 'First-floor fitting',
+            'qty' => 1,
+            'sort_order' => 0,
+        ]);
+        $this->actingAs($admin);
+
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->set('outputTab', 'packs');
+        $itemKey = array_key_first($component->get('documentPackItems'));
+
+        $component
+            ->call('selectDocumentPackRole', $itemKey, DocumentPackItemRole::UnpricedSchedule->value)
+            ->assertDispatched('open-modal', id: 'document-pack-generated-options')
+            ->assertSet('documentPackOptionAreaIds', [$groundFloor->id, $firstFloor->id])
+            ->set('documentPackOptionAreaIds', [$groundFloor->id])
+            ->set('documentPackOptionIncludeDatasheets', true)
+            ->call('saveDocumentPackGeneratedOptions')
+            ->assertHasNoErrors()
+            ->assertNotified('Schedule options updated')
+            ->assertSet("documentPackItems.{$itemKey}.configuration.area_scope", 'selected')
+            ->assertSet("documentPackItems.{$itemKey}.configuration.area_names", ['Ground Floor'])
+            ->assertSet("documentPackItems.{$itemKey}.configuration.include_datasheets", true)
+            ->assertSee('Includes')
+            ->assertSee('1 datasheet')
+            ->set('documentPackName', 'Scoped Schedule Pack')
+            ->call('saveDocumentPack')
+            ->assertHasNoErrors();
+
+        $configuration = DocumentPack::query()->where('project_id', $project->id)->sole()->items()->sole()->configuration;
+        $this->assertSame('selected', $configuration['area_scope']);
+        $this->assertSame(['Ground Floor'], $configuration['area_names']);
+        $this->assertTrue($configuration['include_datasheets']);
+    }
+
+    public function test_generated_document_options_require_document_pack_management_permission(): void
+    {
+        $group = PermissionGroup::create([
+            'name' => 'Output Viewer Without Pack Management',
+            'slug' => 'output-viewer-without-pack-management',
+            'is_system' => false,
+        ]);
+        $group->permissions()->attach(Permission::query()->whereIn('key', [
+            'projects.view',
+            'output.view',
+        ])->pluck('id'));
+        $user = User::factory()->create(['permission_group_id' => $group->id]);
+        $project = Project::factory()->for($user)->create();
+        $this->actingAs($user);
+
+        Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->call('openDocumentPackGeneratedOptions', 'forged-item')
+            ->assertForbidden();
+    }
+
+    public function test_stale_generated_area_options_show_refresh_and_are_rejected_before_queueing(): void
+    {
+        Queue::fake();
+
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $pack = DocumentPack::factory()->for($project)->create(['created_by' => $admin->id]);
+        DocumentPackItem::factory()->for($pack)->create([
+            'role' => DocumentPackItemRole::UnpricedSchedule,
+            'source_type' => DocumentPackItemSource::Generated,
+            'configuration' => [
+                'version' => 1,
+                'area_scope' => 'selected',
+                'area_names' => ['Area removed from this revision'],
+                'include_datasheets' => false,
+            ],
+        ]);
+        $this->actingAs($admin);
+
+        Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->set('outputTab', 'packs')
+            ->assertSee('Select options')
+            ->assertSee('One or more saved areas are not available in this revision. Refresh this item.');
+
+        $this->postJson(route('projects.document-packs.queue', [
+            'project' => $project,
+            'documentPack' => $pack,
+            'revision' => $project->active_revision_id,
+        ]))
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'One or more saved areas are not available in this revision. Refresh this item.');
+
+        Queue::assertNothingPushed();
     }
 
     public function test_document_pack_manager_can_select_only_pdf_resources_without_resources_page_access(): void
@@ -233,10 +347,9 @@ class AdminDocumentPackTest extends TestCase
             ->assertSeeHtml('h-[233px] w-[165px]')
             ->assertSeeHtml('aria-label="Add document"')
             ->assertSee('Schedule')
-            ->assertSee('Generated')
+            ->assertSee('Select options')
             ->assertDontSee('Templates preserve a reusable document order')
-            ->assertSee("P1 - 2 SKU's, 8 Items")
-            ->assertSee('Last modified 25/06/26 10:30')
+            ->assertSee('Choose the areas and datasheet option for this item.')
             ->assertDontSee('Select a document...')
             ->assertDontSee('The schedule generated for the revision selected at output time.')
             ->assertDontSee('Add after')
@@ -699,6 +812,60 @@ class AdminDocumentPackTest extends TestCase
 
         $this->assertSame([$secondRevision->id], $projectPdfService->revisionIds);
         File::delete($generated['path']);
+    }
+
+    public function test_document_pack_generation_applies_saved_area_and_datasheet_options(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $project = Project::factory()->for($admin)->create();
+        $selectedArea = $project->activeRevision->areas()->firstOrFail();
+        $selectedArea->update(['name' => 'Reception']);
+        ProjectArea::create([
+            'project_id' => $project->id,
+            'project_revision_id' => $project->active_revision_id,
+            'name' => 'Warehouse',
+            'sort_order' => 1,
+        ]);
+        $pack = DocumentPack::factory()->for($project)->create(['created_by' => $admin->id]);
+        DocumentPackItem::factory()->for($pack)->create([
+            'role' => DocumentPackItemRole::UnpricedSchedule,
+            'source_type' => DocumentPackItemSource::Generated,
+            'configuration' => [
+                'version' => 1,
+                'area_scope' => 'selected',
+                'area_names' => ['Reception'],
+                'include_datasheets' => true,
+            ],
+        ]);
+        $datasheetsPath = storage_path('app/document-pack-options-datasheets.pdf');
+        $mergedPath = storage_path('app/document-pack-options-merged.pdf');
+        File::put($datasheetsPath, self::makePdf('Datasheets'));
+        File::put($mergedPath, self::makePdf('Selected schedule with datasheets'));
+
+        $projectPdfService = Mockery::mock(ProjectSchedulePdfService::class);
+        $projectPdfService->shouldReceive('content')
+            ->once()
+            ->withArgs(fn (Project $generatedProject, ProjectRevision $revision, array $areaIds): bool => $generatedProject->is($project)
+                && $revision->is($project->activeRevision)
+                && $areaIds === [$selectedArea->id])
+            ->andReturn(self::makePdf('Selected schedule'));
+        $datasheetService = Mockery::mock(ProjectDatasheetPdfService::class);
+        $datasheetService->shouldReceive('datasheetsPdf')
+            ->once()
+            ->andReturn(['path' => $datasheetsPath, 'filename' => 'datasheets.pdf']);
+        $datasheetService->shouldReceive('appendExistingDatasheets')
+            ->once()
+            ->andReturn(['path' => $mergedPath, 'filename' => 'document-pack-item-with-datasheets.pdf']);
+
+        $service = new DocumentPackPdfService(
+            $projectPdfService,
+            generatedOptions: app(DocumentPackGeneratedOptionsService::class),
+            datasheetPdfService: $datasheetService,
+        );
+        $generated = $service->generate($pack, $project->activeRevision, $admin);
+
+        $this->assertFileExists($generated['path']);
+        File::delete($generated['path'], $datasheetsPath, $mergedPath);
     }
 
     public function test_invalid_external_pdf_is_rejected(): void

@@ -18,6 +18,7 @@ use App\Models\ProjectArea;
 use App\Models\ProjectLine;
 use App\Models\ProjectRevision;
 use App\Models\ResourceFile;
+use App\Services\DocumentPackGeneratedOptionsService;
 use App\Services\DocumentPackPdfService;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
@@ -55,7 +56,7 @@ class OutputProject extends ViewRecord
 
     public string $documentPackName = '';
 
-    /** @var array<string, array{key: string, id: int|null, role: string, file_path: string|null, original_filename: string|null, resource_file_id: int|null, resource_display_name: string|null, template_item_id: int|null}> */
+    /** @var array<string, array{key: string, id: int|null, role: string, file_path: string|null, original_filename: string|null, resource_file_id: int|null, resource_display_name: string|null, template_item_id: int|null, configuration: array<string, mixed>|null}> */
     public array $documentPackItems = [];
 
     /** @var array<string, TemporaryUploadedFile> */
@@ -88,6 +89,13 @@ class OutputProject extends ViewRecord
     public string $documentPackTemplateVisibilityTarget = 'open';
 
     public ?int $selectedDocumentPackTemplateId = null;
+
+    public ?string $documentPackOptionsItemKey = null;
+
+    /** @var array<int, int> */
+    public array $documentPackOptionAreaIds = [];
+
+    public bool $documentPackOptionIncludeDatasheets = false;
 
     public ?int $generationRevisionId = null;
 
@@ -502,52 +510,6 @@ class OutputProject extends ViewRecord
         return DocumentPackItemRole::tryFrom($role)?->source() === DocumentPackItemSource::Uploaded;
     }
 
-    public function documentPackGeneratedSummary(string $role): ?string
-    {
-        $documentRole = DocumentPackItemRole::tryFrom($role);
-
-        if ($documentRole?->source() !== DocumentPackItemSource::Generated) {
-            return null;
-        }
-
-        $revision = $this->generationRevision();
-
-        if ($revision === null) {
-            return 'No revision selected';
-        }
-
-        $totals = ProjectLine::query()
-            ->whereHas('area', fn ($query) => $query->where('project_revision_id', $revision->id))
-            ->selectRaw('COUNT(*) as item_count, COALESCE(SUM(qty), 0) as qty_total')
-            ->first();
-
-        $itemCount = (int) ($totals?->item_count ?? 0);
-        $quantityTotal = (int) ($totals?->qty_total ?? 0);
-
-        return $revision->label().' - '.$itemCount." SKU's, ".$quantityTotal.' Items';
-    }
-
-    public function documentPackGeneratedModifiedAt(string $role): ?string
-    {
-        $documentRole = DocumentPackItemRole::tryFrom($role);
-
-        if ($documentRole?->source() !== DocumentPackItemSource::Generated) {
-            return null;
-        }
-
-        $revision = $this->generationRevision();
-
-        if ($revision === null) {
-            return null;
-        }
-
-        $lastModifiedAt = ProjectLine::query()
-            ->whereHas('area', fn ($query) => $query->where('project_revision_id', $revision->id))
-            ->max('project_lines.updated_at');
-
-        return ($lastModifiedAt !== null ? Carbon::parse($lastModifiedAt) : $revision->updated_at)?->format('d/m/y H:i');
-    }
-
     /**
      * @param  array{key: string, id: int|null, role: string, file_path: string|null, original_filename: string|null}  $item
      */
@@ -684,6 +646,7 @@ class OutputProject extends ViewRecord
                     'resource_file_id' => null,
                     'resource_display_name' => $item->configuration['resource_display_name'] ?? null,
                     'template_item_id' => null,
+                    'configuration' => $item->configuration,
                 ]];
             })
             ->all();
@@ -742,7 +705,120 @@ class OutputProject extends ViewRecord
         $this->documentPackItems[$key]['resource_file_id'] = null;
         $this->documentPackItems[$key]['resource_display_name'] = null;
         $this->documentPackItems[$key]['template_item_id'] = null;
+        $this->documentPackItems[$key]['configuration'] = null;
         $this->documentPackDirty = true;
+
+        if ($documentRole->source() === DocumentPackItemSource::Generated) {
+            $this->openDocumentPackGeneratedOptions($key);
+        }
+    }
+
+    public function openDocumentPackGeneratedOptions(string $key): void
+    {
+        abort_unless($this->canManageDocumentPacks(), 403);
+        abort_unless(array_key_exists($key, $this->documentPackItems), 404);
+
+        $role = DocumentPackItemRole::tryFrom($this->documentPackItems[$key]['role'] ?? '');
+        abort_unless($role?->source() === DocumentPackItemSource::Generated, 422);
+
+        $revision = $this->generationRevision();
+        abort_if($revision === null, 422, 'Select a project revision first.');
+
+        $options = app(DocumentPackGeneratedOptionsService::class)->resolve(
+            $this->documentPackItems[$key]['configuration'] ?? null,
+            $revision,
+        );
+        $allAreaIds = $revision->areas()
+            ->orderBy('sort_order')
+            ->pluck('id')
+            ->map(fn (mixed $areaId): int => (int) $areaId)
+            ->all();
+
+        $this->documentPackOptionsItemKey = $key;
+        $this->documentPackOptionAreaIds = $options['valid'] && $options['area_scope'] === 'selected'
+            ? $options['area_ids']
+            : $allAreaIds;
+        $this->documentPackOptionIncludeDatasheets = $options['include_datasheets'];
+        $this->resetValidation('documentPackOptionAreaIds');
+        $this->dispatch('open-modal', id: 'document-pack-generated-options');
+    }
+
+    public function selectAllDocumentPackOptionAreas(): void
+    {
+        abort_unless($this->canManageDocumentPacks(), 403);
+
+        $this->documentPackOptionAreaIds = $this->generationRevision()?->areas()
+            ->orderBy('sort_order')
+            ->pluck('id')
+            ->map(fn (mixed $areaId): int => (int) $areaId)
+            ->all() ?? [];
+    }
+
+    public function saveDocumentPackGeneratedOptions(): void
+    {
+        abort_unless($this->canManageDocumentPacks(), 403);
+        abort_if($this->documentPackOptionsItemKey === null, 422);
+        abort_unless(array_key_exists($this->documentPackOptionsItemKey, $this->documentPackItems), 404);
+
+        $role = DocumentPackItemRole::tryFrom($this->documentPackItems[$this->documentPackOptionsItemKey]['role'] ?? '');
+        abort_unless($role?->source() === DocumentPackItemSource::Generated, 422);
+
+        $revision = $this->generationRevision();
+        abort_if($revision === null, 422, 'Select a project revision first.');
+
+        $configuration = app(DocumentPackGeneratedOptionsService::class)->configuration(
+            $revision,
+            $this->documentPackOptionAreaIds,
+            $this->documentPackOptionIncludeDatasheets,
+        );
+
+        $this->documentPackItems[$this->documentPackOptionsItemKey]['configuration'] = $configuration;
+        $this->documentPackDirty = true;
+        $this->dispatch('close-modal', id: 'document-pack-generated-options');
+        Notification::make()->title($role->label().' options updated')->success()->send();
+    }
+
+    /**
+     * @return array<int, array{id: int, name: string, items: int, qty: int}>
+     */
+    public function documentPackOptionAreas(): array
+    {
+        $revision = $this->generationRevision();
+
+        if ($revision === null) {
+            return [];
+        }
+
+        return $revision->areas()
+            ->with('lines')
+            ->orderBy('sort_order')
+            ->get()
+            ->map(fn (ProjectArea $area): array => [
+                'id' => $area->id,
+                'name' => $area->name,
+                'items' => $area->lines->count(),
+                'qty' => (int) $area->line_total_qty,
+            ])
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array{configured: bool, valid: bool, area_scope: string, area_ids: array<int, int>, area_names: array<int, string>, include_datasheets: bool, datasheet_count: int, message: string|null}|null
+     */
+    public function documentPackGeneratedDetails(array $item): ?array
+    {
+        $role = DocumentPackItemRole::tryFrom($item['role'] ?? '');
+        $revision = $this->generationRevision();
+
+        if ($role?->source() !== DocumentPackItemSource::Generated || $revision === null) {
+            return null;
+        }
+
+        return app(DocumentPackGeneratedOptionsService::class)->resolve(
+            $item['configuration'] ?? null,
+            $revision,
+        );
     }
 
     public function openDocumentPackResourcePicker(string $key): void
@@ -984,6 +1060,8 @@ class OutputProject extends ViewRecord
                         $newPaths[] = [$diskName, $path];
                         $attributes['file_disk'] = $diskName;
                         $attributes['file_path'] = $path;
+                    } elseif ($role->source() === DocumentPackItemSource::Generated) {
+                        $attributes['configuration'] = $state['configuration'] ?? null;
                     }
 
                     $template->items()->create($attributes);
@@ -1090,6 +1168,7 @@ class OutputProject extends ViewRecord
                 'template_item_id' => $templateItem->source_type === DocumentPackItemSource::Uploaded
                     ? $templateItem->id
                     : null,
+                'configuration' => $templateItem->configuration,
             ];
         }
 
@@ -1377,7 +1456,9 @@ class OutputProject extends ViewRecord
                             'file_disk' => null,
                             'file_path' => null,
                             'original_filename' => null,
-                            'configuration' => null,
+                            'configuration' => $role->source() === DocumentPackItemSource::Generated
+                                ? ($state['configuration'] ?? null)
+                                : null,
                         ];
 
                         if ($oldPath !== null) {
@@ -1510,6 +1591,26 @@ class OutputProject extends ViewRecord
             ->whereKey($this->selectedDocumentPackId)
             ->whereHas('items', fn ($query) => $query->where('role', DocumentPackItemRole::Quote->value))
             ->exists();
+
+        $pack = $this->record->documentPacks()
+            ->with('items')
+            ->find($this->selectedDocumentPackId);
+
+        if ($pack === null) {
+            return 'The selected document pack is no longer available.';
+        }
+
+        foreach ($pack->items as $item) {
+            if ($item->role->source() !== DocumentPackItemSource::Generated) {
+                continue;
+            }
+
+            $options = app(DocumentPackGeneratedOptionsService::class)->resolve($item->configuration, $revision);
+
+            if (! $options['valid']) {
+                return $item->role->label().' options need refreshing for '.$revision->label().'.';
+            }
+        }
 
         if (! $containsQuote) {
             return null;
@@ -2076,7 +2177,7 @@ class OutputProject extends ViewRecord
         return $this->record->revisions()->find($this->generationRevisionId);
     }
 
-    /** @return array{key: string, id: null, role: string, file_path: null, original_filename: null, resource_file_id: null, resource_display_name: null, template_item_id: null} */
+    /** @return array{key: string, id: null, role: string, file_path: null, original_filename: null, resource_file_id: null, resource_display_name: null, template_item_id: null, configuration: null} */
     private function emptyDocumentPackItem(): array
     {
         return [
@@ -2088,6 +2189,7 @@ class OutputProject extends ViewRecord
             'resource_file_id' => null,
             'resource_display_name' => null,
             'template_item_id' => null,
+            'configuration' => null,
         ];
     }
 }

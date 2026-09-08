@@ -19,11 +19,19 @@ class DocumentPackPdfService
 {
     private ProjectLegalPdfService $projectLegalPdfService;
 
+    private DocumentPackGeneratedOptionsService $generatedOptions;
+
+    private ProjectDatasheetPdfService $datasheetPdfService;
+
     public function __construct(
         private ProjectSchedulePdfService $projectPdfService,
         ?ProjectLegalPdfService $projectLegalPdfService = null,
+        ?DocumentPackGeneratedOptionsService $generatedOptions = null,
+        ?ProjectDatasheetPdfService $datasheetPdfService = null,
     ) {
         $this->projectLegalPdfService = $projectLegalPdfService ?? app(ProjectLegalPdfService::class);
+        $this->generatedOptions = $generatedOptions ?? app(DocumentPackGeneratedOptionsService::class);
+        $this->datasheetPdfService = $datasheetPdfService ?? app(ProjectDatasheetPdfService::class);
     }
 
     /**
@@ -43,6 +51,7 @@ class DocumentPackPdfService
 
         try {
             $inputPaths = [];
+            $datasheetPaths = [];
 
             foreach ($items as $index => $item) {
                 $inputPaths[] = $this->resolveItemPath(
@@ -51,6 +60,7 @@ class DocumentPackPdfService
                     user: $user,
                     workingDirectory: $workingDirectory,
                     index: $index,
+                    datasheetPaths: $datasheetPaths,
                 );
             }
 
@@ -107,6 +117,7 @@ class DocumentPackPdfService
         User $user,
         string $workingDirectory,
         int $index,
+        array &$datasheetPaths,
     ): string {
         $role = $item->role;
         abort_unless($role instanceof DocumentPackItemRole, 422, 'The document pack contains an unsupported document role.');
@@ -123,19 +134,44 @@ class DocumentPackPdfService
 
         $outputPath = $workingDirectory.'/'.str_pad((string) $index, 3, '0', STR_PAD_LEFT).'.pdf';
 
+        $options = $role->source() === DocumentPackItemSource::Generated
+            ? $this->generatedOptions->resolve($item->configuration, $revision)
+            : null;
+
+        abort_if($options !== null && ! $options['valid'], 422, $options['message'] ?? 'The generated document options are no longer valid.');
+        $areaIds = $options['area_ids'] ?? [];
+
         $content = match ($role) {
-            DocumentPackItemRole::Quote => $this->quoteContent($revision, $user),
-            DocumentPackItemRole::UnpricedSchedule => $this->scheduleContent($revision, $user),
+            DocumentPackItemRole::Quote => $this->quoteContent($revision, $user, $areaIds),
+            DocumentPackItemRole::UnpricedSchedule => $this->scheduleContent($revision, $user, $areaIds),
             DocumentPackItemRole::StandardLegalPage => File::get($this->projectLegalPdfService->legalPagePath()),
             default => throw new RuntimeException('The generated document role is not supported.'),
         };
+
+        if (($options['include_datasheets'] ?? false) === true) {
+            $datasheetsPath = $this->datasheetsPath($revision, $areaIds, $workingDirectory, $datasheetPaths);
+            $mergedPdf = $this->datasheetPdfService->appendExistingDatasheets(
+                documentContent: $content,
+                filename: 'document-pack-item.pdf',
+                datasheetsPath: $datasheetsPath,
+            );
+
+            try {
+                File::copy($mergedPdf['path'], $outputPath);
+            } finally {
+                File::delete($mergedPdf['path']);
+            }
+
+            return $outputPath;
+        }
 
         File::put($outputPath, $content);
 
         return $outputPath;
     }
 
-    private function quoteContent(ProjectRevision $revision, User $user): string
+    /** @param array<int, int> $areaIds */
+    private function quoteContent(ProjectRevision $revision, User $user, array $areaIds): string
     {
         abort_unless($user->can('pricing.view') && $user->can('output.produce-quote'), 403);
         abort_unless(
@@ -144,14 +180,50 @@ class DocumentPackPdfService
             'Quote PDF requires validation passed and quote approved.',
         );
 
-        return $this->projectPdfService->quoteContent($revision->project, $revision);
+        return $this->projectPdfService->quoteContent($revision->project, $revision, areaIds: $areaIds);
     }
 
-    private function scheduleContent(ProjectRevision $revision, User $user): string
+    /** @param array<int, int> $areaIds */
+    private function scheduleContent(ProjectRevision $revision, User $user, array $areaIds): string
     {
         abort_unless($user->can('output.produce-unpriced-schedule'), 403);
 
-        return $this->projectPdfService->content($revision->project, $revision);
+        return $this->projectPdfService->content($revision->project, $revision, $areaIds);
+    }
+
+    /**
+     * @param  array<int, int>  $areaIds
+     * @param  array<string, string>  $datasheetPaths
+     */
+    private function datasheetsPath(
+        ProjectRevision $revision,
+        array $areaIds,
+        string $workingDirectory,
+        array &$datasheetPaths,
+    ): string {
+        $key = $areaIds === [] ? 'all' : implode('-', $areaIds);
+
+        if (isset($datasheetPaths[$key])) {
+            return $datasheetPaths[$key];
+        }
+
+        $generatedPdf = $this->datasheetPdfService->datasheetsPdf(
+            project: $revision->project,
+            revision: $revision,
+            filename: 'datasheets.pdf',
+            areaIds: $areaIds,
+        );
+        $path = $workingDirectory.'/datasheets-'.hash('sha256', $key).'.pdf';
+
+        try {
+            File::copy($generatedPdf['path'], $path);
+        } finally {
+            File::delete($generatedPdf['path']);
+        }
+
+        $datasheetPaths[$key] = $path;
+
+        return $path;
     }
 
     private function filename(DocumentPack $documentPack, ProjectRevision $revision): string

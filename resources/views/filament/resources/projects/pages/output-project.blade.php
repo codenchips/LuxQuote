@@ -32,6 +32,10 @@
         $documentPackDownloadUrl = $this->getDocumentPackDownloadUrl();
         $documentPackGenerationBlockReason = $this->documentPackGenerationBlockReason();
         $selectedGenerationRevision = $this->selectedGenerationRevision();
+        $documentPackOptionsItem = $documentPackOptionsItemKey !== null
+            ? ($documentPackItems[$documentPackOptionsItemKey] ?? null)
+            : null;
+        $documentPackOptionsRoleLabel = \App\Enums\DocumentPackItemRole::tryFrom($documentPackOptionsItem['role'] ?? '')?->label() ?? 'document';
         $outputHistoryRows = $canViewOutputHistory ? $this->outputHistoryRows() : [];
         $outputHistoryTotalRows = $canViewOutputHistory ? $this->outputHistoryTotalRows() : 0;
         $outputHistoryTotalPages = $canViewOutputHistory ? $this->outputHistoryTotalPages() : 1;
@@ -291,6 +295,7 @@
                                 ? ($uploadedOriginalName ?? $uploadedFile->getClientOriginalName())
                                 : ($item['resource_display_name'] ?? $item['original_filename']);
                             $pdfPreviewUrl = $this->documentPackItemPdfUrl($item);
+                            $generatedDetails = $this->documentPackGeneratedDetails($item);
                             $isEmpty = blank($item['role']) || ($requiresUpload && ! $hasFile);
                         @endphp
                         <article
@@ -558,19 +563,57 @@
                                     </div>
                                 </button>
                             @elseif(filled($item['role']))
-                                <div class="mx-auto mt-3 flex h-[233px] w-[165px] flex-col items-center justify-center rounded-lg border border-primary-200 bg-primary-50 px-3 text-center dark:border-primary-500/20 dark:bg-primary-500/10">
-                                    <x-heroicon-o-sparkles class="h-8 w-8 text-primary-500" />
-                                    <span class="mt-2 text-xs font-semibold text-primary-700 dark:text-primary-300">{{ $sourceLabel }}</span>
+                                <div class="relative mx-auto mt-3 flex h-[233px] w-[165px] flex-col rounded-lg border border-primary-200 bg-primary-50 px-3 py-4 text-left dark:border-primary-500/20 dark:bg-primary-500/10">
+                                    @if($generatedDetails && (! $generatedDetails['configured'] || ! $generatedDetails['valid']))
+                                        <button
+                                            type="button"
+                                            wire:click="openDocumentPackGeneratedOptions('{{ $itemKey }}')"
+                                            class="flex flex-1 flex-col items-center justify-center text-center text-amber-600 transition hover:text-amber-500 dark:text-amber-400"
+                                            title="Refresh {{ strtolower($roleLabel) }} options"
+                                        >
+                                            <x-heroicon-o-arrow-path class="h-9 w-9" />
+                                            <span class="mt-2 text-xs font-semibold">Select options</span>
+                                            <span class="mt-2 text-[11px] leading-4 text-gray-500 dark:text-gray-400">{{ $generatedDetails['message'] }}</span>
+                                        </button>
+                                    @elseif($generatedDetails)
+                                        <div class="min-h-0 flex-1">
+                                            <div class="flex items-center justify-between gap-2">
+                                                <span class="text-[11px] font-semibold uppercase tracking-wide text-primary-700 dark:text-primary-300">Includes</span>
+                                                <button
+                                                    type="button"
+                                                    wire:click="openDocumentPackGeneratedOptions('{{ $itemKey }}')"
+                                                    class="rounded p-1 text-gray-400 transition hover:bg-primary-100 hover:text-primary-600 dark:hover:bg-primary-500/15 dark:hover:text-primary-300"
+                                                    title="Change {{ strtolower($roleLabel) }} options"
+                                                >
+                                                    <x-heroicon-o-pencil-square class="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                            <div class="mt-3 space-y-3 text-xs text-gray-700 dark:text-gray-200">
+                                                <div class="flex items-start gap-2">
+                                                    <x-heroicon-o-document-text class="mt-0.5 h-4 w-4 shrink-0 text-primary-500" />
+                                                    <span>{{ $generatedDetails['include_datasheets'] ? $generatedDetails['datasheet_count'].' '.\Illuminate\Support\Str::plural('datasheet', $generatedDetails['datasheet_count']) : 'No datasheets' }}</span>
+                                                </div>
+                                                <div class="flex items-start gap-2">
+                                                    <x-heroicon-o-building-office-2 class="mt-0.5 h-4 w-4 shrink-0 text-primary-500" />
+                                                    <span class="line-clamp-6 leading-4" title="{{ implode(', ', $generatedDetails['area_names']) }}">
+                                                        <span class="font-semibold">Areas:</span>
+                                                        @if($generatedDetails['area_scope'] === 'all')
+                                                            All{{ $generatedDetails['area_names'] !== [] ? ' — '.implode(', ', $generatedDetails['area_names']) : '' }}
+                                                        @else
+                                                            {{ implode(', ', $generatedDetails['area_names']) }}
+                                                        @endif
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="border-t border-primary-200 pt-2 text-center text-[11px] text-gray-500 dark:border-primary-500/20 dark:text-gray-400">
+                                            {{ $selectedGenerationRevision?->label() }} · {{ $sourceLabel }}
+                                        </div>
+                                    @endif
                                     @if($item['role'] === \App\Enums\DocumentPackItemRole::Quote->value && (! $selectedGenerationRevision?->validated || $selectedGenerationRevision?->status !== \App\Enums\ProjectRevisionStatus::Approved))
-                                        <span class="mt-2 text-xs text-amber-600 dark:text-amber-400">Quote not approved</span>
+                                        <span class="mt-2 text-center text-xs text-amber-600 dark:text-amber-400">Quote not approved</span>
                                     @endif
                                 </div>
-                                @if($this->documentPackGeneratedSummary($item['role']))
-                                    <div class="mx-auto mt-2 max-w-[165px] text-center text-xs text-gray-500 dark:text-gray-400">{{ $this->documentPackGeneratedSummary($item['role']) }}</div>
-                                    @if($this->documentPackGeneratedModifiedAt($item['role']))
-                                        <div class="mx-auto mt-1 max-w-[165px] text-center text-[11px] text-gray-400 dark:text-gray-500">Last modified {{ $this->documentPackGeneratedModifiedAt($item['role']) }}</div>
-                                    @endif
-                                @endif
                             @endif
                         </article>
                     @endforeach
@@ -1127,6 +1170,12 @@
     @endif
 
     @if($outputTab === 'packs' && $canManageDocumentPacks)
+        <x-document-pack-generated-options
+            :areas="$this->documentPackOptionAreas()"
+            :revision-label="$selectedGenerationRevision?->label()"
+            :role-label="$documentPackOptionsRoleLabel"
+        />
+
         <x-document-pack-pdf-preview />
 
         <x-document-pack-template-dialogs
