@@ -59,12 +59,22 @@ class ProjectAreaObserver
 
     public function saved(ProjectArea $area): void
     {
+        if ($area->wasRecentlyCreated || $area->wasChanged(['project_revision_id', 'name', 'sort_order'])) {
+            $this->invalidateRevision($area);
+        }
+
         $this->touchProject($area);
     }
 
     public function deleted(ProjectArea $area): void
     {
+        $this->invalidateRevision($area);
         $this->touchProject($area);
+    }
+
+    private function invalidateRevision(ProjectArea $area): void
+    {
+        $area->revision?->invalidateValidation();
     }
 
     private function touchProject(ProjectArea $area): void
@@ -73,6 +83,7 @@ class ProjectAreaObserver
 
         if ($project && $area->project_revision_id === $project->active_revision_id) {
             $project->updateQuietly(['last_edited_at' => now(), 'last_edited_by' => auth()->id()]);
+            $project->syncStatusFromActiveRevision();
         }
     }
 }

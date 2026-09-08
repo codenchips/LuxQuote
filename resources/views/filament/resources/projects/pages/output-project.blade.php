@@ -944,7 +944,7 @@
                                 </div>
                                 <div class="min-w-0">
                                     <h3 class="text-lg font-semibold text-gray-950 dark:text-white">Schedule PDF</h3>
-                                    <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Schedule without pricing. Always available.</p>
+                                    <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Schedule without pricing.</p>
                                 </div>
                             </div>
 
@@ -956,23 +956,26 @@
                                     </button>
                                 </div>
 
-                                <label class="flex min-h-9 items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-300">
-                                    <span class="inline-flex items-center gap-2">
-                                        Include datasheets
-                                        <x-heroicon-o-information-circle class="h-4 w-4 text-gray-400" />
-                                    </span>
-                                    <input type="checkbox" x-model="includeScheduleDatasheets" class="sr-only">
-                                    <span
-                                        x-bind:class="includeScheduleDatasheets ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"
-                                        class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition"
-                                        aria-hidden="true"
-                                    >
+                                <div class="grid min-h-9 grid-cols-2 items-center gap-4 text-sm text-gray-600 dark:text-gray-300">
+                                    <label class="flex items-center justify-between gap-3">
+                                        <span class="inline-flex items-center gap-2">
+                                            Include datasheets
+                                            <x-heroicon-o-information-circle class="h-4 w-4 text-gray-400" />
+                                        </span>
+                                        <input type="checkbox" x-model="includeScheduleDatasheets" class="sr-only">
                                         <span
-                                            x-bind:class="includeScheduleDatasheets ? 'translate-x-5' : ''"
-                                            class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"
-                                        ></span>
-                                    </span>
-                                </label>
+                                            x-bind:class="includeScheduleDatasheets ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"
+                                            class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition"
+                                            aria-hidden="true"
+                                        >
+                                            <span
+                                                x-bind:class="includeScheduleDatasheets ? 'translate-x-5' : ''"
+                                                class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"
+                                            ></span>
+                                        </span>
+                                    </label>
+                                    <div aria-hidden="true"></div>
+                                </div>
 
                                 <div class="mt-4 space-y-3">
                                     <a

@@ -45,6 +45,13 @@ class ValidationProject extends ViewRecord
 
     public string $flagIssueNote = '';
 
+    public function mount(int|string $record): void
+    {
+        parent::mount($record);
+
+        $this->repairInvalidApprovedRevision();
+    }
+
     public function getTitle(): string
     {
         return $this->record->name;
@@ -271,7 +278,12 @@ class ValidationProject extends ViewRecord
     public function openApproveRevisionModal(): void
     {
         abort_unless($this->canApproveRevision(), 403);
-        abort_unless($this->revisionReadyForApproval($this->activeRevision()), 403);
+
+        if (! $this->revisionReadyForApproval($this->activeRevision())) {
+            $this->rejectRevisionApproval();
+
+            return;
+        }
 
         $this->approveRevisionModalOpen = true;
     }
@@ -285,18 +297,42 @@ class ValidationProject extends ViewRecord
     {
         abort_unless($this->canApproveRevision(), 403);
 
-        $revision = $this->activeRevision();
+        $revisionId = $this->activeRevision()->id;
+        $revision = DB::transaction(function () use ($revisionId): ?ProjectRevision {
+            $revision = ProjectRevision::query()
+                ->whereKey($revisionId)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        abort_unless($this->revisionReadyForApproval($revision), 403);
+            $this->lineQuery($revision)
+                ->lockForUpdate()
+                ->get(['project_lines.id']);
 
-        $this->validator()->syncValidationStatus($revision);
-        $revision->refresh();
+            if (! $this->revisionReadyForApproval($revision)) {
+                $revision->invalidateValidation();
 
-        abort_unless($revision->validated, 403);
+                return null;
+            }
 
-        $revision->update([
-            'status' => ProjectRevisionStatus::Approved,
-        ]);
+            $this->validator()->syncValidationStatus($revision);
+            $revision->refresh();
+
+            if (! $revision->validated || ! $this->revisionReadyForApproval($revision)) {
+                return null;
+            }
+
+            $revision->update([
+                'status' => ProjectRevisionStatus::Approved,
+            ]);
+
+            return $revision;
+        });
+
+        if ($revision === null) {
+            $this->rejectRevisionApproval();
+
+            return;
+        }
 
         $this->syncApprovedRevisionValueToSalesforce($revision);
         $this->record->syncStatusFromActiveRevision();
@@ -718,11 +754,52 @@ class ValidationProject extends ViewRecord
 
     private function revisionReadyForApproval(ProjectRevision $revision): bool
     {
-        return $revision->validated || (
-            $this->validator()->unresolvedIssues($revision) === []
+        return $this->validator()->unresolvedIssues($revision) === []
             && $this->lineQuery($revision)->exists()
-            && $this->lineQuery($revision)->where('approved', false)->doesntExist()
-        );
+            && $this->lineQuery($revision)->where('approved', false)->doesntExist();
+    }
+
+    private function repairInvalidApprovedRevision(): void
+    {
+        $revision = $this->activeRevision();
+
+        if (
+            $revision->status !== ProjectRevisionStatus::Approved
+            || ($revision->validated
+                && $this->lineQuery($revision)->exists()
+                && $this->lineQuery($revision)->where('approved', false)->doesntExist())
+        ) {
+            return;
+        }
+
+        $revision->invalidateValidation();
+        $this->record->syncStatusFromActiveRevision();
+        $this->record->load('activeRevision');
+
+        Notification::make()
+            ->title('Revision approval was reset')
+            ->body('This revision contained changes that had not been validated. Resolve the current issues and approve it again.')
+            ->warning()
+            ->send();
+    }
+
+    private function rejectRevisionApproval(): void
+    {
+        $this->approveRevisionModalOpen = false;
+        $this->activeRevision()->invalidateValidation();
+        unset($this->validationIssues);
+        unset($this->validatedLines);
+        unset($this->activeRevisionValidated);
+        unset($this->activeRevisionApproved);
+        unset($this->activeRevisionReadyForApproval);
+        $this->record->load('activeRevision');
+        $this->refreshHeaderActions();
+
+        Notification::make()
+            ->title('Revision is not ready for approval')
+            ->body('Resolve or approve every current validation issue, then try again.')
+            ->warning()
+            ->send();
     }
 
     /**

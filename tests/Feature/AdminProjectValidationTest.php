@@ -268,11 +268,12 @@ class AdminProjectValidationTest extends TestCase
             ->assertSee('Approve Revision')
             ->assertSet('approveRevisionModalOpen', false)
             ->call('openApproveRevisionModal')
-            ->assertForbidden();
+            ->assertSet('approveRevisionModalOpen', false)
+            ->assertNotified('Revision is not ready for approval');
 
         Livewire::test(ValidationProject::class, ['record' => $project->id])
             ->call('approveRevision')
-            ->assertForbidden();
+            ->assertNotified('Revision is not ready for approval');
 
         $this->assertSame(ProjectRevisionStatus::Draft, $project->activeRevision->fresh()->status);
 
@@ -313,6 +314,69 @@ class AdminProjectValidationTest extends TestCase
             ->assertSee('Approved and locked')
             ->assertSee('Unapproved and unlocked')
             ->assertSee('P1');
+    }
+
+    public function test_editing_a_validated_line_immediately_invalidates_the_revision(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $product = Product::factory()->create(['price' => 12.34]);
+        $line = $this->createLine($project, $product->sku, unitPrice: 12.34);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->call('runValidation');
+
+        $this->assertTrue($project->activeRevision->fresh()->validated);
+        $this->assertTrue($line->fresh()->approved);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->call('updateLineField', $line->id, 'unit_price', 10.00);
+
+        $this->assertFalse($project->activeRevision->fresh()->validated);
+        $this->assertFalse($line->fresh()->approved);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertSee('1 unresolved issue')
+            ->call('openApproveRevisionModal')
+            ->assertSet('approveRevisionModalOpen', false)
+            ->assertNotified('Revision is not ready for approval');
+    }
+
+    public function test_validation_page_repairs_an_approved_revision_with_unapproved_lines(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create();
+        $product = Product::factory()->create(['price' => 12.34]);
+        $line = $this->createLine($project, $product->sku, unitPrice: 10.00);
+        $revision = $project->activeRevision;
+
+        $line->updateQuietly([
+            'approved' => false,
+            'approved_at' => null,
+            'approved_by' => null,
+        ]);
+        $revision->updateQuietly([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
+            'status' => ProjectRevisionStatus::Approved,
+        ]);
+
+        Livewire::test(ValidationProject::class, ['record' => $project->id])
+            ->assertNotified('Revision approval was reset')
+            ->assertSee('1 unresolved issue')
+            ->assertDontSee('Project is approved and locked')
+            ->call('approveRevision')
+            ->assertNotified('Revision is not ready for approval');
+
+        $revision->refresh();
+
+        $this->assertFalse($revision->validated);
+        $this->assertSame(ProjectRevisionStatus::Draft, $revision->status);
     }
 
     public function test_approving_salesforce_revision_updates_opportunity_amount(): void

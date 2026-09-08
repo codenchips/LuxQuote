@@ -7,6 +7,23 @@ use App\Models\ProjectLine;
 
 class ProjectLineObserver
 {
+    private const VALIDATION_FIELDS = [
+        'project_area_id',
+        'product_id',
+        'code',
+        'ref',
+        'description',
+        'qty',
+        'type',
+        'unit_price',
+        'cover_1',
+        'cover_2',
+        'cover_3',
+        'notes',
+        'status',
+        'sort_order',
+    ];
+
     /** Stash pending update payloads between updating() and updated(). */
     private static array $pendingPayloads = [];
 
@@ -107,12 +124,22 @@ class ProjectLineObserver
 
     public function saved(ProjectLine $line): void
     {
+        if ($line->wasRecentlyCreated || $line->wasChanged(self::VALIDATION_FIELDS)) {
+            $this->invalidateRevision($line);
+        }
+
         $this->touchProject($line);
     }
 
     public function deleted(ProjectLine $line): void
     {
+        $this->invalidateRevision($line);
         $this->touchProject($line);
+    }
+
+    private function invalidateRevision(ProjectLine $line): void
+    {
+        $line->area?->revision?->invalidateValidation();
     }
 
     private function touchProject(ProjectLine $line): void

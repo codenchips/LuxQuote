@@ -36,6 +36,20 @@ class ProjectRevision extends Model
         return 'P'.$revisionNumber;
     }
 
+    public function invalidateValidation(): void
+    {
+        if (! $this->validated && $this->status !== ProjectRevisionStatus::Approved) {
+            return;
+        }
+
+        $this->updateQuietly([
+            'validated' => false,
+            'validated_at' => null,
+            'validated_by' => null,
+            'status' => ProjectRevisionStatus::Draft,
+        ]);
+    }
+
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);

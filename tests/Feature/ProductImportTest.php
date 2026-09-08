@@ -217,17 +217,16 @@ class ProductImportTest extends TestCase
     public function test_import_does_not_populate_prices_on_approved_revisions(): void
     {
         $project = Project::factory()->create();
-        $project->activeRevision->update([
-            'validated' => true,
-            'status' => ProjectRevisionStatus::Approved,
-        ]);
-
         $line = $project->activeRevision->areas()->first()->lines()->create([
             'code' => 'XC-001',
             'description' => 'Locked line',
             'qty' => 1,
             'unit_price' => null,
             'sort_order' => 0,
+        ]);
+        $project->activeRevision->update([
+            'validated' => true,
+            'status' => ProjectRevisionStatus::Approved,
         ]);
 
         Http::fake(['*' => Http::response($this->apiResponse(), 200)]);

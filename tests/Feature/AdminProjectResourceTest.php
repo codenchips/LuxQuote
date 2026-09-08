@@ -2429,7 +2429,7 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('Quick Output')
             ->assertSee('Document Packs')
             ->assertSee('Quote with pricing.')
-            ->assertSee('Schedule without pricing. Always available.')
+            ->assertSee('Schedule without pricing.')
             ->assertSee('About datasheets')
             ->assertDontSee('Learn more')
             ->assertDontSee('Build a reusable pack, drag documents into the required order');
@@ -2444,7 +2444,7 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('Quote status')
             ->assertSee('Build a reusable pack, drag documents into the required order')
             ->assertDontSee('Quote with pricing.')
-            ->assertDontSee('Schedule without pricing. Always available.');
+            ->assertDontSee('Schedule without pricing.');
     }
 
     public function test_admin_can_export_the_active_revision_as_csv_with_prices(): void
@@ -2455,11 +2455,6 @@ class AdminProjectResourceTest extends TestCase
         $project = Project::factory()->for($admin)->create([
             'reference_number' => 'CSV-001',
             'name' => 'CSV Project',
-        ]);
-        $project->activeRevision->update([
-            'validated' => true,
-            'validated_at' => now(),
-            'validated_by' => $admin->id,
         ]);
         $area = $project->activeRevision->areas()->first();
         $area->lines()->create([
@@ -2472,6 +2467,11 @@ class AdminProjectResourceTest extends TestCase
             'notes' => 'CSV notes',
             'status' => 'Approved',
             'sort_order' => 0,
+        ]);
+        $project->activeRevision->update([
+            'validated' => true,
+            'validated_at' => now(),
+            'validated_by' => $admin->id,
         ]);
 
         $response = $this->get(route('projects.export.csv', [
