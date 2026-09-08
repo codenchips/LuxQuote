@@ -132,27 +132,21 @@ The existing hourly `app:prune-generated-pdfs` task removes expired transient ge
 
 ## Current Production Release Baseline
 
-Version `0.2.12` is the current production-visible baseline as of 7 September 2026. It includes the tested dependency-security refresh alongside Resources, reusable Document Pack templates, three-month Activity History retention, management Statistics, loading/preset feedback, currency-symbol output, and 10-row Statistics table pagination. The `0.2.12` GitHub workflow completed the production deploy, maintenance cleanup, and persistent-runner check successfully; the public health endpoint returned HTTP 200 afterwards. The earlier `0.2.5` commit followed a one-time reconciliation of divergent `main` and `production` histories; a manual database backup did not cause that divergence because backup archives are outside tracked release history.
+Version `0.2.17` is the 8 September 2026 production release. It builds on the deployed `0.2.16` CI/security baseline with transactional Product imports, bounded external-API retries/timeouts, durable queued PDF generation, configured and Tender-aware Document Packs, complete pack Output History, validation-state hardening, and read-only revision comparison. Its local release gate passes **405 tests / 2,397 assertions**, the production Vite build, Composer validation, and both Composer and production npm audits.
 
-This release deploys these forward-only migrations:
+This release deploys one forward-only migration:
 
-- `2026_08_05_095813_add_currency_to_projects_table`
-- `2026_08_27_092936_change_default_project_revision_to_one`
-- `2026_08_27_162004_add_calendar_view_permission`
-- `2026_08_28_114940_add_calendar_update_permission`
-- `2026_08_28_135337_add_calendar_delete_permission`
-- `2026_08_28_140716_add_calendar_create_permission`
-- `2026_09_01_091754_add_default_landing_page_to_permission_groups_table`
+- `2026_09_07_143616_create_pdf_generations_table`
 
-They add project currency, change only the default revision for future projects, add the four Calendar capabilities to permission groups, and add the group landing-page setting. They do not rewrite existing project revision sequences or restore/reset the database.
+The migration creates the transient `pdf_generations` table used for owner-scoped progress and prepared-download state. Its `up()` path does not update or delete existing business records, does not rewrite Projects or revisions, and does not touch Activity History or persistent uploaded PDFs. Normal deployment still takes the pre-deploy backup and runs only `php artisan migrate --force --no-interaction`.
 
-The `0.2.4`/`0.2.5` feature tranche introduced the forward-only migrations listed above. The first Docker image build after an older build cache has expired can spend several minutes printing package installation output from `docker/8.5/Dockerfile`. That output is expected during `docker compose up -d --build` and is not, by itself, a runner loop. Do not start a second deployment while the first workflow is still running. The existing persistent `luxquote-production` runner does not need to be recreated when it remains online and its logs end with `Listening for Jobs`.
+The first Docker image build after an older build cache has expired can spend several minutes printing package installation output from `docker/8.5/Dockerfile`. That output is expected during `docker compose up -d --build` and is not, by itself, a runner loop. Do not start a second deployment while the first workflow is still running. The existing persistent `luxquote-production` runner does not need to be recreated when it remains online and its logs end with `Listening for Jobs`.
 
 ## Pre-deployment Quality and Security Gate
 
-The 7–8 September dependency-security and PDF-output refresh updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and compatible transitive packages. With the response-header, deployment, external API, queued-PDF, and Document Pack hardening, the reviewed tree passes **396 tests / 2,332 assertions**, the production Vite build, Composer validation/platform checks, and the full production-safe PDF health command. Both `composer audit --locked` and `npm audit --omit=dev` report no vulnerabilities locally.
+The 7–8 September dependency-security and PDF-output refresh updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and compatible transitive packages. With the response-header, deployment, external API, queued-PDF, Document Pack, validation, and revision-comparison hardening, the reviewed tree passes **405 tests / 2,397 assertions**, the production Vite build, and Composer validation/platform checks. Both `composer audit --locked` and `npm audit --omit=dev` report no vulnerabilities locally.
 
-Production `0.2.12` installs this exact reviewed lock and the matching published Filament assets. Do **not** run `composer update` on the VPS: normal workflows use `composer install` and must retain the reviewed versions. This dependency refresh introduced no migrations and performed no database rewrite; deployment used the standard forward-only migration step.
+Production `0.2.17` installs this exact reviewed lock and the matching published Filament assets. Do **not** run `composer update` on the VPS: normal workflows use `composer install` and must retain the reviewed versions. This release performs no database rewrite; deployment uses the standard forward-only migration step for the one additive PDF queue table.
 
 Run this non-destructive gate locally before pushing `production`:
 
@@ -167,7 +161,7 @@ vendor/bin/sail artisan migrate:status
 
 Do not suppress future audit failures merely to make the gate green. Upgrade compatible packages locally, review `composer.lock`, and repeat the full test/build plus authentication/MFA, permissions, Calendar, Salesforce, Statistics, and PDF smoke checks. The GitHub production workflow now enforces this gate in an isolated GitHub-hosted `verify` job with a disposable MySQL service. It receives no production environment or secrets, and the self-hosted `deploy` job cannot begin until verification succeeds. Production asset installation also uses deterministic `npm ci`.
 
-This security/CI tranche introduces no database migration and does not alter production records. The normal deploy still takes its pre-deploy backup and runs only pending forward migrations with `migrate --force --no-interaction`.
+This release adds only the `pdf_generations` table and does not alter existing production records. The normal deploy still takes its pre-deploy backup and runs only pending forward migrations with `migrate --force --no-interaction`.
 
 After the dependency release deploys, verify the installed production versions and runtime without changing business data:
 

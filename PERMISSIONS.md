@@ -212,6 +212,8 @@ Project currency is display-only. The `projects.currency` value changes whether 
 
 Validation flagging is controlled by `validation.flag-lines`. Flagging an issue or validated line must collect a short note, store it against the affected line(s), and keep the same server-side editable-revision guard as other validation mutations.
 
+Revision comparison is read-only and follows `validation.view`; it does not introduce a separate capability. The Compare action is available only when the current project has at least two revisions, and the server verifies that both selected revision IDs belong to that project. Commercial fields remain independently protected: users without `pricing.view` do not receive or render Unit Price or effective Cover differences.
+
 ## Salesforce Push Control
 
 The Salesforce page includes a global persistent push switch controlled by `salesforce.manage-push`.

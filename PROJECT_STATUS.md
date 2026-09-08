@@ -1,12 +1,12 @@
 # Company App — Project Status
 
-_Last updated: 7 September 2026_
+_Last updated: 8 September 2026_
 
 ---
 
 ## Monday Baseline Review — 7 September 2026
 
-The deployed `0.2.12` feature set is broad and stable. Its dependency-security refresh passes **366 tests / 2,188 assertions**, every tracked migration is applied locally, the production asset build and PDF health check succeed, and the Composer plus production npm dependency audits report no vulnerabilities. The production workflow, maintenance cleanup, persistent-runner check, and public health check all completed successfully on 7 September.
+The deployed `0.2.16` baseline is broad and stable. The 8 September release candidate passes **405 tests / 2,397 assertions**, every tracked migration is applied locally, the production asset build succeeds, and the Composer plus production npm dependency audits report no vulnerabilities. The production workflow retains its isolated CI gate, maintenance cleanup, persistent-runner check, forward-only migrations, and public health check.
 
 The next release has now completed the first security/operations tranche:
 
@@ -14,7 +14,7 @@ The next release has now completed the first security/operations tranche:
 - Global application responses now receive a conservative CSP framing policy, Permissions Policy, Referrer Policy, content-type protection, same-origin framing protection, and cross-domain policy protection. HTTPS responses enable one-year HSTS automatically in production; subdomains and preload remain opt-in.
 - The production workflow now runs Composer validation/platform/audit checks, deterministic npm installation, the production npm audit, a Vite production build, the full PHPUnit suite, and real Browsershot/qpdf tests on an isolated GitHub-hosted runner. The self-hosted VPS deployment cannot start until that job passes.
 - Docker publishes the app/Vite, MySQL, Redis, Meilisearch, and Mailpit only on loopback by default. The production deploy explicitly checks the app port after container recreation and aborts if port `8080` is exposed on a non-loopback address.
-- PHP's `X-Powered-By` version banner is disabled. The current hardened build passes **396 tests / 2,332 assertions**, asset compilation, application/PDF health checks, workflow linting, shell syntax checks, and dependency audits.
+- PHP's `X-Powered-By` version banner is disabled. The current hardened build passes **405 tests / 2,397 assertions**, asset compilation, Composer validation, and dependency audits.
 - Quote, Schedule, shared datasheet, and Document Pack PDF requests now run through a persistent database queue. Users receive live queued/processing/retry status, bounded automatic attempts, safe terminal errors, and a manual Retry action instead of holding an Apache request open during long external/Puppeteer work.
 
 The remaining near-term priorities before another large feature tranche are:
@@ -32,6 +32,20 @@ The remaining near-term priorities before another large feature tranche are:
 - **Integration resilience**: centralise Salesforce and product API clients with explicit connect/request timeouts, bounded retries with jitter, and last-success/stale-data indicators. The Visits calendar should retain a read-only last-known view when Salesforce is temporarily unavailable.
 - **Everyday UX**: add favourites/recent projects, clearer autosave/unsaved-state feedback, accessible keyboard/focus behaviour for custom modals and lightboxes, and responsive browser tests for the most-used project/output flows.
 - **Operational security**: after deploying the response-header/loopback build, verify the public HSTS value survives Cloudflare/Apache, require MFA for privileged groups, strengthen new-password rules, and replace the emergency CGI's shared query token/secondary static confirmation word with a server-managed high-entropy secret plus IP restriction and auditable access.
+
+## PDF, Document Pack, Validation, and Revision Comparison Release — 8 September 2026
+
+- **Transactional catalogue replacement**: Product imports stage validation first and update the catalogue plus dependent blank project-line prices inside one transaction. A failed import rolls back instead of leaving a partially replaced catalogue.
+- **External API resilience**: Salesforce, product catalogue, and remote datasheet requests use explicit connection/request timeouts, bounded retries only where replay is safe, and user-facing fallback errors that do not expose credentials or transport internals.
+- **Durable PDF queue**: Quote, Schedule, shared datasheet, and Document Pack generation uses the persistent `pdf` queue, live progress, automatic retry/backoff, manual retry after terminal failure, owner-scoped status/download routes, and scheduled transient-file cleanup.
+- **Document Pack output choices**: Generated Quote and Schedule cards store their own area selection and Include datasheets choice. Missing template selections or area names that no longer resolve must be refreshed before generation.
+- **Tender-aware packs**: A Document Pack containing a Quote uses the same Tender selection flow as Quick Output. Each selected Tender produces a complete pack with its cover sheet; selecting none creates one cover-free pack.
+- **Pack history**: Successful Document Pack outputs are recorded in Output History with pack, revision, Tender, and datasheet context, plus permission-aware regeneration where the saved pack still exists.
+- **Validation lock hardening**: Editing an active revision invalidates its prior validation state immediately. Revision approval repeats a fresh server-side validation check, remains disabled while issues exist, and returns a controlled notification instead of a 503 when stale UI attempts approval.
+- **Read-only revision comparison**: The Validation page offers Compare when at least two revisions exist. It defaults to the active and immediately previous revisions, requires exactly two revisions belonging to the current project, and displays area/line differences in a Git-style modal.
+- **Useful diff semantics**: Validation approval metadata and notes are excluded; price and effective Cover fields appear only to users with `pricing.view`; whole-line additions, removals, and moves are compact coloured rows; genuine edits expand only the fields that changed.
+- **UI polish**: Closing custom dialogs no longer leaves a focus outline around the page, and the Schedule datasheet option retains the same half-width alignment as the Quote panel.
+- **Database rollout**: The only new migration since `0.2.16` is additive migration `2026_09_07_143616_create_pdf_generations_table`. It creates transient queue-status storage and does not update or delete Projects, revisions, lines, Resources, Document Packs, reporting data, or Activity History.
 
 ## Durable PDF Generation — 7 September 2026
 
@@ -563,7 +577,7 @@ The outer `<div>` has `wire:poll.30s="heartbeat"`. On each poll (and on `mount`)
 
 ## Validation & Approval
 
-The admin-only validation page is available at `/projects/{id}/validation`. It validates the project's **active revision** using `App\Services\ProjectRevisionValidator`.
+The permission-controlled validation page is available at `/projects/{id}/validation`. It validates the project's **active revision** using `App\Services\ProjectRevisionValidator`; access requires `validation.view`.
 
 ### Current validation rules
 
@@ -587,6 +601,17 @@ SKU comparison for validation is case-insensitive and trims surrounding whitespa
 - Validated-but-unapproved revisions remain editable and can be revalidated after edits.
 - Once a revision is validated, admins can click **Approve Revision**, confirm the lock modal, and set `project_revisions.status = approved`.
 - Approved revisions reject validation and schedule mutation actions server-side.
+- Any meaningful active-revision area or line change clears the revision's validated state so stale validation cannot remain approval-ready.
+- Revision approval re-runs validation server-side immediately before locking and fails gracefully if issues remain.
+
+### Revision comparison
+
+- **Compare** is shown only when the project has at least two revisions.
+- The selection dialog defaults to the active revision plus the immediately previous revision; when exactly two revisions exist, both are selected.
+- Exactly two revisions from the current project are required. Comparison is read-only and does not activate, edit, approve, or otherwise mutate either revision.
+- Areas and lines are compared in their saved order. Added/removed lines—including the two sides of a move between Areas—render as compact green/red summary rows; only changed fields on an existing line expand into paired red/green rows.
+- Approval state, validation flags, approvers, timestamps, and validation notes are deliberately not business-content differences.
+- Unit prices and effective Cover percentages are included only when the viewer has `pricing.view`; non-pricing users receive the same structural and schedule-content comparison without commercial data.
 
 ### Warning actions
 
@@ -615,9 +640,10 @@ The validation page now separates unresolved warnings from resolved lines:
 | File | Role |
 |---|---|
 | `app/Services/ProjectRevisionValidator.php` | Single source of truth for rule evaluation and revision validation status |
+| `app/Services/ProjectRevisionComparisonService.php` | Read-only, permission-aware area/line comparison and diff summaries |
 | `app/Filament/Resources/Projects/Pages/ValidationProject.php` | Admin actions: run, approve warning, undo, merge, match price, approve revision |
-| `resources/views/filament/resources/projects/pages/validation-project.blade.php` | Validation summary and warning list |
-| `tests/Feature/AdminProjectValidationTest.php` | Validation, approval, merge, revalidation, and locking coverage |
+| `resources/views/filament/resources/projects/pages/validation-project.blade.php` | Validation summary, warning list, revision selector, and Git-style diff modal |
+| `tests/Feature/AdminProjectValidationTest.php` | Validation, approval, merge, revalidation, locking, permissions, and revision-comparison coverage |
 
 ---
 
