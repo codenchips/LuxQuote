@@ -5,12 +5,17 @@ namespace Tests\Feature;
 use App\Filament\Resources\Users\Pages\CreateUser;
 use App\Filament\Resources\Users\Pages\EditUser;
 use App\Filament\Resources\Users\Pages\ListUsers;
+use App\Filament\Resources\Users\UserResource;
+use App\Models\Permission;
+use App\Models\PermissionGroup;
 use App\Models\Project;
 use App\Models\ProjectPresence;
 use App\Models\User;
 use Filament\Actions\DeleteAction;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -204,5 +209,57 @@ class AdminUserResourceTest extends TestCase
             ->callAction(DeleteAction::class);
 
         $this->assertModelMissing($user);
+    }
+
+    public function test_non_admin_group_member_cannot_delete_an_admin_even_with_delete_permission(): void
+    {
+        $admin = $this->adminUser();
+        $managerGroup = PermissionGroup::where('slug', 'manager')->firstOrFail();
+        $managerGroup->permissions()->syncWithoutDetaching(
+            Permission::where('key', 'users.delete')->pluck('id'),
+        );
+        $manager = User::factory()->create(['permission_group_id' => $managerGroup->id]);
+
+        $this->actingAs($manager);
+
+        $this->assertFalse(UserResource::canDelete($admin));
+
+        $this->expectException(AuthorizationException::class);
+        $admin->delete();
+    }
+
+    public function test_final_admin_group_member_cannot_be_demoted_or_deleted(): void
+    {
+        $admin = $this->adminUser();
+        $userGroup = PermissionGroup::where('slug', 'user')->firstOrFail();
+
+        $this->actingAs($admin);
+        $this->assertFalse(UserResource::canDelete($admin));
+
+        try {
+            $admin->update(['permission_group_id' => $userGroup->id]);
+            $this->fail('The final Admin-group member was demoted.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('permission_group_id', $exception->errors());
+            $this->assertSame($admin->id, $admin->fresh()->id);
+            $this->assertSame('admin', $admin->fresh()->permissionGroup->slug);
+        }
+
+        $this->expectException(ValidationException::class);
+        $admin->delete();
+    }
+
+    public function test_admin_group_member_can_delete_another_admin_when_one_remains(): void
+    {
+        $actor = $this->adminUser();
+        $otherAdmin = $this->adminUser();
+
+        $this->actingAs($actor);
+
+        $this->assertTrue(UserResource::canDelete($otherAdmin));
+        $otherAdmin->delete();
+
+        $this->assertModelMissing($otherAdmin);
+        $this->assertModelExists($actor);
     }
 }

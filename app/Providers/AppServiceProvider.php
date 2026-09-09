@@ -15,6 +15,7 @@ use App\Observers\ProjectAreaObserver;
 use App\Observers\ProjectLineObserver;
 use App\Observers\ProjectObserver;
 use App\Observers\SpecialOrderCodeObserver;
+use App\Observers\UserObserver;
 use App\Services\SalesforceService;
 use Filament\Auth\Http\Responses\Contracts\LoginResponse as LoginResponseContract;
 use Illuminate\Auth\Events\Login;
@@ -74,6 +75,7 @@ class AppServiceProvider extends ServiceProvider
         ProjectArea::observe(ProjectAreaObserver::class);
         ProjectLine::observe(ProjectLineObserver::class);
         SpecialOrderCode::observe(SpecialOrderCodeObserver::class);
+        User::observe(UserObserver::class);
 
         RateLimiter::for('login', function (Request $request) {
             return Limit::perMinute(5)->by($request->ip());

@@ -27,6 +27,22 @@ class PermissionGroup extends Model
         return $this->hasMany(User::class);
     }
 
+    public function isAdminGroup(): bool
+    {
+        return $this->slug === 'admin';
+    }
+
+    public function ensureHasAllPermissions(): void
+    {
+        if (! $this->isAdminGroup()) {
+            return;
+        }
+
+        $this->permissions()->syncWithoutDetaching(
+            Permission::query()->pluck('id')->all(),
+        );
+    }
+
     /**
      * @return array<string, string>
      */

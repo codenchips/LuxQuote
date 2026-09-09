@@ -8,6 +8,7 @@ use App\Filament\Resources\Users\Pages\ListUsers;
 use App\Filament\Resources\Users\Schemas\UserForm;
 use App\Filament\Resources\Users\Tables\UsersTable;
 use App\Models\User;
+use App\Services\AdminGroupGuard;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -45,7 +46,12 @@ class UserResource extends Resource
 
     public static function canDelete(Model $record): bool
     {
-        return auth()->user()?->can('users.delete') ?? false;
+        if (! $record instanceof User) {
+            return false;
+        }
+
+        return (auth()->user()?->can('users.delete') ?? false)
+            && app(AdminGroupGuard::class)->canDelete($record, auth()->user());
     }
 
     public static function form(Schema $schema): Schema

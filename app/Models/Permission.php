@@ -9,6 +9,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 #[Fillable(['key', 'name', 'category', 'description'])]
 class Permission extends Model
 {
+    protected static function booted(): void
+    {
+        static::created(function (Permission $permission): void {
+            PermissionGroup::query()
+                ->where('slug', 'admin')
+                ->first()
+                ?->permissions()
+                ->syncWithoutDetaching([$permission->getKey()]);
+        });
+    }
+
     /**
      * @return BelongsToMany<PermissionGroup, $this>
      */

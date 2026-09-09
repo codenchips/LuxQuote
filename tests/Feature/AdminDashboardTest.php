@@ -185,13 +185,14 @@ class AdminDashboardTest extends TestCase
 
     public function test_dashboard_hides_document_packs_with_quotes_from_users_without_pricing_permission(): void
     {
+        $activityUser = User::factory()->admin()->create();
         $user = User::factory()->create();
         $this->actingAs($user);
 
         $visibleProject = Project::factory()->create(['name' => 'Visible Pack Project']);
         $visiblePack = DocumentPack::factory()->for($visibleProject)->create(['name' => 'Schedule Only Pack']);
         DocumentPackItem::factory()->for($visiblePack)->create();
-        $this->activityLog(User::factory()->admin()->create(), $visibleProject, 'document_pack.generated', now(), $visibleProject->activeRevision, [
+        $this->activityLog($activityUser, $visibleProject, 'document_pack.generated', now(), $visibleProject->activeRevision, [
             'document_pack_id' => $visiblePack->id,
             'document_pack_name' => $visiblePack->name,
             'filename' => 'schedule-only.pdf',
@@ -202,7 +203,7 @@ class AdminDashboardTest extends TestCase
         DocumentPackItem::factory()->for($hiddenPack)->create([
             'role' => DocumentPackItemRole::Quote,
         ]);
-        $this->activityLog(User::factory()->admin()->create(), $hiddenProject, 'document_pack.generated', now()->subMinute(), $hiddenProject->activeRevision, [
+        $this->activityLog($activityUser, $hiddenProject, 'document_pack.generated', now()->subMinute(), $hiddenProject->activeRevision, [
             'document_pack_id' => $hiddenPack->id,
             'document_pack_name' => $hiddenPack->name,
             'filename' => 'quote-pack.pdf',

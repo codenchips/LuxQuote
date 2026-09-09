@@ -113,6 +113,7 @@ class PermissionGroupForm
                                     ->orderBy('name'),
                             )
                             ->searchable()
+                            ->disabled(fn (?PermissionGroup $record): bool => $record?->isAdminGroup() ?? false)
                             ->extraAlpineAttributes([
                                 'class' => 'lux-shared-permission-search-list',
                                 'x-on:permission-search.window' => 'search = $event.detail',

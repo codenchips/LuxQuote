@@ -17,4 +17,9 @@ class EditPermissionGroup extends EditRecord
                 ->visible(fn (): bool => ! $this->record->is_system),
         ];
     }
+
+    protected function afterSave(): void
+    {
+        $this->record->ensureHasAllPermissions();
+    }
 }

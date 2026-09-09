@@ -5,6 +5,8 @@ namespace App\Filament\Resources\Projects\Schemas;
 use App\Enums\ProjectRevisionStatus;
 use App\Enums\ProjectVisibility;
 use App\Models\Project;
+use App\Services\ProjectNameFormatter;
+use App\Services\SalesforceProjectRefreshService;
 use App\Services\SalesforceService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
@@ -21,7 +23,6 @@ use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
-use Illuminate\Support\Str;
 
 class ProjectForm
 {
@@ -41,8 +42,61 @@ class ProjectForm
                             self::clearSalesforceSelection($set);
                         }
                     })
-                    ->disabled(fn (?Project $record): bool => $record !== null)
-                    ->columnSpanFull(),
+                    ->disabled(fn (?Project $record): bool => $record !== null),
+
+                Actions::make([
+                    Action::make('refreshSalesforceProject')
+                        ->label('Refresh')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('gray')
+                        ->tooltip('Refresh project details from Salesforce. LuxQuote Value will not be changed.')
+                        ->requiresConfirmation()
+                        ->modalHeading('Refresh project details from Salesforce?')
+                        ->modalDescription('This pulls the latest Salesforce details into LuxQuote. Value and LuxQuote-only settings will not change, and nothing will be pushed to Salesforce.')
+                        ->modalSubmitActionLabel('Refresh details')
+                        ->visible(fn (?Project $record): bool => $record !== null
+                            && $record->salesforce_project
+                            && filled($record->salesforce_id)
+                            && (auth()->user()?->can('projects.update-details') ?? false))
+                        ->action(function (?Project $record, Set $set): void {
+                            abort_unless(auth()->user()?->can('projects.update-details'), 403);
+                            abort_if($record === null || ! $record->salesforce_project || blank($record->salesforce_id), 404);
+
+                            $result = app(SalesforceProjectRefreshService::class)->refresh($record);
+
+                            if (! $result['success']) {
+                                Notification::make()
+                                    ->danger()
+                                    ->title('Salesforce refresh failed')
+                                    ->body($result['message'])
+                                    ->send();
+
+                                return;
+                            }
+
+                            $record->refresh();
+
+                            foreach (array_keys($result['attributes'] ?? []) as $field) {
+                                if ($field === 'owner_name') {
+                                    continue;
+                                }
+
+                                $set($field, $record->getAttribute($field));
+                            }
+
+                            Notification::make()
+                                ->success()
+                                ->title('Salesforce details refreshed')
+                                ->body($result['message'])
+                                ->send();
+                        }),
+                ])
+                    ->key('salesforceRefreshActions')
+                    ->alignEnd()
+                    ->visible(fn (?Project $record): bool => $record !== null
+                        && $record->salesforce_project
+                        && filled($record->salesforce_id)
+                        && (auth()->user()?->can('projects.update-details') ?? false)),
 
                 TextInput::make('name')
                     ->label('Project Name')
@@ -359,23 +413,7 @@ class ProjectForm
 
     public static function titleCaseProjectName(?string $name): string
     {
-        return (string) preg_replace_callback(
-            '/\b[\pL\pN][\pL\pN\']*\b/u',
-            fn (array $matches): string => self::titleCaseProjectNameWord($matches[0]),
-            (string) $name,
-        );
-    }
-
-    private static function titleCaseProjectNameWord(string $word): string
-    {
-        if (preg_match('/^\p{Lu}{2,}$/u', $word) === 1 && mb_strlen($word) <= 3) {
-            return $word;
-        }
-
-        return Str::of($word)
-            ->lower()
-            ->title()
-            ->toString();
+        return app(ProjectNameFormatter::class)->fromSalesforce($name);
     }
 
     /**

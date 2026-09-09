@@ -24,6 +24,7 @@ use App\Models\ProjectTender;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\ProjectSchedulePdfService;
+use App\Services\SalesforceProjectRefreshService;
 use App\Services\SalesforceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -377,6 +378,104 @@ class AdminProjectResourceTest extends TestCase
             'salesforce_id' => '006000000000001AAA',
             'branch_name' => 'Birmingham Central',
         ]);
+    }
+
+    public function test_salesforce_project_details_can_be_refreshed_without_changing_luxquote_value(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Old Salesforce Project',
+            'reference_number' => 'SF-OLD',
+            'customer_name' => 'Old Customer',
+            'owner_email' => 'old-owner@example.com',
+            'owner_name' => 'Old Owner',
+            'branch_name' => 'Old Branch',
+            'value' => 12345.67,
+            'currency' => 'GBP',
+            'visibility' => ProjectVisibility::Private,
+            'quote_notes' => 'Keep this local note',
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+        ]);
+
+        $this->instance(SalesforceService::class, new class extends SalesforceService
+        {
+            public function getOpportunityById(string $id): ?array
+            {
+                return [
+                    'Id' => $id,
+                    'Name' => 'NEW NHS SALESFORCE PROJECT',
+                    'Project_Reference_Number__c' => 'SF-NEW',
+                    'Miscellaneous_Customer_Name__c' => 'New Customer',
+                    'Owner' => [
+                        'Name' => 'New Owner',
+                        'Email' => 'new-owner@example.com.invalid',
+                    ],
+                    'CEF_Branch__r' => ['Name' => 'New Branch'],
+                    'CEF_Cover__c' => 7.5,
+                    'Amount' => 999999.99,
+                ];
+            }
+        });
+
+        $result = app(SalesforceProjectRefreshService::class)->refresh($project);
+        $project->refresh();
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('NEW NHS Salesforce Project', $project->name);
+        $this->assertSame('SF-NEW', $project->reference_number);
+        $this->assertSame('New Customer', $project->customer_name);
+        $this->assertSame('new-owner@example.com', $project->owner_email);
+        $this->assertSame('New Owner', $project->owner_name);
+        $this->assertSame('New Branch', $project->branch_name);
+        $this->assertTrue($project->has_cover);
+        $this->assertSame('7.50', $project->cover_1);
+        $this->assertSame('5.00', $project->cover_2);
+        $this->assertSame('0.00', $project->cover_3);
+        $this->assertSame('12345.67', $project->value);
+        $this->assertSame('GBP', $project->currency);
+        $this->assertSame(ProjectVisibility::Private, $project->visibility);
+        $this->assertSame('Keep this local note', $project->quote_notes);
+
+        $payload = ActivityLog::query()
+            ->where('project_id', $project->id)
+            ->where('action_type', 'project.updated')
+            ->latest('id')
+            ->value('payload');
+
+        $this->assertArrayNotHasKey('value', $payload ?? []);
+    }
+
+    public function test_failed_salesforce_project_refresh_leaves_luxquote_details_unchanged(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Unchanged Salesforce Project',
+            'customer_name' => 'Unchanged Customer',
+            'value' => 876.54,
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+        ]);
+        $originalAttributes = $project->only(['name', 'customer_name', 'value']);
+        $originalUpdatedAt = $project->updated_at?->toISOString();
+
+        $this->instance(SalesforceService::class, new class extends SalesforceService
+        {
+            public function getOpportunityById(string $id): ?array
+            {
+                return null;
+            }
+        });
+
+        $result = app(SalesforceProjectRefreshService::class)->refresh($project);
+
+        $this->assertFalse($result['success']);
+        $this->assertSame($originalAttributes, $project->fresh()->only(array_keys($originalAttributes)));
+        $this->assertSame($originalUpdatedAt, $project->fresh()->updated_at?->toISOString());
     }
 
     public function test_project_table_shows_details_pencil_before_copy_action(): void
@@ -2364,6 +2463,7 @@ class AdminProjectResourceTest extends TestCase
 
     public function test_authorized_user_can_request_quote_approval(): void
     {
+        $admin = User::factory()->admin()->create();
         $salesUser = User::factory()->sales()->create();
         $this->actingAs($salesUser);
 
@@ -2390,7 +2490,7 @@ class AdminProjectResourceTest extends TestCase
             'revision_number' => 1,
         ]);
 
-        $this->actingAs(User::factory()->admin()->create());
+        $this->actingAs($admin);
 
         Livewire::test(ListActivityLogs::class)
             ->assertSee('Requested quote approval')

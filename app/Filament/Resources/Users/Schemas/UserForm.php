@@ -3,10 +3,13 @@
 namespace App\Filament\Resources\Users\Schemas;
 
 use App\Models\PermissionGroup;
+use App\Models\User;
+use App\Services\AdminGroupGuard;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Builder;
 
 class UserForm
 {
@@ -28,9 +31,17 @@ class UserForm
                             ->maxLength(255),
                         Select::make('permission_group_id')
                             ->label('Group')
-                            ->relationship('permissionGroup', 'name')
+                            ->relationship(
+                                'permissionGroup',
+                                'name',
+                                modifyQueryUsing: fn (Builder $query): Builder => app(AdminGroupGuard::class)->isAdminGroupMember(auth()->user())
+                                    ? $query
+                                    : $query->where('slug', '!=', AdminGroupGuard::GroupSlug),
+                            )
                             ->preload()
                             ->searchable()
+                            ->disabled(fn (?User $record): bool => ($record?->permissionGroup?->isAdminGroup() ?? false)
+                                && ! app(AdminGroupGuard::class)->isAdminGroupMember(auth()->user()))
                             ->required()
                             ->default(fn (): ?int => PermissionGroup::where('slug', 'user')->value('id')),
                     ]),

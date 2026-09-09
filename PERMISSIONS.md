@@ -49,6 +49,17 @@ Users are assigned to one permission group on the User create/edit form. The leg
 
 `User::hasPermission()` returns true for admins before checking the assigned group. This gives Admin users unrestricted access.
 
+### Protected Admin group
+
+The system group whose immutable slug is `admin` is a protected authorization boundary:
+
+- Admin-group members always receive every application permission through the global authorization bypass, even if a permission pivot is unexpectedly missing.
+- The Admin group edit form displays its permission checkboxes as read-only. Saving the group restores every current permission assignment, and newly-created Permission records are assigned to it automatically.
+- The rollout migration safely inserts any missing Admin permission links; it does not remove or rewrite existing permission assignments.
+- Only an authenticated user who currently belongs to the `admin` group may assign another user to that group, remove a user from it, or delete an Admin-group user. Holding `users.*`, `permissions.manage`, or the legacy `role = admin` value is not sufficient.
+- The final Admin-group member cannot be demoted or deleted, including by themselves, so the application cannot be left without an account capable of managing Admin membership.
+- The User create/edit form hides the Admin option from non-Admin-group members and locks the Group field when they edit an existing Admin. Model observers repeat the same checks server-side so forged Livewire requests and direct model updates cannot bypass the UI.
+
 ## Filament UI
 
 The left navigation groups permission-controlled features as follows:
@@ -68,6 +79,8 @@ The left navigation groups permission-controlled features as follows:
   - `Teams`: create/edit teams and manage their membership (`teams.manage`).
 
 Navigation placement does not grant access; each page and resource keeps its existing server-side permission guard.
+
+Refreshing a Salesforce-linked project's descriptive details is part of `projects.update-details`. The action is available only inside the Project Details form for a linked project, repeats the permission check server-side, and is read-only toward Salesforce. It never imports or pushes Salesforce Amount; LuxQuote Value remains authoritative after initial project creation.
 
 The `Permissions` resource still exists, but it is hidden from the left navigation with:
 
