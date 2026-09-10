@@ -341,12 +341,12 @@ class ProjectsTable
                         ->color('danger')
                         ->requiresConfirmation()
                         ->visible(fn (Project $record): bool => $record->status !== ProjectStatus::Archived
-                            && (auth()->user()?->isAdministrator() ?? false))
+                            && (auth()->user()?->can('projects.delete-permanently') ?? false))
                         ->modalHeading('Delete project permanently?')
                         ->modalDescription('This will permanently delete the project and all its areas and lines. This cannot be undone.')
                         ->modalSubmitActionLabel('Yes, delete permanently')
                         ->action(function (Project $record): void {
-                            abort_unless(auth()->user()?->isAdministrator(), 403);
+                            abort_unless(auth()->user()?->can('projects.delete-permanently'), 403);
                             abort_if($record->status === ProjectStatus::Archived, 409, 'Archived projects must be restored before permanent deletion.');
 
                             $record->delete();
@@ -359,7 +359,8 @@ class ProjectsTable
                     ->tooltip(fn (Project $record): string => $record->status === ProjectStatus::Archived ? 'Restore' : 'Delete / Archive')
                     ->visible(fn (Project $record): bool => $record->status === ProjectStatus::Archived
                         ? (auth()->user()?->can('projects.update-details') ?? false)
-                        : ((auth()->user()?->can('projects.update-details') ?? false) || (auth()->user()?->isAdministrator() ?? false))),
+                        : ((auth()->user()?->can('projects.update-details') ?? false)
+                            || (auth()->user()?->can('projects.delete-permanently') ?? false))),
             ])
             ->defaultSort('created_at', 'desc')
             ->poll('60s')

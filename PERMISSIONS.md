@@ -124,6 +124,7 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Edit project areas / line items | x | x |  | x | x |
 | Manage project tenders | x | x |  | x | x |
 | Mark design complete | x | x |  | x | x |
+| Delete projects permanently | x |  |  |  |  |
 | Create project revisions | x | x |  |  | x |
 | View project history | x | x | x | x | x |
 | View global history | x |  |  |  | x |
@@ -281,6 +282,8 @@ Project visibility supports:
 - `Team` — the project owner, admins, and members of the selected team may see it.
 
 The project page **Design Complete** status toggle is controlled by `projects.mark-design-complete`. It changes only the visible project status and does not unlock approved revisions, change line validation, grant pricing access, or change output permissions.
+
+The project-list **Delete permanently** submenu action is controlled independently by `projects.delete-permanently`. It defaults to Admin only, may be granted to any group, and does not grant project editing or archive/restore access. The action remains limited to active projects; an archived project must first be restored by a user with `projects.update-details`. Permission checks are repeated server-side because permanent deletion removes the project and all related records and cannot be undone.
 
 ## Project Tenders
 

@@ -10,6 +10,7 @@ enum PermissionKey: string
     case ProjectsUpdateLines = 'projects.update-lines';
     case ProjectsManageTenders = 'projects.manage-tenders';
     case ProjectsMarkDesignComplete = 'projects.mark-design-complete';
+    case ProjectsDeletePermanently = 'projects.delete-permanently';
     case RevisionsCreate = 'revisions.create';
     case ProjectHistoryView = 'project-history.view';
     case ActivityLogView = 'activity-log.view';
@@ -61,6 +62,7 @@ enum PermissionKey: string
             self::ProjectsUpdateLines => 'Edit project areas / line items',
             self::ProjectsManageTenders => 'Manage project tenders',
             self::ProjectsMarkDesignComplete => 'Mark design complete',
+            self::ProjectsDeletePermanently => 'Delete projects permanently',
             self::RevisionsCreate => 'Create project revisions',
             self::ProjectHistoryView => 'View project history',
             self::ActivityLogView => 'View global history',
@@ -113,7 +115,8 @@ enum PermissionKey: string
             self::ProjectsUpdateDetails,
             self::ProjectsUpdateLines,
             self::ProjectsManageTenders,
-            self::ProjectsMarkDesignComplete => 'Projects',
+            self::ProjectsMarkDesignComplete,
+            self::ProjectsDeletePermanently => 'Projects',
 
             self::RevisionsCreate,
             self::RevisionsApprove,
@@ -174,6 +177,7 @@ enum PermissionKey: string
             self::CoverUpdate => 'Allows changing project and line-level cover percentages.',
             self::ProjectsManageTenders => 'Allows adding, removing, and choosing primary contractor tenders for a project.',
             self::ProjectsMarkDesignComplete => 'Allows toggling the Design Complete project status without granting full project-detail editing.',
+            self::ProjectsDeletePermanently => 'Allows permanently deleting active projects and all of their related project data. This cannot be undone.',
             self::SpecialsManage => 'Allows managing special order codes that affect project entry, validation, and PDF outputs.',
             self::ResourcesView => 'Allows viewing the Resources page and previewing or downloading its files.',
             self::ResourcesCreate => 'Allows uploading new files to the Resources library.',

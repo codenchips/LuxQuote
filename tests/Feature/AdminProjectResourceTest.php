@@ -15,6 +15,7 @@ use App\Filament\Resources\Projects\Pages\ViewProject;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Filament\Resources\Projects\Schemas\ProjectForm;
 use App\Models\ActivityLog;
+use App\Models\Permission;
 use App\Models\Product;
 use App\Models\Project;
 use App\Models\ProjectArea;
@@ -806,6 +807,51 @@ class AdminProjectResourceTest extends TestCase
             ->assertTableActionHidden('restore', $activeProject)
             ->assertTableActionVisible('archive', $activeProject)
             ->assertTableActionVisible('delete', $activeProject);
+    }
+
+    public function test_group_can_be_granted_permission_to_delete_projects_permanently(): void
+    {
+        $technicalUser = User::factory()->technical()->create();
+        $technicalUser->permissionGroup->permissions()->syncWithoutDetaching([
+            Permission::where('key', 'projects.delete-permanently')->value('id'),
+        ]);
+        $this->actingAs($technicalUser);
+
+        $project = Project::factory()->for($technicalUser)->create([
+            'status' => ProjectStatus::InProgress,
+        ]);
+
+        Livewire::test(ListProjects::class)
+            ->assertTableActionVisible('delete', $project)
+            ->callTableAction('delete', $project);
+
+        $this->assertDatabaseMissing('projects', ['id' => $project->id]);
+    }
+
+    public function test_user_without_permission_cannot_delete_projects_permanently(): void
+    {
+        $technicalUser = User::factory()->technical()->create();
+        $this->actingAs($technicalUser);
+
+        $project = Project::factory()->for($technicalUser)->create([
+            'status' => ProjectStatus::InProgress,
+        ]);
+
+        $component = Livewire::test(ListProjects::class)
+            ->assertTableActionHidden('delete', $project);
+
+        $deleteAction = $component->instance()->getTable()->getAction('delete');
+        $this->assertNotNull($deleteAction);
+        $deleteAction->record($project);
+
+        try {
+            $deleteAction->call();
+            $this->fail('The delete action should reject users without permanent project deletion permission.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+
+        $this->assertDatabaseHas('projects', ['id' => $project->id]);
     }
 
     public function test_user_without_project_detail_permission_cannot_restore_archived_project(): void
