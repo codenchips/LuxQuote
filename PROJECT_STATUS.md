@@ -1,12 +1,22 @@
 # Company App — Project Status
 
-_Last updated: 8 September 2026_
+_Last updated: 10 September 2026_
 
 ---
 
+## Deployment Candidate Review — 10 September 2026
+
+Production remains on `0.2.17`. The next deployment candidate consists of commits `7991982` and `e8303b9`: protected Admin-group membership and permissions, read-only Salesforce project-detail refresh, and separately assignable permanent Project deletion. The reviewed tree passes **419 tests / 2,517 assertions**, the production Vite build, strict Composer validation/platform checks, and both production dependency audits with no reported vulnerabilities.
+
+- **Protected Admin permissions**: the Admin group always authorizes every registered capability, its permission checklist is read-only, saving repairs missing assignments, and future Permission records are automatically attached. The rollout migration only inserts missing Admin permission pivots.
+- **Protected Admin membership**: only an existing Admin-group member can add or remove another Admin-group member through the application. Non-members cannot promote, demote, or delete Admin users even if their own group has user-management capabilities. The final Admin-group member cannot be demoted or deleted.
+- **Salesforce project refresh**: Salesforce-linked Project Details now provide a permission-controlled Refresh action. It pulls the latest supported name, reference, customer, owner, branch, and Salesforce Cover details into LuxQuote; it never imports or pushes Salesforce Amount. LuxQuote Value, currency, visibility, and local notes remain unchanged. Fetch and save failures leave the stored project intact.
+- **Permanent Project deletion permission**: `projects.delete-permanently` controls the destructive submenu action independently from archive/restore. It defaults to Admin only but can be assigned to any group. Both the UI and action enforce the gate server-side.
+- **Database rollout**: only migrations `2026_09_09_121403_ensure_admin_group_has_all_permissions` and `2026_09_10_095823_add_project_permanent_delete_permission` are new since production `0.2.17`. Their production `up()` paths insert permission catalogue/pivot rows only; they do not remove or rewrite business data.
+
 ## Monday Baseline Review — 7 September 2026
 
-The deployed `0.2.16` baseline is broad and stable. The 8 September release candidate passes **405 tests / 2,397 assertions**, every tracked migration is applied locally, the production asset build succeeds, and the Composer plus production npm dependency audits report no vulnerabilities. The production workflow retains its isolated CI gate, maintenance cleanup, persistent-runner check, forward-only migrations, and public health check.
+The then-deployed `0.2.16` baseline was broad and stable. The 8 September release candidate passed **405 tests / 2,397 assertions**, every tracked migration was applied locally, the production asset build succeeded, and the Composer plus production npm dependency audits reported no vulnerabilities. The production workflow retained its isolated CI gate, maintenance cleanup, persistent-runner check, forward-only migrations, and public health check.
 
 The next release has now completed the first security/operations tranche:
 

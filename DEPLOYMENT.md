@@ -142,6 +142,46 @@ The migration creates the transient `pdf_generations` table used for owner-scope
 
 The first Docker image build after an older build cache has expired can spend several minutes printing package installation output from `docker/8.5/Dockerfile`. That output is expected during `docker compose up -d --build` and is not, by itself, a runner loop. Do not start a second deployment while the first workflow is still running. The existing persistent `luxquote-production` runner does not need to be recreated when it remains online and its logs end with `Listening for Jobs`.
 
+## Next Release Candidate — Admin Protection and Project Integration Controls
+
+The 10 September 2026 candidate after production `0.2.17` contains commits `7991982` and `e8303b9`. It adds protected Admin-group permissions and membership, a read-only Salesforce Project Details refresh, and the separately assignable `projects.delete-permanently` capability. Its reviewed local gate passes **419 tests / 2,517 assertions**, the production Vite build, strict Composer validation, production PHP platform checks, and Composer/npm audits with no reported vulnerabilities.
+
+Exactly two forward migrations are pending from the `0.2.17` production baseline:
+
+- `2026_09_09_121403_ensure_admin_group_has_all_permissions`
+- `2026_09_10_095823_add_project_permanent_delete_permission`
+
+Both `up()` paths are safe to rerun and affect only permission metadata:
+
+- The first finds the existing `admin` group and inserts any missing links to the existing permission catalogue with `insertOrIgnore`. It does not detach permissions from any group, modify users, or change the Admin group itself. Its rollback is intentionally a no-op so an application rollback cannot weaken Admin access.
+- The second inserts or updates the fixed `projects.delete-permanently` catalogue row and grants it only to the Admin group. User, Sales, Technical, Manager, and custom groups retain their current assignments until an Admin explicitly enables the new checkbox. Its normal deployment path does not delete anything.
+
+Migration order is significant and already correct: the Admin repair runs first, then the new permission migration explicitly attaches its new row to Admin. The deployment data-loss guard already protects `permissions`, `permission_groups`, and `permission_group_permission`; these migrations increase row counts and do not trigger a restore. No project, revision, line, user, PDF, Resource, Document Pack, reporting, or Activity History row is updated or deleted.
+
+Normal deployment requires no new environment variables or storage changes. The standard workflow takes its full and protected-table backups, checks out the release, and runs only:
+
+```bash
+docker compose exec -T laravel.test php artisan migrate --force --no-interaction
+```
+
+After deployment, verify without changing business data:
+
+```bash
+cd /home/tamliteco/luxquote.app
+docker compose exec -T laravel.test php artisan migrate:status
+docker compose exec -T laravel.test php artisan app:production-health-check
+```
+
+Then perform these browser checks:
+
+1. Open **Users → Groups → Admin** and confirm every permission is selected and read-only.
+2. Open a non-Admin group and confirm **Project → Delete projects permanently** is available to assign but is off unless deliberately enabled.
+3. Confirm a user without that capability sees Archive but not Delete permanently; use only a disposable Project if testing actual permanent deletion.
+4. Open a Salesforce-linked Project's Details panel, note its LuxQuote Value, refresh the Salesforce details, and confirm current descriptive fields update while Value remains unchanged.
+5. Confirm a non-Salesforce Project does not show the Salesforce Refresh action.
+
+The Salesforce refresh performs read queries only. It does not call the Opportunity Amount update or any other Salesforce write endpoint, and failures return a notification without partially updating the local Project.
+
 ## Pre-deployment Quality and Security Gate
 
 The 7–8 September dependency-security and PDF-output refresh updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and compatible transitive packages. With the response-header, deployment, external API, queued-PDF, Document Pack, validation, and revision-comparison hardening, the reviewed tree passes **405 tests / 2,397 assertions**, the production Vite build, and Composer validation/platform checks. Both `composer audit --locked` and `npm audit --omit=dev` report no vulnerabilities locally.
