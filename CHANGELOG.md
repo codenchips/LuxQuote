@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.18 - 2026-09-10
+
+Version: `0.2.17` -> `0.2.18`
+
+Changes included:
+
+- `7991982` Admin protection, Salesforce project details refreshable
+- `e8303b9` perma delete project permission
+- `dbf5669` Docs
+
 ## 0.2.17 - 2026-09-08
 
 Version: `0.2.16` -> `0.2.17`
