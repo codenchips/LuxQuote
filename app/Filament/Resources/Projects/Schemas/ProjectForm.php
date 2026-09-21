@@ -4,11 +4,15 @@ namespace App\Filament\Resources\Projects\Schemas;
 
 use App\Enums\ProjectRevisionStatus;
 use App\Enums\ProjectVisibility;
+use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\Project;
+use App\Models\User;
 use App\Services\ProjectNameFormatter;
+use App\Services\ProjectOwnershipService;
 use App\Services\SalesforceProjectRefreshService;
 use App\Services\SalesforceService;
 use Filament\Actions\Action;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
@@ -23,6 +27,7 @@ use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Illuminate\Validation\ValidationException;
 
 class ProjectForm
 {
@@ -266,7 +271,69 @@ class ProjectForm
                     ->email()
                     ->maxLength(255)
                     ->default(fn (): ?string => auth()->user()?->email)
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
+                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly))
+                    ->hintAction(
+                        Action::make('reassignProjectOwner')
+                            ->label('Reassign')
+                            ->link()
+                            ->color('gray')
+                            ->authorize(fn (?Project $record): bool => self::canReassignProject($record, auth()->user()))
+                            ->visible(fn (?Project $record): bool => self::canReassignProject($record, auth()->user()))
+                            ->modalHeading('Reassign project')
+                            ->modalDescription('Select the LuxQuote user who should become the project creator. This does not update Salesforce.')
+                            ->modalSubmitActionLabel('OK')
+                            ->schema([
+                                CheckboxList::make('new_owner_ids')
+                                    ->label('User')
+                                    ->options(fn (?Project $record): array => self::canReassignProject($record, auth()->user())
+                                        ? self::reassignmentUserOptions()
+                                        : [])
+                                    ->disableOptionWhen(fn (string $value): bool => (int) $value === (int) auth()->id())
+                                    ->required()
+                                    ->minItems(1)
+                                    ->maxItems(1)
+                                    ->columns(1)
+                                    ->searchable()
+                                    ->bulkToggleable(false)
+                                    ->validationMessages([
+                                        'required' => 'Select one user.',
+                                        'min' => 'Select one user.',
+                                        'max' => 'Select only one user.',
+                                    ]),
+                            ])
+                            ->action(function (Action $action, array $data, ?Project $record, Set $set): void {
+                                $actor = auth()->user();
+
+                                abort_unless(self::canReassignProject($record, $actor), 403);
+
+                                $selectedUserIds = array_values($data['new_owner_ids'] ?? []);
+
+                                if (count($selectedUserIds) !== 1) {
+                                    throw ValidationException::withMessages([
+                                        'new_owner_ids' => 'Select one user.',
+                                    ]);
+                                }
+
+                                $newOwner = app(ProjectOwnershipService::class)->reassign(
+                                    $record,
+                                    $actor,
+                                    (int) $selectedUserIds[0],
+                                );
+
+                                $record->refresh();
+                                $set('created_by_email', $newOwner->email);
+
+                                Notification::make()
+                                    ->success()
+                                    ->title('Project reassigned')
+                                    ->body("{$newOwner->name} is now the LuxQuote project owner.")
+                                    ->send();
+
+                                if (! $record->isVisibleTo($actor)) {
+                                    $action->successRedirectUrl(ProjectResource::getUrl('index'));
+                                }
+                            }),
+                    ),
 
                 DatePicker::make('date')
                     ->label('Date')
@@ -411,6 +478,25 @@ class ProjectForm
         return $activeRevision?->status === ProjectRevisionStatus::Approved;
     }
 
+    public static function canReassignProject(?Project $project, ?User $user): bool
+    {
+        return $project !== null
+            && $user !== null
+            && (int) $project->user_id === (int) $user->getKey();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function reassignmentUserOptions(): array
+    {
+        return User::query()
+            ->orderBy('name')
+            ->orderBy('id')
+            ->pluck('name', 'id')
+            ->all();
+    }
+
     public static function titleCaseProjectName(?string $name): string
     {
         return app(ProjectNameFormatter::class)->fromSalesforce($name);
@@ -449,6 +535,7 @@ class ProjectForm
     {
         $data = self::normaliseCoverData($data, $record);
         $data = self::normaliseProjectValueData($data, $record);
+        $data['created_by_email'] = $record?->created_by_email ?? auth()->user()?->email;
 
         $visibility = $data['visibility'] ?? ProjectVisibility::Open->value;
         $teamId = $data['team_id'] ?? null;

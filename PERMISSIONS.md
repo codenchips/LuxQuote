@@ -82,6 +82,8 @@ Navigation placement does not grant access; each page and resource keeps its exi
 
 Refreshing a Salesforce-linked project's descriptive details is part of `projects.update-details`. The action is available only inside the Project Details form for a linked project, repeats the permission check server-side, and is read-only toward Salesforce. It never imports or pushes Salesforce Amount; LuxQuote Value remains authoritative after initial project creation.
 
+Project ownership reassignment is controlled by record ownership rather than a group permission. Only the user currently stored as the LuxQuote project's creator can see and submit the **Reassign** action. The transaction repeats that ownership check immediately before changing `projects.user_id` and the displayed creator email. Selecting a new LuxQuote owner does not read from or write to Salesforce, and administrators cannot bypass the current-owner rule.
+
 The `Permissions` resource still exists, but it is hidden from the left navigation with:
 
 ```php

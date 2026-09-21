@@ -24,9 +24,11 @@ use App\Models\ProjectRevision;
 use App\Models\ProjectTender;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\ProjectOwnershipService;
 use App\Services\ProjectSchedulePdfService;
 use App\Services\SalesforceProjectRefreshService;
 use App\Services\SalesforceService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
@@ -34,6 +36,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ViewErrorBag;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Process\Process;
@@ -477,6 +480,130 @@ class AdminProjectResourceTest extends TestCase
         $this->assertFalse($result['success']);
         $this->assertSame($originalAttributes, $project->fresh()->only(array_keys($originalAttributes)));
         $this->assertSame($originalUpdatedAt, $project->fresh()->updated_at?->toISOString());
+    }
+
+    public function test_current_owner_can_reassign_a_project_without_contacting_salesforce(): void
+    {
+        $owner = User::factory()->create([
+            'name' => 'Current Owner',
+            'email' => 'current-owner@example.com',
+        ]);
+        $newOwner = User::factory()->create([
+            'name' => 'New Owner',
+            'email' => 'new-owner@example.com',
+        ]);
+        $project = Project::factory()->for($owner)->create([
+            'created_by_email' => $owner->email,
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+        ]);
+
+        $this->actingAs($owner);
+        Http::fake();
+
+        $selectedOwner = app(ProjectOwnershipService::class)->reassign($project, $owner, $newOwner->id);
+
+        $project->refresh();
+
+        $this->assertTrue($selectedOwner->is($newOwner));
+        $this->assertTrue($project->user->is($newOwner));
+        $this->assertSame($newOwner->email, $project->created_by_email);
+        Http::assertNothingSent();
+
+        $payload = ActivityLog::query()
+            ->where('project_id', $project->id)
+            ->where('action_type', 'project.updated')
+            ->latest('id')
+            ->value('payload');
+
+        $this->assertSame($owner->id, $payload['user_id']['old'] ?? null);
+        $this->assertSame($newOwner->id, $payload['user_id']['new'] ?? null);
+    }
+
+    public function test_non_owner_cannot_reassign_a_project_even_when_they_are_an_administrator(): void
+    {
+        $owner = User::factory()->create();
+        $admin = User::factory()->admin()->create();
+        $newOwner = User::factory()->create();
+        $project = Project::factory()->for($owner)->create([
+            'created_by_email' => $owner->email,
+        ]);
+
+        $this->actingAs($admin);
+
+        try {
+            app(ProjectOwnershipService::class)->reassign($project, $admin, $newOwner->id);
+            $this->fail('A non-owner was able to reassign the project.');
+        } catch (AuthorizationException $exception) {
+            $this->assertSame('Only the current project owner can reassign this project.', $exception->getMessage());
+        }
+
+        $this->assertTrue($project->fresh()->user->is($owner));
+        $this->assertSame($owner->email, $project->fresh()->created_by_email);
+    }
+
+    public function test_project_cannot_be_reassigned_to_its_current_owner(): void
+    {
+        $owner = User::factory()->create();
+        $project = Project::factory()->for($owner)->create([
+            'created_by_email' => $owner->email,
+        ]);
+
+        $this->actingAs($owner);
+
+        try {
+            app(ProjectOwnershipService::class)->reassign($project, $owner, $owner->id);
+            $this->fail('The project was reassigned to its existing owner.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(
+                ['Select a different user to reassign the project to.'],
+                $exception->errors()['new_owner_ids'] ?? [],
+            );
+        }
+
+        $this->assertTrue($project->fresh()->user->is($owner));
+    }
+
+    public function test_reassign_visibility_and_user_options_do_not_leak_email_addresses(): void
+    {
+        $owner = User::factory()->create([
+            'name' => 'Alpha Owner',
+            'email' => 'alpha-owner@example.com',
+        ]);
+        $otherUser = User::factory()->create([
+            'name' => 'Beta User',
+            'email' => 'beta-user@example.com',
+        ]);
+        $project = Project::factory()->for($owner)->create();
+
+        $this->assertTrue(ProjectForm::canReassignProject($project, $owner));
+        $this->assertFalse(ProjectForm::canReassignProject($project, $otherUser));
+
+        $options = ProjectForm::reassignmentUserOptions();
+
+        $this->assertSame('Alpha Owner', $options[$owner->id]);
+        $this->assertSame('Beta User', $options[$otherUser->id]);
+        $this->assertNotContains($owner->email, $options);
+        $this->assertNotContains($otherUser->email, $options);
+    }
+
+    public function test_standard_project_details_save_cannot_forge_the_creator_identity(): void
+    {
+        $owner = User::factory()->create([
+            'email' => 'project-owner@example.com',
+        ]);
+        $project = Project::factory()->for($owner)->create([
+            'created_by_email' => $owner->email,
+        ]);
+
+        $this->actingAs($owner);
+
+        $normalised = ProjectForm::normaliseVisibilityData([
+            'created_by_email' => 'forged@example.com',
+            'visibility' => ProjectVisibility::Open->value,
+        ], $project);
+
+        $this->assertSame($owner->email, $normalised['created_by_email']);
     }
 
     public function test_project_table_shows_details_pencil_before_copy_action(): void
