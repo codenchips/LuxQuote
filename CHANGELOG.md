@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.19 - 2026-10-23
+
+Version: `0.2.18` -> `0.2.19`
+
+Changes included:
+
+- `f6a58ab` Reassign LuxQuote project creator
+- `5c88c36` database documentation and mockups for new work
+- `becb082` docker php upxdate
+
 ## 0.2.18 - 2026-09-10
 
 Version: `0.2.17` -> `0.2.18`
