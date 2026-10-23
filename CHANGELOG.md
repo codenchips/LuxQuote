@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.20 - 2026-10-23
+
+Version: `0.2.19` -> `0.2.20`
+
+Changes included:
+
+- `ac9b89c` filament updated
+
 ## 0.2.19 - 2026-10-23
 
 Version: `0.2.18` -> `0.2.19`
