@@ -73,6 +73,14 @@ RUN apt-get update && apt-get upgrade -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+ARG PHP_SECURITY_MIN_VERSION=8.5.12
+
+RUN apt-get update \
+    && apt-get install -y --only-upgrade $(dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package}\n' 'php8.5-*' | awk '$1 == "ii" { print $2 }') \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' php8.5-cli)" ge "$PHP_SECURITY_MIN_VERSION" \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN setcap "cap_net_bind_service=+ep" /usr/bin/php8.5
 
 RUN userdel -r ubuntu
