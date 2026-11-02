@@ -5,7 +5,6 @@ namespace App\Filament\Resources\Projects\Pages;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Filament\Resources\Projects\Schemas\ProjectForm;
 use App\Models\Project;
-use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
@@ -30,12 +29,6 @@ class ListProjects extends ListRecords
                 ->visible(fn (): bool => auth()->user()?->can('projects.create') ?? false)
                 ->slideOver()
                 ->createAnother(false)
-                ->modalSubmitAction(fn (Action $action): Action => $action
-                    ->disabled(false)
-                    ->extraAttributes([
-                        'x-bind:class' => '($wire.mountedActions?.[0]?.data?.name && $wire.mountedActions?.[0]?.data?.customer_name && $wire.mountedActions?.[0]?.data?.reference_number) ? \'\' : \'opacity-60 cursor-not-allowed\'',
-                        'x-bind:disabled' => '!($wire.mountedActions?.[0]?.data?.name && $wire.mountedActions?.[0]?.data?.customer_name && $wire.mountedActions?.[0]?.data?.reference_number)',
-                    ]))
                 ->mutateFormDataUsing(function (array $data): array {
                     $data['user_id'] = auth()->id();
 

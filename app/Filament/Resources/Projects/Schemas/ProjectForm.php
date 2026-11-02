@@ -231,11 +231,14 @@ class ProjectForm
                 TextInput::make('reference_number')
                     ->label('Reference Number')
                     ->placeholder('e.g. LQ-2026-001')
+                    ->helperText('Use letters, numbers, hyphens and underscores only.')
                     ->live()
                     ->required()
+                    ->rules(['alpha_dash:ascii'])
                     ->maxLength(255)
                     ->unique(ignoreRecord: true)
                     ->validationMessages([
+                        'alpha_dash' => 'The reference number may only contain letters, numbers, hyphens and underscores.',
                         'unique' => 'A project with this reference number already exists.',
                     ])
                     ->hidden(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true

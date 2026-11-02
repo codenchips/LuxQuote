@@ -6,6 +6,7 @@ use App\Models\Project;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use Throwable;
 
 class SalesforceProjectRefreshService
@@ -50,6 +51,14 @@ class SalesforceProjectRefreshService
         }
 
         $attributes = $this->refreshableAttributes($project, $opportunity);
+
+        if (Validator::make($attributes, ['reference_number' => ['sometimes', 'alpha_dash:ascii']])->fails()) {
+            return [
+                'success' => false,
+                'message' => 'The Salesforce reference number may only contain letters, numbers, hyphens and underscores. No details were changed.',
+            ];
+        }
+
         $conflict = $this->conflictingProjectField($project, $attributes);
 
         if ($conflict !== null) {

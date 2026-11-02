@@ -303,6 +303,105 @@ class AdminProjectResourceTest extends TestCase
         $this->assertNull($data['general_notes']);
     }
 
+    public function test_project_create_rejects_unsafe_references(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+
+        foreach (['ab/de', 'ab\\de', 'ab de', 'ab?de', 'ab#de', 'ab%2Fde', 'café', '.', '..'] as $reference) {
+            Livewire::test(ListProjects::class)
+                ->callAction('create', [
+                    'salesforce_project' => false,
+                    'name' => 'Unsafe Reference Project',
+                    'customer_name' => 'Example Customer',
+                    'reference_number' => $reference,
+                ])
+                ->assertHasActionErrors(['reference_number' => ['alpha_dash', 'The reference number may only contain letters, numbers, hyphens and underscores.']])
+                ->assertNotified('Project could not be created');
+        }
+
+        $this->assertDatabaseCount('projects', 0);
+    }
+
+    public function test_project_create_accepts_a_url_safe_reference(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+
+        Livewire::test(ListProjects::class)
+            ->callAction('create', [
+                'salesforce_project' => false,
+                'name' => 'Safe Reference Project',
+                'customer_name' => 'Example Customer',
+                'reference_number' => 'LQ-2026_abc123',
+            ])
+            ->assertHasNoActionErrors();
+
+        $this->assertDatabaseHas('projects', ['reference_number' => 'LQ-2026_abc123']);
+    }
+
+    public function test_project_create_shows_errors_for_missing_required_fields(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+
+        $component = Livewire::test(ListProjects::class)->mountAction('create');
+
+        $submitAction = $component->instance()->getMountedAction()->getModalSubmitAction();
+        $this->assertTrue($submitAction->isEnabled());
+        $this->assertArrayNotHasKey('x-bind:disabled', $submitAction->getExtraAttributes());
+
+        $component->setActionData(['salesforce_project' => false])->callMountedAction()
+            ->assertHasActionErrors([
+                'name' => 'required',
+                'customer_name' => 'required',
+                'reference_number' => 'required',
+            ])
+            ->assertNotified('Project could not be created');
+
+        $this->assertDatabaseCount('projects', 0);
+    }
+
+    public function test_project_edit_rejects_unsafe_references(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+        $project = Project::factory()->for($admin)->create(['reference_number' => 'SAFE-REF']);
+
+        Livewire::test(ViewProject::class, ['record' => $project->getRouteKey()])
+            ->callAction('editProject', ['reference_number' => 'ab/de'])
+            ->assertHasActionErrors(['reference_number' => ['alpha_dash', 'The reference number may only contain letters, numbers, hyphens and underscores.']]);
+
+        Livewire::test(ListProjects::class)
+            ->callTableAction('editProject', $project, ['reference_number' => 'ab/de'])
+            ->assertHasTableActionErrors(['reference_number' => 'alpha_dash']);
+
+        $this->assertSame('SAFE-REF', $project->fresh()->reference_number);
+    }
+
+    public function test_salesforce_project_refresh_rejects_unsafe_references(): void
+    {
+        $project = Project::factory()->create([
+            'name' => 'Original Project',
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+            'reference_number' => 'SAFE-REF',
+        ]);
+
+        $this->mock(SalesforceService::class)
+            ->shouldReceive('getOpportunityById')
+            ->once()
+            ->with($project->salesforce_id)
+            ->andReturn([
+                'Name' => 'Changed Project',
+                'Project_Reference_Number__c' => 'ab/de',
+            ]);
+
+        $result = app(SalesforceProjectRefreshService::class)->refresh($project);
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('may only contain letters, numbers, hyphens and underscores', $result['message']);
+        $this->assertSame('SAFE-REF', $project->fresh()->reference_number);
+        $this->assertSame('Original Project', $project->fresh()->name);
+    }
+
     public function test_duplicate_project_create_shows_a_validation_notification(): void
     {
         $admin = User::factory()->admin()->create();
