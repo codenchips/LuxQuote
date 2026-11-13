@@ -2051,6 +2051,23 @@ class AdminProjectResourceTest extends TestCase
             ->assertDontSee('Unit Price');
     }
 
+    public function test_enabling_cover_defaults_to_added_for_an_existing_project(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+
+        $project = Project::factory()->for($admin)->create([
+            'has_cover' => false,
+            'cover_direction' => 'deducted',
+        ]);
+
+        $component = Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->mountAction('editProject')
+            ->set('mountedActions.0.data.has_cover', true);
+
+        $this->assertSame('added', $component->instance()->mountedActions[0]['data']['cover_direction']);
+    }
+
     public function test_cover_net_is_always_lower_than_total_for_added_and_deducted_storage(): void
     {
         $admin = User::factory()->admin()->create();

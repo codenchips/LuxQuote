@@ -217,7 +217,7 @@ class ProjectForm
                             $set('branch_name', data_get($data, 'CEF_Branch__r.Name'));
                             $hasSalesforceCover = filled($data['CEF_Cover__c'] ?? null);
                             $set('has_cover', $hasSalesforceCover);
-                            $set('cover_direction', 'deducted');
+                            $set('cover_direction', 'added');
                             $set('cover_1', $hasSalesforceCover ? $data['CEF_Cover__c'] : null);
                             $set('cover_2', $hasSalesforceCover ? '5.00' : null);
                             $set('cover_3', $hasSalesforceCover ? '0.00' : null);
@@ -401,7 +401,7 @@ class ProjectForm
                     ->live()
                     ->afterStateUpdated(function (bool $state, Get $get, Set $set): void {
                         if (! $state) {
-                            $set('cover_direction', 'deducted');
+                            $set('cover_direction', 'added');
                             $set('cover_1', null);
                             $set('cover_2', null);
                             $set('cover_3', null);
@@ -415,9 +415,7 @@ class ProjectForm
                             }
                         }
 
-                        if (blank($get('cover_direction'))) {
-                            $set('cover_direction', 'deducted');
-                        }
+                        $set('cover_direction', 'added');
                     })
                     ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
                     ->disabled(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
@@ -426,10 +424,10 @@ class ProjectForm
                     ->label('Cover Direction')
                     ->hiddenLabel()
                     ->options([
-                        'deducted' => 'Cover is Deducted',
                         'added' => 'Cover is Added',
+                        'deducted' => 'Cover is Deducted',
                     ])
-                    ->default('deducted')
+                    ->default('added')
                     ->grouped()
                     ->visible(fn (Get $get): bool => (auth()->user()?->can('pricing.view') ?? false) && (bool) $get('has_cover'))
                     ->disabled(fn (?Project $record): bool => ! (auth()->user()?->can('cover.update') ?? false) || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
@@ -630,7 +628,7 @@ class ProjectForm
             $data['has_cover'] = (bool) ($data['has_cover'] ?? false);
 
             if (! $data['has_cover']) {
-                $data['cover_direction'] = 'deducted';
+                $data['cover_direction'] = 'added';
                 $data['cover_1'] = null;
                 $data['cover_2'] = null;
                 $data['cover_3'] = null;
@@ -649,7 +647,7 @@ class ProjectForm
             }
 
             if (! in_array($data['cover_direction'] ?? null, ['added', 'deducted'], true)) {
-                $data['cover_direction'] = 'deducted';
+                $data['cover_direction'] = 'added';
             }
 
             return $data;
