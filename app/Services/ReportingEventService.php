@@ -217,7 +217,7 @@ class ReportingEventService
 
     private function syncProducts(ReportingEvent $event, Collection $lines): void
     {
-        $products = $lines->filter(fn ($line): bool => filled($line->code))
+        $products = $lines->filter(fn ($line): bool => filled($line->code) && ! $line->qty_is_each)
             ->groupBy(fn ($line): string => strtoupper(trim((string) $line->code)))
             ->map(fn (Collection $matchingLines, string $code): array => [
                 'product_id' => $matchingLines->first()?->product_id,

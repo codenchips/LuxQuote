@@ -97,7 +97,7 @@ class ProjectRevisionComparisonService
                     'ref' => ['label' => 'Ref', 'raw' => $line->ref, 'value' => $this->displayValue($line->ref)],
                     'code' => ['label' => 'SKU', 'raw' => $line->code, 'value' => $this->displayValue($line->code)],
                     'description' => ['label' => 'Description', 'raw' => $line->description, 'value' => $this->displayValue($line->description)],
-                    'qty' => ['label' => 'Qty', 'raw' => $line->qty, 'value' => (string) $line->qty],
+                    'qty' => ['label' => 'Qty', 'raw' => $line->qty_is_each ? 'Each' : $line->qty, 'value' => $line->quantityLabel()],
                     'type' => ['label' => 'Type', 'raw' => $line->type?->value, 'value' => $line->type?->label() ?? '—'],
                     'status' => ['label' => 'Status', 'raw' => $line->status, 'value' => $this->displayValue($line->status)],
                     'notes' => ['label' => 'Notes', 'raw' => $line->notes, 'value' => $this->displayValue($line->notes)],

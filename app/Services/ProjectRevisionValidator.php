@@ -245,6 +245,7 @@ class ProjectRevisionValidator
                     line: $line,
                     lines: $lines,
                     message: "SKU \"{$line->code}\" appears {$lines->count()} times in this area.",
+                    extra: ['mergeable' => $lines->pluck('qty_is_each')->unique()->count() === 1],
                 );
             })
             ->values()

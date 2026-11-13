@@ -562,7 +562,7 @@ class ProjectPdfController extends Controller
                     $row = [
                         $area->name,
                         $line->ref,
-                        $quantity,
+                        $line->qty_is_each ? 'Each' : $quantity,
                         $line->code,
                         $line->description,
                         $line->type?->value,
@@ -573,7 +573,7 @@ class ProjectPdfController extends Controller
                     if ($includePrices) {
                         array_splice($row, 6, 0, [
                             number_format($unitPrice, 2, '.', ''),
-                            number_format($quantity * $unitPrice, 2, '.', ''),
+                            $line->qty_is_each ? '' : number_format($quantity * $unitPrice, 2, '.', ''),
                         ]);
                     }
 

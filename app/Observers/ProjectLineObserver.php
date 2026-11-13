@@ -14,6 +14,7 @@ class ProjectLineObserver
         'ref',
         'description',
         'qty',
+        'qty_is_each',
         'type',
         'unit_price',
         'cover_1',
@@ -51,7 +52,7 @@ class ProjectLineObserver
                 'line_id' => $line->id,
                 'code' => $line->code,
                 'description' => $line->description,
-                'qty' => $line->qty,
+                'qty' => $line->qty_is_each ? 'Each' : $line->qty,
             ],
         ]);
     }
@@ -61,8 +62,15 @@ class ProjectLineObserver
         $trackedFields = ['code', 'ref', 'description', 'qty', 'unit_price', 'cover_1', 'cover_2', 'cover_3', 'notes', 'type', 'status'];
 
         $changes = [];
+        if ($line->isDirty(['qty', 'qty_is_each'])) {
+            $changes['qty'] = [
+                'old' => $line->getOriginal('qty_is_each') ? 'Each' : $line->getOriginal('qty'),
+                'new' => $line->qty_is_each ? 'Each' : $line->qty,
+            ];
+        }
+
         foreach ($trackedFields as $field) {
-            if ($line->isDirty($field)) {
+            if ($field !== 'qty' && $line->isDirty($field)) {
                 $oldValue = $line->getOriginal($field);
                 $newValue = $line->$field;
 

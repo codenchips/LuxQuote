@@ -198,7 +198,7 @@
                                 </x-filament::button>
                             @endif
 
-                            @if($issue['type'] === 'duplicate_sku' && $canMergeValidationLines)
+                            @if($issue['type'] === 'duplicate_sku' && $canMergeValidationLines && ($issue['mergeable'] ?? true))
                                 <x-filament::button
                                     wire:click="mergeIssue({{ \Illuminate\Support\Js::from($issue['key']) }})"
                                     color="gray"

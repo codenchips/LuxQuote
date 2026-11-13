@@ -182,7 +182,7 @@ class SalesforcePdfUploadTracker
                         'code' => $line->code,
                         'ref' => $line->ref,
                         'description' => $line->description,
-                        'qty' => $line->qty,
+                        'qty' => $line->qty_is_each ? 'Each' : $line->qty,
                         'type' => $line->type?->value,
                         'unit_price' => $showPrices ? $line->unit_price : null,
                         'cover_1' => $showPrices ? $line->cover_1 : null,

@@ -29,6 +29,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
@@ -635,7 +636,7 @@ class ViewProject extends ViewRecord
 
             foreach ($area->lines as $line) {
                 $newArea->lines()->create($line->only([
-                    'product_id', 'code', 'ref', 'description', 'qty',
+                    'product_id', 'code', 'ref', 'description', 'qty', 'qty_is_each',
                     'type', 'unit_price', 'cover_1', 'cover_2', 'cover_3',
                     'notes', 'status', 'sort_order',
                     'approved', 'approved_at', 'approved_by',
@@ -1288,6 +1289,7 @@ class ViewProject extends ViewRecord
                 'ref' => $ref,
                 'description' => $specialOrderCode->description,
                 'qty' => $specialOrderCode->qty,
+                'qty_is_each' => false,
                 'type' => ProjectLineType::Custom->value,
                 'unit_price' => $specialOrderCode->price,
                 ...$this->defaultLineCoverAttributes(),
@@ -1555,6 +1557,7 @@ class ViewProject extends ViewRecord
             'code' => $specialOrderCode->code,
             'description' => $specialOrderCode->description,
             'qty' => $specialOrderCode->qty,
+            'qty_is_each' => false,
             'type' => ProjectLineType::Custom->value,
             'unit_price' => $specialOrderCode->price,
             'status' => self::LineStatusPriced,
@@ -1592,6 +1595,7 @@ class ViewProject extends ViewRecord
 
         if (! $this->pasteAcrossAllAreas) {
             $data['qty'] = $row['qty'];
+            $data['qty_is_each'] = false;
         }
 
         return $data;
@@ -1948,6 +1952,17 @@ class ViewProject extends ViewRecord
             return;
         }
 
+        if ($field === 'qty') {
+            Validator::make(['qty' => $value], [
+                'qty' => ['nullable', function (string $attribute, mixed $quantity, \Closure $fail): void {
+                    if (! ProjectLine::isEachQuantity($quantity)
+                        && (! (is_string($quantity) || is_int($quantity)) || ! preg_match('/\A[0-9]+\z/', trim((string) $quantity)))) {
+                        $fail('Quantity must be a whole number or Each.');
+                    }
+                }],
+            ])->validate();
+        }
+
         if ($field === 'qty' && $line->isNoOffer()) {
             if ((int) $line->qty === 0 && $line->approved && ! $line->validation_flagged && blank($line->validation_note)) {
                 return;
@@ -1955,6 +1970,7 @@ class ViewProject extends ViewRecord
 
             $line->update([
                 'qty' => 0,
+                'qty_is_each' => false,
                 'approved' => true,
                 'approved_at' => now(),
                 'approved_by' => null,
@@ -1998,13 +2014,16 @@ class ViewProject extends ViewRecord
             return;
         }
 
-        $value = $this->normaliseLineFieldValue($field, $value);
+        $quantityIsEach = $field === 'qty' && ProjectLine::isEachQuantity($value);
+        $value = $quantityIsEach ? null : $this->normaliseLineFieldValue($field, $value);
 
-        if ($this->lineFieldValueMatches($line, $field, $value)) {
+        if ($this->lineFieldValueMatches($line, $field, $value)
+            && ($field !== 'qty' || $line->qty_is_each === $quantityIsEach)) {
             return;
         }
 
         $line->update([
+            ...($field === 'qty' ? ['qty_is_each' => $quantityIsEach] : []),
             $field => $value,
             'approved' => false,
             'approved_at' => null,

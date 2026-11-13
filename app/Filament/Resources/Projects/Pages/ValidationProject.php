@@ -153,7 +153,7 @@ class ValidationProject extends ViewRecord
      *     id: int,
      *     code: string,
      *     description: string,
-     *     qty: int,
+     *     qty: int|string|null,
      *     unit_price: string|null,
      *     cover_1: string|null,
      *     cover_2: string|null,
@@ -188,7 +188,7 @@ class ValidationProject extends ViewRecord
                     'id' => $line->id,
                     'code' => $line->code ?? '',
                     'description' => $line->description,
-                    'qty' => $line->qty,
+                    'qty' => $line->qty_is_each ? 'Each' : $line->qty,
                     'unit_price' => $line->unit_price,
                     'cover_1' => $line->cover_1,
                     'cover_2' => $line->cover_2,
@@ -685,6 +685,12 @@ class ValidationProject extends ViewRecord
                 ->orderBy('sort_order')
                 ->lockForUpdate()
                 ->get();
+
+            if ($lines->pluck('qty_is_each')->unique()->count() > 1) {
+                Notification::make()->warning()->title('Each and numeric quantities cannot be merged')->send();
+
+                return;
+            }
 
             /** @var ProjectLine $remainingLine */
             $remainingLine = $lines->firstOrFail();

@@ -542,7 +542,7 @@
                     @endif
                     <tr @class(['keep-with-legal' => $isFinalLineItemRow])>
                         <td class="col-ref">{!! $hasSku ? e($line->ref ?? '') : '&nbsp;' !!}</td>
-                        <td class="col-qty">{!! $hasSku ? e($line->qty ?? '') : '&nbsp;' !!}</td>
+                        <td class="col-qty">{!! $hasSku ? e($line->quantityLabel()) : '&nbsp;' !!}</td>
                         <td class="col-code">{!! $hasSku ? e($line->code) : '&nbsp;' !!}</td>
                         <td class="col-desc">{!! $hasSku ? e($line->description ?? '') : '&nbsp;' !!}</td>
                         @if($showPrices)
@@ -551,7 +551,7 @@
                                 $lineTotal = ((int) ($line->qty ?? 0)) * $unitPrice;
                             @endphp
                             <td class="col-money">{!! $hasSku ? e($project->formatCurrency($unitPrice)) : '&nbsp;' !!}</td>
-                            <td class="col-money">{!! $hasSku ? e($project->formatCurrency($lineTotal)) : '&nbsp;' !!}</td>
+                            <td class="col-money">{!! $hasSku && ! $line->qty_is_each ? e($project->formatCurrency($lineTotal)) : '&nbsp;' !!}</td>
                         @endif
                         <td class="col-ds">
                             @if($hasSku && isset($existingSkus[$line->code]))

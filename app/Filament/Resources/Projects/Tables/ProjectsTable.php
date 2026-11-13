@@ -300,7 +300,7 @@ class ProjectsTable
 
                             foreach ($area->lines as $line) {
                                 $newArea->lines()->create($line->only([
-                                    'product_id', 'code', 'ref', 'description', 'qty',
+                                    'product_id', 'code', 'ref', 'description', 'qty', 'qty_is_each',
                                     'type', 'unit_price', 'cover_1', 'cover_2', 'cover_3',
                                     'notes', 'status', 'sort_order',
                                 ]));

@@ -436,16 +436,36 @@
                         <input
                             data-line-column="qty"
                             type="text"
-                            inputmode="numeric"
+                            inputmode="text"
                             data-line-numeric
-                            value="{{ $line->qty }}"
+                            value="{{ $line->quantityLabel() }}"
+                            title="Enter a quantity, or E for Each (excluded from totals)"
+                            pattern="[0-9]+|[Ee]([Aa][Cc][Hh])?"
+                            x-on:input="
+                                $el.setCustomValidity('');
+                                if ($el.value.trim().toLowerCase() === 'e') {
+                                    $el.value = 'Each';
+                                    $el.setSelectionRange(1, 4);
+                                }
+                            "
                             @disabled(! $canEditLines || $this->isViewingRevisionValidated || $projectEditLocked)
                             min="{{ $line->isNoOffer() ? 0 : 1 }}"
                             max="4294967295"
                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
                             x-on:keydown.enter.prevent="focusAdjacentLineField($el, 1, $event)"
-                            x-on:blur="$wire.updateLineField({{ $line->id }}, 'qty', Math.min(4294967295, Math.max({{ $line->isNoOffer() ? 0 : 1 }}, parseInt($el.value) || {{ $line->isNoOffer() ? 0 : 1 }})))"
+                            x-on:blur="
+                                if (! $el.checkValidity()) {
+                                    $el.setCustomValidity('Enter a whole number or Each.');
+                                    $el.reportValidity();
+                                    return;
+                                }
+                                const value = ['e', 'each'].includes($el.value.trim().toLowerCase())
+                                    ? 'Each'
+                                    : Math.min(4294967295, Math.max({{ $line->isNoOffer() ? 0 : 1 }}, parseInt($el.value) || {{ $line->isNoOffer() ? 0 : 1 }}));
+                                $el.value = value;
+                                $wire.updateLineField({{ $line->id }}, 'qty', value);
+                            "
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
                         />
 

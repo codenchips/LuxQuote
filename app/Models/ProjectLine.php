@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['project_area_id', 'product_id', 'code', 'ref', 'description', 'qty', 'type', 'unit_price', 'cover_1', 'cover_2', 'cover_3', 'notes', 'status', 'approved', 'approved_at', 'approved_by', 'validation_flagged', 'validation_note', 'sort_order'])]
+#[Fillable(['project_area_id', 'product_id', 'code', 'ref', 'description', 'qty', 'qty_is_each', 'type', 'unit_price', 'cover_1', 'cover_2', 'cover_3', 'notes', 'status', 'approved', 'approved_at', 'approved_by', 'validation_flagged', 'validation_note', 'sort_order'])]
 class ProjectLine extends Model
 {
     use HasFactory;
@@ -17,13 +17,34 @@ class ProjectLine extends Model
     protected $attributes = [
         'approved' => false,
         'validation_flagged' => false,
+        'qty_is_each' => false,
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (ProjectLine $line): void {
+            if ($line->qty_is_each) {
+                $line->qty = null;
+            }
+        });
+    }
+
+    public static function isEachQuantity(mixed $value): bool
+    {
+        return is_string($value) && in_array(strtolower(trim($value)), ['e', 'each'], true);
+    }
+
+    public function quantityLabel(): string
+    {
+        return $this->qty_is_each ? 'Each' : (string) $this->qty;
+    }
 
     protected function casts(): array
     {
         return [
             'type' => ProjectLineType::class,
             'qty' => 'integer',
+            'qty_is_each' => 'boolean',
             'unit_price' => 'decimal:2',
             'cover_1' => 'decimal:2',
             'cover_2' => 'decimal:2',
@@ -69,7 +90,8 @@ class ProjectLine extends Model
 
     public function isBlankOrDefault(): bool
     {
-        return blank($this->code)
+        return ! $this->qty_is_each
+            && blank($this->code)
             && blank($this->ref)
             && blank($this->description)
             && $this->isNullOrZero($this->unit_price)
