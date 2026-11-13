@@ -28,6 +28,7 @@ use App\Services\ProjectOwnershipService;
 use App\Services\ProjectSchedulePdfService;
 use App\Services\SalesforceProjectRefreshService;
 use App\Services\SalesforceService;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -381,6 +382,7 @@ class AdminProjectResourceTest extends TestCase
 
     public function test_salesforce_project_refresh_rejects_unsafe_references(): void
     {
+        $this->actingAs(User::factory()->admin()->create());
         $project = Project::factory()->create([
             'name' => 'Original Project',
             'salesforce_project' => true,
@@ -397,7 +399,11 @@ class AdminProjectResourceTest extends TestCase
                 'Project_Reference_Number__c' => 'ab/de',
             ]);
 
-        $result = app(SalesforceProjectRefreshService::class)->refresh($project);
+        $service = app(SalesforceProjectRefreshService::class);
+        $preview = $service->preview($project);
+        $result = $preview['success']
+            ? $service->refresh($project, $preview['token'], array_keys($preview['attributes']))
+            : $preview;
 
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('may only contain letters, numbers, hyphens and underscores', $result['message']);
@@ -527,9 +533,14 @@ class AdminProjectResourceTest extends TestCase
             }
         });
 
-        $result = app(SalesforceProjectRefreshService::class)->refresh($project);
+        $service = app(SalesforceProjectRefreshService::class);
+        $preview = $service->preview($project);
+        $result = $preview['success']
+            ? $service->refresh($project, $preview['token'], array_values(array_diff(array_keys($preview['attributes']), ['value'])))
+            : $preview;
         $project->refresh();
 
+        $this->assertSame('999999.99', $preview['attributes']['value']);
         $this->assertTrue($result['success']);
         $this->assertSame('NEW NHS SALESFORCE PROJECT', $project->name);
         $this->assertSame('SF-NEW', $project->reference_number);
@@ -578,11 +589,212 @@ class AdminProjectResourceTest extends TestCase
             }
         });
 
-        $result = app(SalesforceProjectRefreshService::class)->refresh($project);
+        $service = app(SalesforceProjectRefreshService::class);
+        $preview = $service->preview($project);
+        $result = $preview['success']
+            ? $service->refresh($project, $preview['token'], array_keys($preview['attributes']))
+            : $preview;
 
         $this->assertFalse($result['success']);
         $this->assertSame($originalAttributes, $project->fresh()->only(array_keys($originalAttributes)));
         $this->assertSame($originalUpdatedAt, $project->fresh()->updated_at?->toISOString());
+    }
+
+    public function test_salesforce_refresh_dialog_only_applies_selected_fields_and_preserves_unsaved_fields(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+        $project = Project::factory()->for($admin)->create([
+            'name' => 'Original Project',
+            'customer_name' => 'Original Customer',
+            'reference_number' => 'ORIGINAL-REF',
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+        ]);
+
+        $this->mock(SalesforceService::class)->shouldReceive('getOpportunityById')->once()->andReturn([
+            'Name' => 'EXACT Salesforce NAME',
+            'Miscellaneous_Customer_Name__c' => 'Fetched Customer',
+            'Project_Reference_Number__c' => 'invalid/reference',
+        ]);
+
+        $component = Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->mountAction('editProject')
+            ->setActionData(['site_location' => 'Unsaved site location'])
+            ->mountAction(TestAction::make('refreshSalesforceProject')->schemaComponent('salesforceRefreshActions', 'mountedActionSchema0'))
+            ->assertActionMounted(TestAction::make('refreshSalesforceProject')->schemaComponent('salesforceRefreshActions', 'mountedActionSchema0'))
+            ->assertActionDataSet(['selected_fields' => []]);
+
+        $this->assertSame('Original Project', $project->fresh()->name);
+
+        $component->setActionData(['selected_fields' => ['name']])
+            ->callMountedAction()
+            ->assertHasNoActionErrors();
+
+        $this->assertSame('EXACT Salesforce NAME', $project->fresh()->name);
+        $this->assertSame('Original Customer', $project->fresh()->customer_name);
+        $this->assertSame('ORIGINAL-REF', $project->fresh()->reference_number);
+        $this->assertSame('EXACT Salesforce NAME', $component->instance()->mountedActions[0]['data']['name']);
+        $this->assertSame('Unsaved site location', $component->instance()->mountedActions[0]['data']['site_location']);
+    }
+
+    public function test_salesforce_refresh_lists_unchanged_import_fields_and_can_apply_amount_only(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $project = Project::factory()->create([
+            'name' => 'EXACT PROJECT NAME',
+            'reference_number' => 'SAME-REF',
+            'customer_name' => 'Same Customer',
+            'owner_email' => 'original-owner@example.com',
+            'owner_name' => 'Original Owner',
+            'branch_name' => 'Same Branch',
+            'value' => 100,
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+        ]);
+        $this->mock(SalesforceService::class)->shouldReceive('getOpportunityById')->once()->andReturn([
+            'Name' => 'EXACT PROJECT NAME',
+            'Project_Reference_Number__c' => 'SAME-REF',
+            'Account' => ['Name' => 'Same Customer'],
+            'Owner' => ['Name' => 'Fetched Owner', 'Email' => 'fetched-owner@example.com'],
+            'CEF_Branch__r' => ['Name' => 'Same Branch'],
+            'CEF_Cover__c' => 5,
+            'Amount' => 2500.50,
+        ]);
+
+        $service = app(SalesforceProjectRefreshService::class);
+        $preview = $service->preview($project);
+        $labels = $service->fieldLabels($project, $preview['token']);
+
+        foreach (['name', 'reference_number', 'customer_name', 'value', 'owner_name', 'owner_email', 'branch_name', 'has_cover', 'cover_direction', 'cover_1', 'cover_2', 'cover_3'] as $field) {
+            $this->assertArrayHasKey($field, $labels);
+        }
+
+        $result = $service->refresh($project, $preview['token'], ['value']);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(['value' => '2500.50'], $result['attributes']);
+        $this->assertSame('2500.50', $project->fresh()->value);
+        $this->assertSame('original-owner@example.com', $project->fresh()->owner_email);
+        $this->assertSame('Original Owner', $project->fresh()->owner_name);
+        $this->assertFalse($project->fresh()->has_cover);
+    }
+
+    public function test_salesforce_refresh_rejects_invalid_selected_amounts(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $project = Project::factory()->create([
+            'value' => 100,
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+        ]);
+        $this->mock(SalesforceService::class)->shouldReceive('getOpportunityById')->twice()
+            ->andReturn(['Amount' => -1], ['Amount' => 'invalid']);
+        $service = app(SalesforceProjectRefreshService::class);
+
+        foreach ([0, 1] as $attempt) {
+            $preview = $service->preview($project);
+            $this->assertFalse($service->refresh($project, $preview['token'], ['value'])['success']);
+            $this->assertSame('100.00', $project->fresh()->value);
+        }
+    }
+
+    public function test_salesforce_refresh_rejects_unknown_fields_and_tokens(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $project = Project::factory()->create([
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+        ]);
+        $original = $project->fresh()->getRawOriginal();
+        $this->mock(SalesforceService::class)->shouldReceive('getOpportunityById')->once()->andReturn(['Name' => 'Fetched Name']);
+        $service = app(SalesforceProjectRefreshService::class);
+        $preview = $service->preview($project);
+
+        $this->assertFalse($service->refresh($project, $preview['token'], ['value'])['success']);
+        $this->assertFalse($service->refresh($project, 'forged-token', ['name'])['success']);
+        $otherProject = Project::factory()->create(['salesforce_project' => true, 'salesforce_id' => $project->salesforce_id]);
+        $this->assertFalse($service->refresh($otherProject, $preview['token'], ['name'])['success']);
+
+        $this->actingAs(User::factory()->admin()->create());
+        $this->assertFalse($service->refresh($project, $preview['token'], ['name'])['success']);
+        $this->assertSame($original, $project->fresh()->getRawOriginal());
+    }
+
+    public function test_salesforce_refresh_selecting_no_fields_leaves_all_project_values_unchanged(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $project = Project::factory()->create(['salesforce_project' => true, 'salesforce_id' => '006000000000001AAA']);
+        $original = $project->fresh()->getRawOriginal();
+        $this->mock(SalesforceService::class)->shouldReceive('getOpportunityById')->once()->andReturn(['Name' => 'Fetched Name']);
+        $service = app(SalesforceProjectRefreshService::class);
+        $preview = $service->preview($project);
+
+        $this->assertTrue($service->refresh($project, $preview['token'], [])['success']);
+        $this->assertSame($original, $project->fresh()->getRawOriginal());
+    }
+
+    public function test_salesforce_refresh_hides_and_rejects_cover_without_pricing_permissions(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $project = Project::factory()->create(['salesforce_project' => true, 'salesforce_id' => '006000000000001AAA']);
+        $this->mock(SalesforceService::class)->shouldReceive('getOpportunityById')->once()->andReturn([
+            'Name' => 'Fetched Name', 'CEF_Cover__c' => 8, 'Amount' => 2500,
+        ]);
+        $service = app(SalesforceProjectRefreshService::class);
+        $preview = $service->preview($project);
+
+        $this->assertArrayNotHasKey('cover_1', $preview['attributes']);
+        $this->assertArrayNotHasKey('value', $preview['attributes']);
+        $this->assertFalse($service->refresh($project, $preview['token'], ['value'])['success']);
+        $this->assertArrayNotHasKey('cover_1', $service->fieldLabels($project, $preview['token']));
+        $this->assertFalse($service->refresh($project, $preview['token'], ['cover_1'])['success']);
+    }
+
+    public function test_salesforce_refresh_rejects_stale_selected_values(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $project = Project::factory()->create(['salesforce_project' => true, 'salesforce_id' => '006000000000001AAA']);
+        $this->mock(SalesforceService::class)->shouldReceive('getOpportunityById')->once()->andReturn(['Name' => 'Fetched Name']);
+        $service = app(SalesforceProjectRefreshService::class);
+        $preview = $service->preview($project);
+        $project->update(['name' => 'Changed after preview']);
+
+        $this->assertFalse($service->refresh($project, $preview['token'], ['name'])['success']);
+        $this->assertSame('Changed after preview', $project->fresh()->name);
+    }
+
+    public function test_salesforce_refresh_requires_project_details_permission_server_side(): void
+    {
+        $this->actingAs(User::factory()->technical()->create());
+        $project = Project::factory()->create(['salesforce_project' => true, 'salesforce_id' => '006000000000001AAA']);
+
+        $this->expectException(HttpException::class);
+        app(SalesforceProjectRefreshService::class)->preview($project);
+    }
+
+    public function test_salesforce_refresh_rejects_expired_previews(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $project = Project::factory()->create(['salesforce_project' => true, 'salesforce_id' => '006000000000001AAA']);
+        $originalName = $project->name;
+        $this->mock(SalesforceService::class)->shouldReceive('getOpportunityById')->once()->andReturn(['Name' => 'Fetched Name']);
+        $service = app(SalesforceProjectRefreshService::class);
+        $preview = $service->preview($project);
+        $this->travel(16)->minutes();
+
+        $this->assertFalse($service->refresh($project, $preview['token'], ['name'])['success']);
+        $this->assertSame($originalName, $project->fresh()->name);
+    }
+
+    public function test_salesforce_refresh_cannot_change_an_approved_revision(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $project = Project::factory()->create(['salesforce_project' => true, 'salesforce_id' => '006000000000001AAA']);
+        $project->activeRevision->update(['status' => ProjectRevisionStatus::Approved]);
+
+        $this->expectException(HttpException::class);
+        app(SalesforceProjectRefreshService::class)->preview($project);
     }
 
     public function test_current_owner_can_reassign_a_project_without_contacting_salesforce(): void

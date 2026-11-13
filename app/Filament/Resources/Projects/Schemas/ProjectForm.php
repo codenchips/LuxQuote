@@ -70,20 +70,49 @@ class ProjectForm
                             ->label('Refresh')
                             ->icon('heroicon-o-arrow-path')
                             ->color('gray')
-                            ->tooltip('Refresh project details from Salesforce. LuxQuote Value will not be changed.')
-                            ->requiresConfirmation()
-                            ->modalHeading('Refresh project details from Salesforce?')
-                            ->modalDescription('This pulls the latest Salesforce details into LuxQuote. Value and LuxQuote-only settings will not change, and nothing will be pushed to Salesforce.')
-                            ->modalSubmitActionLabel('Refresh details')
+                            ->tooltip('Fetch Salesforce details and choose which fields to replace.')
+                            ->modalHeading('Choose Salesforce details to refresh')
+                            ->modalDescription('Select the fields to replace. Unselected fields will stay unchanged. Nothing is pushed to Salesforce.')
+                            ->modalSubmitActionLabel('Apply selected fields')
+                            ->schema([
+                                Hidden::make('refresh_token')->required(),
+                                CheckboxList::make('selected_fields')
+                                    ->label('Fields to replace')
+                                    ->options(fn (Get $get, Project $record): array => app(SalesforceProjectRefreshService::class)
+                                        ->fieldLabels($record, (string) $get('refresh_token')))
+                                    ->descriptions(fn (Get $get, Project $record): array => app(SalesforceProjectRefreshService::class)
+                                        ->fieldDescriptions($record, (string) $get('refresh_token')))
+                                    ->bulkToggleable()
+                                    ->columns(['default' => 1, 'sm' => 2])
+                                    ->helperText('All available Salesforce fields are listed, including unchanged values. Only selected fields will be replaced.'),
+                            ])
+                            ->fillForm(function (Action $action, Project $record): array {
+                                $result = app(SalesforceProjectRefreshService::class)->preview($record);
+
+                                if (! $result['success']) {
+                                    Notification::make()->danger()->title('Salesforce refresh failed')->body($result['message'])->send();
+                                    $action->halt();
+                                }
+
+                                return [
+                                    'refresh_token' => $result['token'],
+                                    'selected_fields' => [],
+                                ];
+                            })
                             ->visible(fn (?Project $record): bool => $record !== null
                                 && $record->salesforce_project
+                                && ! self::projectDetailsAreReadOnly($record, $forceReadOnly)
                                 && filled($record->salesforce_id)
                                 && (auth()->user()?->can('projects.update-details') ?? false))
-                            ->action(function (?Project $record, Set $set): void {
+                            ->action(function (array $data, ?Project $record, Set $set): void {
                                 abort_unless(auth()->user()?->can('projects.update-details'), 403);
                                 abort_if($record === null || ! $record->salesforce_project || blank($record->salesforce_id), 404);
 
-                                $result = app(SalesforceProjectRefreshService::class)->refresh($record);
+                                $result = app(SalesforceProjectRefreshService::class)->refresh(
+                                    $record,
+                                    (string) $data['refresh_token'],
+                                    $data['selected_fields'] ?? [],
+                                );
 
                                 if (! $result['success']) {
                                     Notification::make()
@@ -117,6 +146,7 @@ class ProjectForm
                         ->grow(false)
                         ->visible(fn (?Project $record): bool => $record !== null
                             && $record->salesforce_project
+                            && ! self::projectDetailsAreReadOnly($record, $forceReadOnly)
                             && filled($record->salesforce_id)
                             && (auth()->user()?->can('projects.update-details') ?? false)),
                 ])
