@@ -106,9 +106,7 @@ class SalesforceProjectRefreshService
         $attributes = [];
 
         if (filled($opportunity['Name'] ?? null)) {
-            $attributes['name'] = $this->limit(
-                $this->projectNameFormatter->fromSalesforce((string) $opportunity['Name']),
-            );
+            $attributes['name'] = $this->projectNameFormatter->fromSalesforce((string) $opportunity['Name']);
         }
 
         if (filled($opportunity['Project_Reference_Number__c'] ?? null)) {

@@ -99,11 +99,12 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
 
     public function hasPermission(PermissionKey|string $permission): bool
     {
-        if ($this->isAdministrator()) {
+        $permissionKey = $permission instanceof PermissionKey ? $permission->value : $permission;
+
+        if ($this->isAdministrator() && $permissionKey !== PermissionKey::ProjectsCreateNonSalesforce->value) {
             return true;
         }
 
-        $permissionKey = $permission instanceof PermissionKey ? $permission->value : $permission;
         $group = $this->permissionGroup;
 
         if ($group === null) {

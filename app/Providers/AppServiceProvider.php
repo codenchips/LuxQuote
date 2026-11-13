@@ -81,7 +81,8 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(5)->by($request->ip());
         });
 
-        Gate::before(fn (User $user): ?bool => $user->isAdministrator() ? true : null);
+        Gate::before(fn (User $user, string $ability): ?bool => $user->isAdministrator()
+            && $ability !== PermissionKey::ProjectsCreateNonSalesforce->value ? true : null);
 
         foreach (PermissionKey::cases() as $permission) {
             Gate::define($permission->value, fn (User $user): bool => $user->hasPermission($permission));

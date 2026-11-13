@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\LandingPage;
+use App\Enums\PermissionKey;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -39,7 +40,9 @@ class PermissionGroup extends Model
         }
 
         $this->permissions()->syncWithoutDetaching(
-            Permission::query()->pluck('id')->all(),
+            Permission::query()
+                ->where('key', '!=', PermissionKey::ProjectsCreateNonSalesforce->value)
+                ->pluck('id')->all(),
         );
     }
 

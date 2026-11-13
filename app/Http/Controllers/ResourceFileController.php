@@ -32,7 +32,7 @@ class ResourceFileController extends Controller
                 'resource_file_id' => $resourceFile->id,
                 'exception' => $exception->getMessage(),
             ]);
-
+            
             abort(404);
         }
 

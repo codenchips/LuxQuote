@@ -47,14 +47,14 @@ Users are assigned to one permission group on the User create/edit form. The leg
 - `users.role` is `admin`
 - the assigned permission group slug is `admin`
 
-`User::hasPermission()` returns true for admins before checking the assigned group. This gives Admin users unrestricted access.
+`User::hasPermission()` returns true for admins before checking the assigned group. This gives Admin users access to protected capabilities. The optional `projects.create-non-salesforce` capability requires an explicit group assignment, including for Admin users.
 
 ### Protected Admin group
 
 The system group whose immutable slug is `admin` is a protected authorization boundary:
 
-- Admin-group members always receive every application permission through the global authorization bypass, even if a permission pivot is unexpectedly missing.
-- The Admin group edit form displays its permission checkboxes as read-only. Saving the group restores every current permission assignment, and newly-created Permission records are assigned to it automatically.
+- Admin-group members receive protected application permissions through the global authorization bypass, even if a permission pivot is unexpectedly missing. The optional `projects.create-non-salesforce` capability always checks the stored group assignment.
+- The Admin group edit form protects its standard permission checkboxes as read-only. Saving restores protected assignments, and newly-created Permission records are assigned automatically. The exception is `projects.create-non-salesforce`, shown under Optional Admin permissions: it can be disabled and re-enabled, is not restored on save, and is excluded from the Admin authorization bypass.
 - The rollout migration safely inserts any missing Admin permission links; it does not remove or rewrite existing permission assignments.
 - Only an authenticated user who currently belongs to the `admin` group may assign another user to that group, remove a user from it, or delete an Admin-group user. Holding `users.*`, `permissions.manage`, or the legacy `role = admin` value is not sufficient.
 - The final Admin-group member cannot be demoted or deleted, including by themselves, so the application cannot be left without an account capable of managing Admin membership.
@@ -98,6 +98,8 @@ The **Statistics** page is controlled independently by `statistics.view`, which 
 
 ## Authorization Flow
 
+New projects default to Salesforce mode for every group. The `projects.create-non-salesforce` permission controls visibility of the Salesforce Project switch and the ability to create a local project, in addition to `projects.create`. It defaults to Admin only. Creation enforces this permission server-side and requires a Salesforce project selection in Salesforce mode. Copy project also requires this permission because copies are local projects. Existing projects retain their type, and existing project visibility and editing permissions remain in effect.
+
 All permission gates are registered in `App\Providers\AppServiceProvider`.
 
 Each `PermissionKey` case is registered as a Laravel Gate:
@@ -122,6 +124,7 @@ New code should use the dotted permission keys from `PermissionKey`.
 |---|---:|---:|---:|---:|---:|
 | View projects | x | x | x | x | x |
 | Create projects | x | x |  |  | x |
+| Create non-Salesforce projects | x |  |  |  |  |
 | Edit project details | x | x |  |  | x |
 | Edit project areas / line items | x | x |  | x | x |
 | Manage project tenders | x | x |  | x | x |
@@ -354,4 +357,4 @@ If an Admin user is unexpectedly denied access, check both:
 - `users.role`
 - assigned `permissionGroup.slug`
 
-Admin access is intentionally unrestricted through `Gate::before()` and `User::isAdministrator()`.
+Admin access to protected capabilities is granted through `Gate::before()` and `User::isAdministrator()`. The optional `projects.create-non-salesforce` permission instead uses the stored group assignment and can be disabled for Admin.

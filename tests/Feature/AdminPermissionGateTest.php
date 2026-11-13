@@ -4,11 +4,15 @@ namespace Tests\Feature;
 
 use App\Enums\ProjectLineType;
 use App\Enums\ProjectStatus;
+use App\Filament\Resources\Projects\Pages\ListProjects;
 use App\Filament\Resources\Projects\Pages\ViewProject;
+use App\Models\Permission;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\SalesforceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class AdminPermissionGateTest extends TestCase
@@ -22,6 +26,16 @@ class AdminPermissionGateTest extends TestCase
         $sales = User::factory()->sales()->create();
         $technical = User::factory()->technical()->create();
         $manager = User::factory()->manager()->create();
+
+        $this->assertTrue($admin->can('projects.create-non-salesforce'));
+
+        foreach ([$user, $sales, $technical, $manager] as $nonAdmin) {
+            $this->assertFalse($nonAdmin->can('projects.create-non-salesforce'));
+        }
+
+        $this->assertSame(['admin'], Permission::query()
+            ->where('key', 'projects.create-non-salesforce')
+            ->firstOrFail()->groups()->pluck('slug')->all());
 
         $this->assertTrue($user->can('projects.create'));
         $this->assertTrue($user->can('projects.manage-tenders'));
@@ -90,6 +104,116 @@ class AdminPermissionGateTest extends TestCase
         $this->assertFalse($manager->can('resources.update'));
         $this->assertFalse($manager->can('resources.delete'));
         $this->assertFalse($manager->can('salesforce.manage-push'));
+    }
+
+    public function test_admin_can_switch_to_a_non_salesforce_project(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+
+        $component = Livewire::test(ListProjects::class)
+            ->mountAction('create')
+            ->assertFormFieldVisible('salesforce_project');
+
+        $this->assertTrue($component->instance()->mountedActions[0]['data']['salesforce_project']);
+
+        $component->setActionData([
+            'salesforce_project' => false,
+            'name' => 'Admin Local Project',
+            'reference_number' => 'ADMIN-LOCAL',
+            'customer_name' => 'Example Customer',
+        ])->callMountedAction()->assertHasNoActionErrors();
+
+        $this->assertDatabaseHas('projects', [
+            'reference_number' => 'ADMIN-LOCAL',
+            'salesforce_project' => false,
+        ]);
+    }
+
+    public function test_user_cannot_forge_non_salesforce_project_creation(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $component = Livewire::test(ListProjects::class)
+            ->mountAction('create')
+            ->assertFormFieldHidden('salesforce_project');
+
+        $this->assertTrue($component->instance()->mountedActions[0]['data']['salesforce_project']);
+
+        $component->setActionData([
+            'salesforce_project' => false,
+            'name' => 'Forbidden Local Project',
+            'reference_number' => 'FORBIDDEN-LOCAL',
+            'customer_name' => 'Example Customer',
+        ])->callMountedAction()->assertForbidden();
+
+        $this->assertDatabaseMissing('projects', ['reference_number' => 'FORBIDDEN-LOCAL']);
+    }
+
+    public function test_user_can_create_a_salesforce_project_with_the_switch_hidden(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $opportunity = [
+            'Id' => '006000000000001AAA',
+            'Name' => 'Linked Salesforce Project',
+        ];
+
+        $this->mock(SalesforceService::class)
+            ->shouldReceive('getOpportunityById')
+            ->with($opportunity['Id'])
+            ->andReturn($opportunity);
+
+        Livewire::test(ListProjects::class)
+            ->mountAction('create')
+            ->assertFormFieldHidden('salesforce_project')
+            ->setActionData([
+                'salesforce_id' => $opportunity['Id'],
+                'salesforce_pending_data' => json_encode($opportunity),
+                'name' => $opportunity['Name'],
+                'reference_number' => 'LINKED-SF',
+                'customer_name' => 'Example Customer',
+            ])
+            ->callMountedAction()
+            ->assertHasNoActionErrors();
+
+        $this->assertDatabaseHas('projects', [
+            'reference_number' => 'LINKED-SF',
+            'salesforce_project' => true,
+            'salesforce_id' => $opportunity['Id'],
+        ]);
+    }
+
+    public function test_user_cannot_copy_a_project_into_a_non_salesforce_project(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+        $project = Project::factory()->for($user)->create();
+
+        $component = Livewire::test(ListProjects::class)
+            ->assertTableActionHidden('duplicate', $project);
+
+        try {
+            $component->instance()->getTable()->getAction('duplicate')->record($project)->call();
+            $this->fail('Copying a project without permission should be forbidden.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+
+        $this->assertDatabaseCount('projects', 1);
+    }
+
+    public function test_salesforce_project_creation_requires_a_salesforce_selection(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        Livewire::test(ListProjects::class)->callAction('create', [
+            'salesforce_project' => true,
+            'name' => 'Unlinked Salesforce Project',
+            'reference_number' => 'UNLINKED-SF',
+            'customer_name' => 'Example Customer',
+        ])->assertHasActionErrors(['salesforce_id']);
+
+        $this->assertDatabaseMissing('projects', ['reference_number' => 'UNLINKED-SF']);
     }
 
     public function test_technical_user_cannot_update_line_price(): void

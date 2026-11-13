@@ -42,6 +42,8 @@ class ProjectForm
                     ->label('Salesforce Project')
                     ->live()
                     ->default(true)
+                    ->visible(fn (): bool => auth()->user()?->can('projects.create-non-salesforce') ?? false)
+                    ->dehydratedWhenHidden()
                     ->afterStateUpdated(function (bool $state, Set $set): void {
                         if ($state) {
                             self::clearSalesforceSelection($set);
@@ -120,6 +122,7 @@ class ProjectForm
                 Select::make('salesforce_id')
                     ->label('Project Name')
                     ->placeholder('Type to search Salesforce projects...')
+                    ->required(fn (Get $get, ?Project $record): bool => $record === null && (bool) $get('salesforce_project'))
                     ->searchable()
                     ->getSearchResultsUsing(
                         fn (string $search): array => app(SalesforceService::class)->searchOpportunities($search)
@@ -258,8 +261,8 @@ class ProjectForm
                 TextInput::make('site_location')
                     ->label('Site Location')
                     ->placeholder('Location')
-                    ->maxLength(255)
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
+                    ->maxLength(200)
+                    ->readOnly(fn (?Project $record): bool => self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 TextInput::make('owner_email')
                     ->label('Project Owner (email)')
@@ -498,7 +501,7 @@ class ProjectForm
             ->all();
     }
 
-    public static function titleCaseProjectName(?string $name): string
+    public static function salesforceProjectName(?string $name): string
     {
         return app(ProjectNameFormatter::class)->fromSalesforce($name);
     }
@@ -788,7 +791,7 @@ class ProjectForm
             return;
         }
 
-        $set('name', self::titleCaseProjectName($record['Name'] ?? ''));
+        $set('name', self::salesforceProjectName($record['Name'] ?? ''));
         $set('reference_number', $record['Project_Reference_Number__c'] ?? null);
         $set('salesforce_id', $record['Id'] ?? null);
         $set('salesforce_reference_id', $record['Id'] ?? null);

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\PermissionGroups\Schemas;
 
 use App\Enums\LandingPage;
+use App\Enums\PermissionKey;
 use App\Models\PermissionGroup;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
@@ -77,6 +78,16 @@ class PermissionGroupForm
                             ->dehydrated(false)
                             ->columnSpanFull(),
                         ...self::permissionAreaSections(),
+                        CheckboxList::make('admin_optional_permissions')
+                            ->label('Optional Admin permissions')
+                            ->relationship(
+                                name: 'permissions',
+                                titleAttribute: 'name',
+                                modifyQueryUsing: fn (Builder $query): Builder => $query
+                                    ->where('key', PermissionKey::ProjectsCreateNonSalesforce->value),
+                            )
+                            ->visible(fn (?PermissionGroup $record): bool => $record?->isAdminGroup() ?? false)
+                            ->columnSpanFull(),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
@@ -108,8 +119,10 @@ class PermissionGroupForm
                             ->relationship(
                                 name: 'permissions',
                                 titleAttribute: 'name',
-                                modifyQueryUsing: fn (Builder $query): Builder => $query
+                                modifyQueryUsing: fn (Builder $query, ?PermissionGroup $record): Builder => $query
                                     ->whereIn('category', $categories)
+                                    ->when($record?->isAdminGroup(), fn (Builder $query): Builder => $query
+                                        ->where('key', '!=', PermissionKey::ProjectsCreateNonSalesforce->value))
                                     ->orderBy('name'),
                             )
                             ->searchable()

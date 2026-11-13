@@ -6,6 +6,7 @@ enum PermissionKey: string
 {
     case ProjectsView = 'projects.view';
     case ProjectsCreate = 'projects.create';
+    case ProjectsCreateNonSalesforce = 'projects.create-non-salesforce';
     case ProjectsUpdateDetails = 'projects.update-details';
     case ProjectsUpdateLines = 'projects.update-lines';
     case ProjectsManageTenders = 'projects.manage-tenders';
@@ -58,6 +59,7 @@ enum PermissionKey: string
         return match ($this) {
             self::ProjectsView => 'View projects',
             self::ProjectsCreate => 'Create projects',
+            self::ProjectsCreateNonSalesforce => 'Create non-Salesforce projects',
             self::ProjectsUpdateDetails => 'Edit project details',
             self::ProjectsUpdateLines => 'Edit project areas / line items',
             self::ProjectsManageTenders => 'Manage project tenders',
@@ -112,6 +114,7 @@ enum PermissionKey: string
         return match ($this) {
             self::ProjectsView,
             self::ProjectsCreate,
+            self::ProjectsCreateNonSalesforce,
             self::ProjectsUpdateDetails,
             self::ProjectsUpdateLines,
             self::ProjectsManageTenders,
@@ -173,6 +176,7 @@ enum PermissionKey: string
     {
         return match ($this) {
             self::PricingView => 'Global switch for price columns and price-based outputs.',
+            self::ProjectsCreateNonSalesforce => 'Allows switching off Salesforce mode when creating a project. Defaults to Admin only.',
             self::PricingUpdate => 'Allows changing project line prices. Requires price visibility.',
             self::CoverUpdate => 'Allows changing project and line-level cover percentages.',
             self::ProjectsManageTenders => 'Allows adding, removing, and choosing primary contractor tenders for a project.',

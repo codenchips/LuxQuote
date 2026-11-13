@@ -203,21 +203,24 @@ class AdminProjectResourceTest extends TestCase
         $this->assertTrue($component->instance()->getMountedAction()->getModalSubmitAction()->isEnabled());
     }
 
-    public function test_salesforce_project_names_are_normalised_to_title_case(): void
+    public function test_salesforce_project_names_are_preserved_exactly(): void
     {
+        $mixedCaseName = "  McDONALD's – ÉCOLE / Phase ii  ";
+        $this->assertSame($mixedCaseName, ProjectForm::salesforceProjectName($mixedCaseName));
+
         $this->assertSame(
-            'Hartwest Primary School',
-            ProjectForm::titleCaseProjectName('HARTWEST PRIMARY SCHOOL'),
+            'HARTWEST PRIMARY SCHOOL',
+            ProjectForm::salesforceProjectName('HARTWEST PRIMARY SCHOOL'),
         );
 
         $this->assertSame(
-            'NHS Eastpoint Centre',
-            ProjectForm::titleCaseProjectName('NHS EASTPOINT CENTRE'),
+            'NHS EASTPOINT CENTRE',
+            ProjectForm::salesforceProjectName('NHS EASTPOINT CENTRE'),
         );
 
         $this->assertSame(
-            'UK Hospital LV Room',
-            ProjectForm::titleCaseProjectName('UK HOSPITAL LV ROOM'),
+            'UK HOSPITAL LV ROOM',
+            ProjectForm::salesforceProjectName('UK HOSPITAL LV ROOM'),
         );
     }
 
@@ -287,7 +290,7 @@ class AdminProjectResourceTest extends TestCase
 
         $this->assertSame('006000000000001AAA', $data['salesforce_id']);
         $this->assertSame('006000000000001AAA', $data['salesforce_reference_id']);
-        $this->assertSame('Hartest Primary School', $data['name']);
+        $this->assertSame('HARTEST PRIMARY SCHOOL', $data['name']);
         $this->assertSame('22600', $data['reference_number']);
         $this->assertStringContainsString('HARTEST PRIMARY SCHOOL', $data['salesforce_pending_data']);
         $this->assertNull($data['customer_name']);
@@ -480,6 +483,7 @@ class AdminProjectResourceTest extends TestCase
         $this->assertDatabaseHas(Project::class, [
             'salesforce_id' => '006000000000001AAA',
             'branch_name' => 'Birmingham Central',
+            'name' => 'BRANCH PROJECT',
         ]);
     }
 
@@ -527,7 +531,7 @@ class AdminProjectResourceTest extends TestCase
         $project->refresh();
 
         $this->assertTrue($result['success']);
-        $this->assertSame('NEW NHS Salesforce Project', $project->name);
+        $this->assertSame('NEW NHS SALESFORCE PROJECT', $project->name);
         $this->assertSame('SF-NEW', $project->reference_number);
         $this->assertSame('New Customer', $project->customer_name);
         $this->assertSame('new-owner@example.com', $project->owner_email);
@@ -3495,6 +3499,42 @@ class AdminProjectResourceTest extends TestCase
         $this->assertNull($line->qty);
         $this->assertNull($line->unit_price);
         $this->assertNull($line->notes);
+    }
+
+    public function test_site_location_saves_for_local_and_salesforce_projects_with_a_200_character_limit(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+        Http::fake();
+
+        $location = str_repeat('é', 180)." O'Brien & Sons, UK!";
+        $location .= str_repeat('x', 200 - mb_strlen($location));
+
+        foreach ([false, true] as $isSalesforceProject) {
+            $project = Project::factory()->for($admin)->create([
+                'salesforce_project' => $isSalesforceProject,
+                'salesforce_id' => $isSalesforceProject ? '006000000000001AAA' : null,
+                'site_location' => 'Original location',
+            ]);
+
+            Livewire::test(ViewProject::class, ['record' => $project->id])
+                ->callAction('editProject', ['site_location' => $location])
+                ->assertHasNoActionErrors();
+
+            $this->assertSame(trim($location), $project->fresh()->site_location);
+
+            Livewire::test(ViewProject::class, ['record' => $project->id])
+                ->callAction('editProject', ['site_location' => str_repeat('é', 201)])
+                ->assertHasActionErrors(['site_location' => 'max']);
+
+            $this->assertSame(trim($location), $project->fresh()->site_location);
+
+            Livewire::test(ViewProject::class, ['record' => $project->id])
+                ->callAction('editProject', ['site_location' => null])
+                ->assertHasNoActionErrors();
+
+            $this->assertNull($project->fresh()->site_location);
+        }
     }
 
     public function test_salesforce_project_details_save_does_not_upload_pdf_without_products(): void

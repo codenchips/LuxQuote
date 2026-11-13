@@ -10,6 +10,7 @@ use App\Filament\Resources\PermissionGroups\Pages\ListPermissionGroups;
 use App\Filament\Resources\PermissionGroups\Schemas\PermissionGroupForm;
 use App\Filament\Resources\Permissions\Pages\ListPermissions;
 use App\Filament\Resources\Permissions\PermissionResource;
+use App\Filament\Resources\Projects\Pages\ListProjects;
 use App\Filament\Resources\Users\Pages\CreateUser;
 use App\Filament\Resources\Users\Pages\EditUser;
 use App\Models\Permission;
@@ -169,6 +170,51 @@ class AdminPermissionResourceTest extends TestCase
             Permission::query()->count(),
             $adminGroup->fresh()->permissions()->count(),
         );
+    }
+
+    public function test_admin_can_disable_and_reenable_non_salesforce_project_creation(): void
+    {
+        $admin = $this->adminUser();
+        $adminGroup = $admin->permissionGroup;
+        $permission = Permission::where('key', 'projects.create-non-salesforce')->firstOrFail();
+        $this->actingAs($admin);
+
+        Livewire::test(EditPermissionGroup::class, ['record' => $adminGroup->getRouteKey()])
+            ->assertFormFieldEnabled('admin_optional_permissions')
+            ->fillForm(['admin_optional_permissions' => []])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertFalse($admin->can('projects.create-non-salesforce'));
+        $this->assertFalse($admin->hasPermission('projects.create-non-salesforce'));
+        $this->assertTrue($admin->can('permissions.manage'));
+        $this->assertSame(Permission::count() - 1, $adminGroup->permissions()->count());
+
+        Livewire::test(ListProjects::class)
+            ->mountAction('create')
+            ->assertFormFieldHidden('salesforce_project')
+            ->setActionData([
+                'salesforce_project' => false,
+                'name' => 'Forbidden Admin Local Project',
+                'reference_number' => 'ADMIN-DISABLED',
+                'customer_name' => 'Example Customer',
+            ])
+            ->callMountedAction()
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('projects', ['reference_number' => 'ADMIN-DISABLED']);
+
+        Livewire::test(EditPermissionGroup::class, ['record' => $adminGroup->getRouteKey()])
+            ->fillForm(['admin_optional_permissions' => [$permission->id]])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertTrue($admin->can('projects.create-non-salesforce'));
+        $this->assertSame(Permission::count(), $adminGroup->permissions()->count());
+
+        Livewire::test(ListProjects::class)
+            ->mountAction('create')
+            ->assertFormFieldVisible('salesforce_project');
     }
 
     public function test_new_permissions_are_automatically_assigned_to_the_admin_group(): void

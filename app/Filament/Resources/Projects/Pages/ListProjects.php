@@ -30,13 +30,25 @@ class ListProjects extends ListRecords
                 ->slideOver()
                 ->createAnother(false)
                 ->mutateFormDataUsing(function (array $data): array {
+                    abort_unless(auth()->user()?->can('projects.create'), 403);
+
+                    $data['salesforce_project'] = (bool) ($data['salesforce_project'] ?? true);
+
+                    if (! $data['salesforce_project']) {
+                        abort_unless(auth()->user()?->can('projects.create-non-salesforce'), 403);
+                    } elseif (blank($data['salesforce_id'] ?? null)) {
+                        throw ValidationException::withMessages([
+                            'salesforce_id' => 'Select a Salesforce project.',
+                        ]);
+                    }
+
                     $data['user_id'] = auth()->id();
 
                     if (! empty($data['salesforce_project']) && ! empty($data['salesforce_pending_data'])) {
                         $sfData = json_decode((string) $data['salesforce_pending_data'], true);
 
                         if (is_array($sfData) && ! empty($sfData['Name'])) {
-                            $data['name'] = ProjectForm::titleCaseProjectName($sfData['Name']);
+                            $data['name'] = ProjectForm::salesforceProjectName($sfData['Name']);
                             $data['salesforce_id'] = $sfData['Id'] ?? $data['salesforce_id'] ?? null;
                             $data['owner_name'] = data_get($sfData, 'Owner.Name');
                             $data['branch_name'] = data_get($sfData, 'CEF_Branch__r.Name');

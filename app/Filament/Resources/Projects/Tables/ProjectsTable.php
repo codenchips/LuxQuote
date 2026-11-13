@@ -253,8 +253,12 @@ class ProjectsTable
                     ->icon('heroicon-o-document-duplicate')
                     ->iconButton()
                     ->tooltip('Copy project')
-                    ->visible(fn (): bool => auth()->user()?->can('projects.create') ?? false)
+                    ->visible(fn (): bool => (auth()->user()?->can('projects.create') ?? false)
+                        && (auth()->user()?->can('projects.create-non-salesforce') ?? false))
                     ->action(function (Project $record): void {
+                        abort_unless(auth()->user()?->can('projects.create')
+                            && auth()->user()?->can('projects.create-non-salesforce'), 403);
+
                         $attributes = $record->only([
                             'user_id', 'name', 'customer_name', 'contractor', 'site_location',
                             'owner_email', 'created_by_email', 'department', 'date', 'revision',
