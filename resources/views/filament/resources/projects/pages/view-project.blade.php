@@ -52,8 +52,53 @@
                 keepalive: true,
             });
         },
+        focusAdjacentRowField(field, direction, event) {
+            if (! field.dataset.lineColumn || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) {
+                return;
+            }
+
+            const start = field.selectionStart;
+            const end = field.selectionEnd;
+
+            if (start === null || start !== end || (direction === 1 ? end !== field.value.length : start !== 0)) {
+                return;
+            }
+
+            const row = field.closest('[data-project-line-row]');
+
+            if (! row) {
+                return;
+            }
+
+            const fields = Array.from(row.querySelectorAll('[data-line-column]'))
+                .filter((candidate) => ! candidate.disabled && ! candidate.readOnly && candidate.offsetParent !== null);
+            let target = fields[fields.indexOf(field) + direction];
+
+            if (! target) {
+                const rows = Array.from(document.querySelectorAll('[data-project-line-row]'));
+                const adjacentRows = direction === 1
+                    ? rows.slice(rows.indexOf(row) + 1)
+                    : rows.slice(0, rows.indexOf(row)).reverse();
+
+                target = adjacentRows
+                    .flatMap((adjacentRow) => {
+                        const rowFields = Array.from(adjacentRow.querySelectorAll('[data-line-column]'));
+
+                        return direction === 1 ? rowFields : rowFields.reverse();
+                    })
+                    .find((candidate) => ! candidate.disabled && ! candidate.readOnly && candidate.offsetParent !== null);
+            }
+
+            if (! target) {
+                return;
+            }
+
+            event.preventDefault();
+            target.focus();
+            target.setSelectionRange(0, 0);
+        },
         focusAdjacentLineField(field, direction, event) {
-            if (field.type === 'number') {
+            if (field.hasAttribute('data-line-numeric')) {
                 event.preventDefault();
             }
 
@@ -82,6 +127,8 @@
             target.select?.();
         },
     }"
+    x-on:keydown.arrow-left="focusAdjacentRowField($event.target, -1, $event)"
+    x-on:keydown.arrow-right="focusAdjacentRowField($event.target, 1, $event)"
     x-init="
         ['click', 'keydown', 'input', 'change', 'paste'].forEach((eventName) => {
             window.addEventListener(eventName, (event) => {
@@ -318,6 +365,7 @@
                 >
                     @foreach($area->lines as $line)
                     <div
+                        data-project-line-row
                         wire:key="line-{{ $line->id }}"
                         x-sort:item="{{ $line->id }}"
                         class="grid items-center gap-1.5 px-4 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 {{ match($line->type) {
@@ -387,7 +435,9 @@
                         {{-- Qty --}}
                         <input
                             data-line-column="qty"
-                            type="number"
+                            type="text"
+                            inputmode="numeric"
+                            data-line-numeric
                             value="{{ $line->qty }}"
                             @disabled(! $canEditLines || $this->isViewingRevisionValidated || $projectEditLocked)
                             min="{{ $line->isNoOffer() ? 0 : 1 }}"
@@ -413,7 +463,9 @@
                                 @if($this->record->cover_direction === 'added')
                                     <input
                                         data-line-column="unit_price"
-                                        type="number"
+                                        type="text"
+                                        inputmode="decimal"
+                                        data-line-numeric
                                         step="0.01"
                                         max="99999999.99"
                                         value="{{ $line->unit_price }}"
@@ -438,7 +490,9 @@
                                     </div>
                                     <input
                                         data-line-column="unit_price"
-                                        type="number"
+                                        type="text"
+                                        inputmode="decimal"
+                                        data-line-numeric
                                         step="0.01"
                                         max="99999999.99"
                                         value="{{ $line->unit_price }}"
@@ -458,7 +512,9 @@
                             @else
                                 <input
                                     data-line-column="unit_price"
-                                    type="number"
+                                    type="text"
+                                    inputmode="decimal"
+                                    data-line-numeric
                                     step="0.01"
                                     max="99999999.99"
                                     value="{{ $line->unit_price }}"
@@ -484,7 +540,9 @@
                                         <span class="sr-only">{{ $coverLabel }}</span>
                                         <input
                                             data-line-column="{{ $coverField }}"
-                                            type="number"
+                                            type="text"
+                                            inputmode="decimal"
+                                            data-line-numeric
                                             step="0.01"
                                             min="0"
                                             max="999.99"
