@@ -98,6 +98,8 @@ The **Statistics** page is controlled independently by `statistics.view`, which 
 
 ## Authorization Flow
 
+`projects.update-creator-email` and `projects.update-date` independently allow editing Created By (email) and Date on local and Salesforce projects. Both default to Admin only and appear under Project permissions. They require the existing project-details access and respect approved-revision/editing locks. Server-side form normalization preserves stored values without the corresponding permission; new projects use the signed-in user email and today’s date. Editing Created By email changes that display field only; `projects.user_id` and ownership reassignment rules remain unchanged.
+
 New projects default to Salesforce mode for every group. The `projects.create-non-salesforce` permission controls visibility of the Salesforce Project switch and the ability to create a local project, in addition to `projects.create`. It defaults to Admin only. Creation enforces this permission server-side and requires a Salesforce project selection in Salesforce mode. Copy project also requires this permission because copies are local projects. Existing projects retain their type, and existing project visibility and editing permissions remain in effect.
 
 All permission gates are registered in `App\Providers\AppServiceProvider`.
@@ -126,6 +128,8 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Create projects | x | x |  |  | x |
 | Create non-Salesforce projects | x |  |  |  |  |
 | Edit project details | x | x |  |  | x |
+| Edit project creator email | x |  |  |  |  |
+| Edit project date | x |  |  |  |  |
 | Edit project areas / line items | x | x |  | x | x |
 | Manage project tenders | x | x |  | x | x |
 | Mark design complete | x | x |  | x | x |

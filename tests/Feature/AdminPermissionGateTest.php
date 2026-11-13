@@ -27,6 +27,14 @@ class AdminPermissionGateTest extends TestCase
         $technical = User::factory()->technical()->create();
         $manager = User::factory()->manager()->create();
 
+        foreach (['projects.update-creator-email', 'projects.update-date'] as $permissionKey) {
+            $this->assertTrue($admin->can($permissionKey));
+
+            foreach ([$user, $sales, $technical, $manager] as $nonAdmin) {
+                $this->assertFalse($nonAdmin->can($permissionKey));
+            }
+        }
+
         $this->assertTrue($admin->can('projects.create-non-salesforce'));
 
         foreach ([$user, $sales, $technical, $manager] as $nonAdmin) {

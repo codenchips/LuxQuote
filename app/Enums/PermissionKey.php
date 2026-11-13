@@ -8,6 +8,8 @@ enum PermissionKey: string
     case ProjectsCreate = 'projects.create';
     case ProjectsCreateNonSalesforce = 'projects.create-non-salesforce';
     case ProjectsUpdateDetails = 'projects.update-details';
+    case ProjectsUpdateCreatorEmail = 'projects.update-creator-email';
+    case ProjectsUpdateDate = 'projects.update-date';
     case ProjectsUpdateLines = 'projects.update-lines';
     case ProjectsManageTenders = 'projects.manage-tenders';
     case ProjectsMarkDesignComplete = 'projects.mark-design-complete';
@@ -61,6 +63,8 @@ enum PermissionKey: string
             self::ProjectsCreate => 'Create projects',
             self::ProjectsCreateNonSalesforce => 'Create non-Salesforce projects',
             self::ProjectsUpdateDetails => 'Edit project details',
+            self::ProjectsUpdateCreatorEmail => 'Edit project creator email',
+            self::ProjectsUpdateDate => 'Edit project date',
             self::ProjectsUpdateLines => 'Edit project areas / line items',
             self::ProjectsManageTenders => 'Manage project tenders',
             self::ProjectsMarkDesignComplete => 'Mark design complete',
@@ -116,6 +120,8 @@ enum PermissionKey: string
             self::ProjectsCreate,
             self::ProjectsCreateNonSalesforce,
             self::ProjectsUpdateDetails,
+            self::ProjectsUpdateCreatorEmail,
+            self::ProjectsUpdateDate,
             self::ProjectsUpdateLines,
             self::ProjectsManageTenders,
             self::ProjectsMarkDesignComplete,
@@ -176,6 +182,8 @@ enum PermissionKey: string
     {
         return match ($this) {
             self::PricingView => 'Global switch for price columns and price-based outputs.',
+            self::ProjectsUpdateCreatorEmail => 'Allows editing Created By email on local and Salesforce projects without reassigning project ownership.',
+            self::ProjectsUpdateDate => 'Allows editing the project date on local and Salesforce projects.',
             self::ProjectsCreateNonSalesforce => 'Allows switching off Salesforce mode when creating a project. Defaults to Admin only.',
             self::PricingUpdate => 'Allows changing project line prices. Requires price visibility.',
             self::CoverUpdate => 'Allows changing project and line-level cover percentages.',

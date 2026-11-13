@@ -690,6 +690,62 @@ class AdminProjectResourceTest extends TestCase
         $this->assertNotContains($otherUser->email, $options);
     }
 
+    public function test_project_metadata_permissions_independently_control_saving_for_both_project_types(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+        Http::fake();
+
+        foreach ([false, true] as $isSalesforceProject) {
+            $project = Project::factory()->for($user)->create([
+                'salesforce_project' => $isSalesforceProject,
+                'salesforce_id' => $isSalesforceProject ? '006000000000001AAA' : null,
+                'created_by_email' => 'original@example.com',
+                'date' => '2026-08-27',
+            ]);
+
+            foreach (['created_by_email' => 'projects.update-creator-email', 'date' => 'projects.update-date'] as $field => $permissionKey) {
+                $project->update(['created_by_email' => 'original@example.com', 'date' => '2026-08-27']);
+                $permission = Permission::where('key', $permissionKey)->firstOrFail();
+                $user->permissionGroup->permissions()->attach($permission);
+
+                $data = ['created_by_email' => 'edited@example.com', 'date' => '2026-11-01'];
+
+                Livewire::test(ViewProject::class, ['record' => $project->id])
+                    ->callAction('editProject', $data)
+                    ->assertHasNoActionErrors();
+
+                $project->refresh();
+                $this->assertSame($field === 'created_by_email' ? 'edited@example.com' : 'original@example.com', $project->created_by_email);
+                $this->assertSame($field === 'date' ? '2026-11-01' : '2026-08-27', $project->date->format('Y-m-d'));
+                $this->assertSame($user->id, $project->user_id);
+
+                $user->permissionGroup->permissions()->detach($permission);
+            }
+        }
+    }
+
+    public function test_project_details_save_preserves_metadata_without_permissions(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $project = Project::factory()->for($user)->create([
+            'created_by_email' => 'original@example.com',
+            'date' => '2026-08-27',
+        ]);
+
+        Livewire::test(ListProjects::class)
+            ->callTableAction('editProject', $project, [
+                'created_by_email' => 'forged@example.com',
+                'date' => '2026-11-01',
+            ])
+            ->assertHasNoTableActionErrors();
+
+        $this->assertSame('original@example.com', $project->fresh()->created_by_email);
+        $this->assertSame('2026-08-27', $project->fresh()->date->format('Y-m-d'));
+    }
+
     public function test_standard_project_details_save_cannot_forge_the_creator_identity(): void
     {
         $owner = User::factory()->create([

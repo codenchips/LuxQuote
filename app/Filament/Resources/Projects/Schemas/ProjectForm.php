@@ -22,6 +22,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\ToggleButtons;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Flex;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Utilities\Get;
@@ -51,72 +52,77 @@ class ProjectForm
                     })
                     ->disabled(fn (?Project $record): bool => $record !== null),
 
-                Actions::make([
-                    Action::make('refreshSalesforceProject')
-                        ->label('Refresh')
-                        ->icon('heroicon-o-arrow-path')
-                        ->color('gray')
-                        ->tooltip('Refresh project details from Salesforce. LuxQuote Value will not be changed.')
-                        ->requiresConfirmation()
-                        ->modalHeading('Refresh project details from Salesforce?')
-                        ->modalDescription('This pulls the latest Salesforce details into LuxQuote. Value and LuxQuote-only settings will not change, and nothing will be pushed to Salesforce.')
-                        ->modalSubmitActionLabel('Refresh details')
+                Flex::make([
+                    TextInput::make('name')
+                        ->label('Project Name')
+                        ->placeholder('e.g. Office Fit-Out 2026')
+                        ->live()
+                        ->required()
+                        ->maxLength(255)
+                        ->unique(ignoreRecord: true)
+                        ->validationMessages([
+                            'unique' => 'A project with this project name already exists.',
+                        ])
+                        ->hidden(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true && $record === null)
+                        ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
+                    Actions::make([
+                        Action::make('refreshSalesforceProject')
+                            ->label('Refresh')
+                            ->icon('heroicon-o-arrow-path')
+                            ->color('gray')
+                            ->tooltip('Refresh project details from Salesforce. LuxQuote Value will not be changed.')
+                            ->requiresConfirmation()
+                            ->modalHeading('Refresh project details from Salesforce?')
+                            ->modalDescription('This pulls the latest Salesforce details into LuxQuote. Value and LuxQuote-only settings will not change, and nothing will be pushed to Salesforce.')
+                            ->modalSubmitActionLabel('Refresh details')
+                            ->visible(fn (?Project $record): bool => $record !== null
+                                && $record->salesforce_project
+                                && filled($record->salesforce_id)
+                                && (auth()->user()?->can('projects.update-details') ?? false))
+                            ->action(function (?Project $record, Set $set): void {
+                                abort_unless(auth()->user()?->can('projects.update-details'), 403);
+                                abort_if($record === null || ! $record->salesforce_project || blank($record->salesforce_id), 404);
+
+                                $result = app(SalesforceProjectRefreshService::class)->refresh($record);
+
+                                if (! $result['success']) {
+                                    Notification::make()
+                                        ->danger()
+                                        ->title('Salesforce refresh failed')
+                                        ->body($result['message'])
+                                        ->send();
+
+                                    return;
+                                }
+
+                                $record->refresh();
+
+                                foreach (array_keys($result['attributes'] ?? []) as $field) {
+                                    if ($field === 'owner_name') {
+                                        continue;
+                                    }
+
+                                    $set($field, $record->getAttribute($field));
+                                }
+
+                                Notification::make()
+                                    ->success()
+                                    ->title('Salesforce details refreshed')
+                                    ->body($result['message'])
+                                    ->send();
+                            }),
+                    ])
+                        ->key('salesforceRefreshActions')
+                        ->alignEnd()
+                        ->grow(false)
                         ->visible(fn (?Project $record): bool => $record !== null
                             && $record->salesforce_project
                             && filled($record->salesforce_id)
-                            && (auth()->user()?->can('projects.update-details') ?? false))
-                        ->action(function (?Project $record, Set $set): void {
-                            abort_unless(auth()->user()?->can('projects.update-details'), 403);
-                            abort_if($record === null || ! $record->salesforce_project || blank($record->salesforce_id), 404);
-
-                            $result = app(SalesforceProjectRefreshService::class)->refresh($record);
-
-                            if (! $result['success']) {
-                                Notification::make()
-                                    ->danger()
-                                    ->title('Salesforce refresh failed')
-                                    ->body($result['message'])
-                                    ->send();
-
-                                return;
-                            }
-
-                            $record->refresh();
-
-                            foreach (array_keys($result['attributes'] ?? []) as $field) {
-                                if ($field === 'owner_name') {
-                                    continue;
-                                }
-
-                                $set($field, $record->getAttribute($field));
-                            }
-
-                            Notification::make()
-                                ->success()
-                                ->title('Salesforce details refreshed')
-                                ->body($result['message'])
-                                ->send();
-                        }),
+                            && (auth()->user()?->can('projects.update-details') ?? false)),
                 ])
-                    ->key('salesforceRefreshActions')
-                    ->alignEnd()
-                    ->visible(fn (?Project $record): bool => $record !== null
-                        && $record->salesforce_project
-                        && filled($record->salesforce_id)
-                        && (auth()->user()?->can('projects.update-details') ?? false)),
-
-                TextInput::make('name')
-                    ->label('Project Name')
-                    ->placeholder('e.g. Office Fit-Out 2026')
-                    ->live()
-                    ->required()
-                    ->maxLength(255)
-                    ->unique(ignoreRecord: true)
-                    ->validationMessages([
-                        'unique' => 'A project with this project name already exists.',
-                    ])
+                    ->from('sm')
+                    ->verticallyAlignEnd()
                     ->hidden(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true && $record === null)
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly))
                     ->columnSpanFull(),
 
                 Select::make('salesforce_id')
@@ -277,7 +283,8 @@ class ProjectForm
                     ->email()
                     ->maxLength(255)
                     ->default(fn (): ?string => auth()->user()?->email)
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly))
+                    ->readOnly(fn (?Project $record): bool => ! (auth()->user()?->can('projects.update-creator-email') ?? false)
+                        || self::projectDetailsAreReadOnly($record, $forceReadOnly))
                     ->hintAction(
                         Action::make('reassignProjectOwner')
                             ->label('Reassign')
@@ -344,7 +351,8 @@ class ProjectForm
                 DatePicker::make('date')
                     ->label('Date')
                     ->default(now())
-                    ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
+                    ->readOnly(fn (?Project $record): bool => ! (auth()->user()?->can('projects.update-date') ?? false)
+                        || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 Hidden::make('visibility')
                     ->default(ProjectVisibility::Open->value),
@@ -539,7 +547,13 @@ class ProjectForm
     {
         $data = self::normaliseCoverData($data, $record);
         $data = self::normaliseProjectValueData($data, $record);
-        $data['created_by_email'] = $record?->created_by_email ?? auth()->user()?->email;
+        if (! (auth()->user()?->can('projects.update-creator-email') ?? false) || ! array_key_exists('created_by_email', $data)) {
+            $data['created_by_email'] = $record?->created_by_email ?? auth()->user()?->email;
+        }
+
+        if (! (auth()->user()?->can('projects.update-date') ?? false) || ! array_key_exists('date', $data)) {
+            $data['date'] = $record?->date?->format('Y-m-d') ?? now()->toDateString();
+        }
 
         $visibility = $data['visibility'] ?? ProjectVisibility::Open->value;
         $teamId = $data['team_id'] ?? null;
