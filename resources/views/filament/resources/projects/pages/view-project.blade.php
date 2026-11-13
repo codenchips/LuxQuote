@@ -53,6 +53,10 @@
             });
         },
         focusAdjacentLineField(field, direction, event) {
+            if (field.type === 'number') {
+                event.preventDefault();
+            }
+
             if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
                 return;
             }
@@ -341,6 +345,7 @@
                             maxlength="255"
                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                            x-on:keydown.enter.prevent="focusAdjacentLineField($el, 1, $event)"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'code', $el.value)"
                             placeholder="–"
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm font-mono hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white {{ match($line->type) {
@@ -359,6 +364,7 @@
                             placeholder="–"
                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                            x-on:keydown.enter.prevent="focusAdjacentLineField($el, 1, $event)"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'ref', $el.value.toUpperCase().slice(0, 6))"
                             x-on:input="$el.value = $el.value.toUpperCase().slice(0, 6)"
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm font-mono uppercase hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
@@ -371,6 +377,7 @@
                             @disabled(! $canEditLines || $this->isViewingRevisionValidated || $projectEditLocked)
                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                            x-on:keydown.enter.prevent="focusAdjacentLineField($el, 1, $event)"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'description', $el.value)"
                             maxlength="255"
                             placeholder="Description..."
@@ -387,6 +394,7 @@
                             max="4294967295"
                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                            x-on:keydown.enter.prevent="focusAdjacentLineField($el, 1, $event)"
                             x-on:blur="$wire.updateLineField({{ $line->id }}, 'qty', Math.min(4294967295, Math.max({{ $line->isNoOffer() ? 0 : 1 }}, parseInt($el.value) || {{ $line->isNoOffer() ? 0 : 1 }})))"
                             class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm text-right hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-900 dark:text-white"
                         />
@@ -412,6 +420,7 @@
                                         @disabled(! $canEditPrices || $this->isViewingRevisionValidated || $projectEditLocked)
                                         x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                         x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                                        x-on:keydown.enter.prevent="focusAdjacentLineField($el, 1, $event)"
                                         x-on:blur="
                                             const value = $el.value === '' ? '' : Math.min(99999999.99, Math.max(0, Number.parseFloat($el.value) || 0)).toFixed(2);
                                             $el.value = value;
@@ -436,6 +445,7 @@
                                         @disabled(! $canEditPrices || $this->isViewingRevisionValidated || $projectEditLocked)
                                         x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                         x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                                        x-on:keydown.enter.prevent="focusAdjacentLineField($el, 1, $event)"
                                         x-on:blur="
                                             const value = $el.value === '' ? '' : Math.min(99999999.99, Math.max(0, Number.parseFloat($el.value) || 0)).toFixed(2);
                                             $el.value = value;
@@ -455,6 +465,7 @@
                                     @disabled(! $canEditPrices || $this->isViewingRevisionValidated || $projectEditLocked)
                                     x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                     x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                                    x-on:keydown.enter.prevent="focusAdjacentLineField($el, 1, $event)"
                                     x-on:blur="
                                         const value = $el.value === '' ? '' : Math.min(99999999.99, Math.max(0, Number.parseFloat($el.value) || 0)).toFixed(2);
                                         $el.value = value;
@@ -481,6 +492,7 @@
                                             @disabled(! $canEditCover || $revisionLocked || $projectEditLocked)
                                             x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                             x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                                            x-on:keydown.enter.prevent="focusAdjacentLineField($el, 1, $event)"
                                             x-on:blur="
                                                 const value = $el.value === '' ? '' : Math.min(999.99, Math.max(0, Number.parseFloat($el.value) || 0)).toFixed(2);
                                                 $el.value = value;
@@ -501,6 +513,7 @@
                                 @disabled(! $canEditLines || $revisionLocked || $projectEditLocked)
                                 x-on:keydown.arrow-up="focusAdjacentLineField($el, -1, $event)"
                                 x-on:keydown.arrow-down="focusAdjacentLineField($el, 1, $event)"
+                                x-on:keydown.enter.prevent="focusAdjacentLineField($el, 1, $event)"
                                 x-on:blur="$wire.updateLineField({{ $line->id }}, 'notes', $el.value)"
                                 placeholder=""
                                 class="w-full rounded border border-transparent bg-transparent px-2 py-1 text-sm hover:border-gray-300 dark:hover:border-gray-600 focus:border-primary-500 focus:outline-none text-gray-500 dark:text-gray-400"

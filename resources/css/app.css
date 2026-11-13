@@ -32,6 +32,17 @@
     outline: none;
 }
 
+input[type="number"][data-line-column] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+input[type="number"][data-line-column]::-webkit-inner-spin-button,
+input[type="number"][data-line-column]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
 @media (min-width: 1024px) {
     .fi-body.fi-body-has-sidebar-collapsible-on-desktop .fi-sidebar:not(.fi-sidebar-open) {
         width: 4.125rem;
