@@ -34,7 +34,7 @@ Default system groups are created by the permissions migration:
 - `technical`
 - `manager`
 
-Admins can create additional groups in the Filament Users area and choose from the fixed permission catalogue. Each group also has a default landing page selected from every top-level sidebar destination: Dashboard, Projects, Salesforce Projects, Visits, History, Specials, Products, Resources, Statistics, Users, Groups, or Teams. Existing and newly created groups default to Dashboard. After a normal login, the group setting controls the destination; an inaccessible selection safely falls back to Dashboard, while a valid intended URL from before login remains respected.
+Admins can create additional groups in the Filament Users area and choose from the fixed permission catalogue. Each group also has a default landing page selected from every top-level sidebar destination: Dashboard, Projects, Salesforce, Visits, History, Specials, Products, Resources, Statistics, Users, Groups, or Teams. Existing and newly created groups default to Dashboard. After a normal login, the group setting controls the destination; an inaccessible selection safely falls back to Dashboard, while a valid intended URL from before login remains respected.
 
 The Group create/edit form presents permissions once each under nine functional areas: Project, Users, Calendar, Pricing, Salesforce, Products, Resources, Validation, and Statistics. Project also contains revision, project/global history, output, and quote-approval capabilities; Users contains user, group, and team administration. One shared search field filters every area, and each area has its own Select all/Deselect all control. Group Details and Permissions are stacked as full-width panels so the permission labels have adequate room.
 
@@ -65,7 +65,7 @@ The system group whose immutable slug is `admin` is a protected authorization bo
 The left navigation groups permission-controlled features as follows:
 
 - `Salesforce`
-  - `Projects`: the Salesforce opportunity/project list (`salesforce.view`). This is separate from the main LuxQuote Projects resource.
+  - `Salesforce`: a single sidebar entry with Customers first and Projects second in the top-right subnavigation (`salesforce.view`). Customers is a read-only searchable, sortable, paginated list of all readable Salesforce Accounts, including Consultants and Contractors, with Account IDs as record keys; names are display values and are never used to join records. Native Salesforce query cursors support lists beyond 2,000 rows, with batches cached for 60 seconds per authenticated connection and query. Projects retains the existing Opportunity table and URL. The shared header retains the separately guarded global push switch, and the existing Salesforce group landing-page value now opens Customers.
   - `Visits`: the Salesforce public calendar interface (`calendar.view`).
 - `Admin`
   - `History`: the global activity log (`activity-log.view`).
@@ -134,6 +134,7 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Manage project tenders | x | x |  | x | x |
 | Mark design complete | x | x |  | x | x |
 | Delete projects permanently | x |  |  |  |  |
+| Delete archived projects permanently | x |  |  |  | x |
 | Create project revisions | x | x |  |  | x |
 | View project history | x | x | x | x | x |
 | View global history | x |  |  |  | x |
@@ -167,7 +168,8 @@ New code should use the dotted permission keys from `PermissionKey`.
 | Create company calendar events | x | x | x | x | x |
 | Update company calendar events | x | x | x | x | x |
 | Delete company calendar events | x | x | x | x | x |
-| View Salesforce projects list page | x |  |  |  | x |
+| View Salesforce customers and projects | x |  |  |  | x |
+| Edit Salesforce customer defaults | x |  |  |  | x |
 | Manage Salesforce push switch | x |  |  |  |  |
 | View users list page | x |  |  |  |  |
 | Create users | x |  |  |  |  |
@@ -243,6 +245,10 @@ The Salesforce page includes a global persistent push switch controlled by `sale
 
 Users with `salesforce.view` can still search and import Salesforce projects. Users with `salesforce.manage-push` can pause or resume outbound Salesforce writes. The switch stores its global state in `app_settings` and must stay where it was set across logout/login and page refreshes. When pushes are paused, the app must not upload quote/schedule PDFs or update Opportunity Amount values, but read-only Salesforce pulls remain available.
 
+Salesforce Customers and Salesforce Projects rows open a details dialog, fetching fresh Account or Opportunity data by Salesforce ID. Both tables use unstriped rows and the Projects-style filter popover with active filter indicators. Customers can filter by Customer Type; Salesforce Projects can filter by open Opportunity Stage. Filters are applied in Salesforce before pagination, retain the existing `salesforce.view` guard, and persist in the session. Both tables use Salesforce IDs as row keys, and details requests repeat the `salesforce.view` guard. Salesforce-sourced fields remain disabled and are never written back. Salesforce IDs remain internal and are not offered as visible fields or columns. Customer Billing and Shipping addresses come from Salesforce and are collapsed by default. Account Type uses the Salesforce picklist when metadata is available. Project dialogs remain read-only; forced submissions are rejected. Project Amount is queried and included in dialog state only with `pricing.view`; customer details expose only the displayed contact and address fields. Missing optional Salesforce fields fall back to the fields already used by the corresponding table. No Account or Opportunity changes are written by these dialogs.
+
+Customer **Default cover** uses the new `salesforce.customers.update` permission, initially assigned to Admin and Manager. Viewing defaults also requires `salesforce.view` and `pricing.view`; editing requires all three capabilities, independently of project `cover.update`. The server checks these permissions again on save and verifies the Account by ID. Only the three local percentage values are accepted, using the same 0–999.99 range as project cover fields. Defaults are stored against the unique, case-sensitive Salesforce Account ID, initially 5% / 5% / 5%. New Salesforce projects with a linked customer receive these values with added cover enabled; creation verifies the Opportunity's Account ID server-side. Existing projects and selective refresh behavior remain unchanged. Editing customer defaults never reprices existing projects.
+
 ## Calendar
 
 The **Salesforce → Visits** page is controlled by `calendar.view`. Every default permission group receives this capability, while custom groups can omit it. It reads room bookings from the configured Salesforce Visits public calendar and displays them in month, week, and day views.
@@ -292,7 +298,9 @@ Project visibility supports:
 
 The project page **Design Complete** status toggle is controlled by `projects.mark-design-complete`. It changes only the visible project status and does not unlock approved revisions, change line validation, grant pricing access, or change output permissions.
 
-The project-list **Delete permanently** submenu action is controlled independently by `projects.delete-permanently`. It defaults to Admin only, may be granted to any group, and does not grant project editing or archive/restore access. The action remains limited to active projects; an archived project must first be restored by a user with `projects.update-details`. Permission checks are repeated server-side because permanent deletion removes the project and all related records and cannot be undone.
+The project-list **Delete permanently** submenu action is controlled independently by `projects.delete-permanently`. It defaults to Admin only, may be granted to any group, and remains limited to active projects.
+
+Archived project rows replace the Details pencil with a bin action controlled by `projects.delete-archived`, initially assigned only to Admin and Manager. This permission is independent of active-project deletion and project editing. Confirmation is required. The deletion service repeats permission, project visibility and archived-status checks against the locked database record, so restoring a project while its confirmation is open prevents deletion. Deletion removes all revisions, areas, lines, tenders, locks, presences, document packs and their uploaded files, PDF generation records and their prepared downloads, and the project's activity/reporting history. A single global deletion audit entry is retained. Shared catalogue products, users and resource-library originals are unaffected. Restore remains controlled by `projects.update-details`.
 
 ## Project Tenders
 

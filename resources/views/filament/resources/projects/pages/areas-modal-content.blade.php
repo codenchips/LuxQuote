@@ -50,7 +50,7 @@
                 @disabled($readOnly)
                 class="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-gray-900 hover:border-gray-300 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:text-white dark:hover:border-gray-600"
             />
-            <span class="text-xs text-gray-400">{{ $area->lines->count() }} {{ Str::plural('item', $area->lines->count()) }}</span>
+            <span class="text-xs text-gray-400">{{ $area->lines->count() }} {{ Str::plural('Line', $area->lines->count()) }}</span>
             <button
                 type="button"
                 @click.stop="confirmDeleteAreaId = {{ $area->id }}; confirmDeleteAreaName = '{{ addslashes($area->name) }}'"

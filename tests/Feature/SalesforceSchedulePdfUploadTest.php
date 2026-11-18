@@ -392,7 +392,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
             'project' => $project,
             'revision' => $project->active_revision_id,
         ]), [
-            'include_legal_page' => false,
+            'include_legal_page' => true,
             'salesforce_upload' => true,
         ])->assertOk()
             ->assertJsonPath('filename', 'lighting-quote-QT-PREPARED-P1.pdf');

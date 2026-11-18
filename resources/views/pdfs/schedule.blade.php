@@ -15,6 +15,8 @@
         fn ($line) => $line->totalLineTotalForProject($project)
     ));
     $showPrices = $showPrices ?? false;
+    $includeDatasheetLinks = $includeDatasheetLinks ?? true;
+    $columnCount = 4 + ($showPrices ? 2 : 0) + ($includeDatasheetLinks ? 1 : 0);
     $documentTitle = $documentTitle ?? 'Lighting Schedule';
     $pdfBranchName = $branchName ?? $project->branch_name;
     $areasWithLines = $areas->filter(fn ($area) => $area->lines->isNotEmpty())->values();
@@ -184,6 +186,21 @@
 
         .meta-sep { margin: 0 2.5mm; color: #bbb; }
 
+        .output-summary {
+            display: flex;
+            justify-content: flex-end;
+            gap: 6mm;
+            margin-bottom: 3mm;
+            font-size: 8.5pt;
+            color: #666;
+            break-after: avoid;
+        }
+
+        .output-summary strong {
+            margin-left: 2mm;
+            color: #192542;
+        }
+
         .quote-summary {
             display: flex;
             justify-content: flex-end;
@@ -214,8 +231,20 @@
 
         .quote-summary-table .grand td {
             border-top: 1pt solid #192542;
+            border-bottom: 1pt solid #192542;
+            padding: 2.5mm 2mm;
+            font-size: 10.5pt;
+            font-weight: 700;
+            color: #192542;
+        }
+
+        .line-table .quote-total-row > td {
+            padding: 4mm 0 0;
             border-bottom: none;
-            font-size: 10pt;
+        }
+
+        .quote-total-row .quote-summary {
+            margin-bottom: 0;
         }
 
         /* ── Area block ──────────────────────────────────────────────────── */
@@ -282,7 +311,7 @@
             border-left: none;
         }
 
-        .line-table tbody:last-child tr:last-child td { border-bottom: none; }
+        .line-table > tbody:last-child > tr:last-child > td { border-bottom: none; }
 
         .line-table tr { break-inside: avoid; }
 
@@ -294,6 +323,7 @@
         /* Column widths */
         .col-code { width: 12%; font-size: 8pt; white-space: nowrap; }
         .col-ref  { width: 5%; }
+        .col-ref-empty { text-align: center; }
         .col-desc { width: 52%; }
         .col-qty  { width: 6%;  text-align: center; }
         .col-ds   { width: 5%;  text-align: center; }
@@ -429,9 +459,10 @@
             <div class="ref-lines">
                 <div><span class="ref-label">Ref: </span><span class="ref-val">{{ $project->reference_number ?? '-' }}</span></div>
                 <div><span class="ref-label">Rev: </span><span class="ref-val">{{ $revision->label() }}</span></div>
-                <div><span class="ref-label">Date: </span><span class="ref-val">{!! $formatPdfDate($project->date) !!}</span></div>
+                <div><span class="ref-label">Date: </span><span class="ref-val">{!! $formatPdfDate(now()) !!}</span></div>
                 <div><span class="ref-label">Sales Engineer: </span><span class="ref-val">{{ $salesEngineerName ?? '-' }}</span></div>
                 <div><span class="ref-label">Email: </span><span class="ref-val">{{ $salesEngineerEmail ?? $project->owner_email ?? '-' }}</span></div>
+                <div><span class="ref-label">Phone: </span><span class="ref-val">{{ $salesEngineerPhone ?? '-' }}</span></div>
             </div>
         </div>
 
@@ -470,24 +501,10 @@
         </div>
     </div>
 
-    @if($showPrices)
-    <div class="quote-summary">
-        <table class="quote-summary-table">
-            <tr>
-                <td class="label">Total quantity</td>
-                <td class="value">{{ number_format($grandQty) }}</td>
-            </tr>
-            <tr>
-                <td class="label">Line items</td>
-                <td class="value">{{ number_format($grandItems) }}</td>
-            </tr>
-            <tr class="grand">
-                <td class="label">Quote total</td>
-                <td class="value">{{ $project->formatCurrency($grandTotal) }}</td>
-            </tr>
-        </table>
+    <div class="output-summary">
+        <span>Total Lines <strong>{{ number_format($grandItems) }}</strong></span>
+        <span>Total Quantity <strong>{{ number_format($grandQty) }}</strong></span>
     </div>
-    @endif
 
     @foreach ($areasWithLines as $area)
         @php
@@ -496,19 +513,21 @@
                 fn ($line) => $line->totalLineTotalForProject($project)
             );
             $isFinalLineItemArea = $loop->last;
+            $finalLineGroupStartId = $area->lines->last(fn ($line) => filled($line->code))?->id
+                ?? $area->lines->last()?->id;
         @endphp
         <div class="area-block">
 
             <table class="line-table">
                 <thead>
                     <tr>
-                        <td colspan="{{ $showPrices ? 7 : 5 }}" class="area-header-cell">
+                        <td colspan="{{ $columnCount }}" class="area-header-cell">
                             <div class="area-header-content">
                                 <span class="area-name">{{ $area->name }}</span>
                                 <span class="area-summary">
-                                    {{ $area->lines->count() }} {{ Str::plural('item', $area->lines->count()) }}
+                                    {{ $area->lines->count() }} {{ Str::plural('Line', $area->lines->count()) }}
                                     &nbsp;&middot;&nbsp;
-                                    qty {{ number_format($areaQty) }}
+                                    Qty {{ number_format($areaQty) }}
                                     @if($showPrices)
                                         &nbsp;&middot;&nbsp;
                                         {{ $project->formatCurrency($areaTotal) }}
@@ -526,22 +545,25 @@
                             <th class="col-money">Unit Price</th>
                             <th class="col-money">Line Total</th>
                         @endif
-                        <th class="col-ds">Datasheet</th>
+                        @if($includeDatasheetLinks)
+                            <th class="col-ds">Datasheet</th>
+                        @endif
                     </tr>
                 </thead>
                 <tbody>
                     @foreach ($area->lines as $line)
                     @php
                         $hasSku = filled($line->code);
+                        $hasReference = $hasSku && filled($line->ref);
                         $hasLineNote = $hasSku && filled($line->notes);
                         $isFinalLineItemRow = $isFinalLineItemArea && $loop->last;
                     @endphp
-                    @if($isFinalLineItemRow)
+                    @if($isFinalLineItemArea && $line->id === $finalLineGroupStartId)
                 </tbody>
                 <tbody class="final-line-and-legal">
                     @endif
                     <tr @class(['keep-with-legal' => $isFinalLineItemRow])>
-                        <td class="col-ref">{!! $hasSku ? e($line->ref ?? '') : '&nbsp;' !!}</td>
+                        <td @class(['col-ref', 'col-ref-empty' => $hasSku && ! $hasReference])>{!! $hasSku ? e($hasReference ? $line->ref : '—') : '&nbsp;' !!}</td>
                         <td class="col-qty">{!! $hasSku ? e($line->quantityLabel()) : '&nbsp;' !!}</td>
                         <td class="col-code">{!! $hasSku ? e($line->code) : '&nbsp;' !!}</td>
                         <td class="col-desc">{!! $hasSku ? e($line->description ?? '') : '&nbsp;' !!}</td>
@@ -553,34 +575,50 @@
                             <td class="col-money">{!! $hasSku ? e($project->formatCurrency($unitPrice)) : '&nbsp;' !!}</td>
                             <td class="col-money">{!! $hasSku && ! $line->qty_is_each ? e($project->formatCurrency($lineTotal)) : '&nbsp;' !!}</td>
                         @endif
-                        <td class="col-ds">
-                            @if($hasSku && isset($existingSkus[$line->code]))
-                                @php
-                                    $sku   = $line->code;
-                                    $base  = str_starts_with($sku, 'XC')    
-                                        ? 'https://xciteledlighting.co.uk/data-sheet/' . urlencode($sku)
-                                        : 'https://tamlite.co.uk/data-sheet/' . urlencode($sku);
-                                    $dsUrl = $base . '?t=' . $pdfTimestamp . '&source=luxquote';
-                                @endphp
-                                <a href="{{ $dsUrl }}" target="_blank" class="ds-link" title="Open datasheet in a new tab" aria-label="Open datasheet in a new tab">
-                                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                                        <path d="M15 3h6v6" />
-                                        <path d="M10 14L21 3" />
-                                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                                    </svg>
-                                </a>
-                            @endif
-                        </td>
+                        @if($includeDatasheetLinks)
+                            <td class="col-ds">
+                                @if($hasSku && isset($existingSkus[$line->code]))
+                                    @php
+                                        $sku   = $line->code;
+                                        $base  = str_starts_with($sku, 'XC')
+                                            ? 'https://xciteledlighting.co.uk/data-sheet/' . urlencode($sku)
+                                            : 'https://tamlite.co.uk/data-sheet/' . urlencode($sku);
+                                        $dsUrl = $base . '?t=' . $pdfTimestamp . '&source=luxquote';
+                                    @endphp
+                                    <a href="{{ $dsUrl }}" target="_blank" class="ds-link" title="Open datasheet in a new tab" aria-label="Open datasheet in a new tab">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="M15 3h6v6" />
+                                            <path d="M10 14L21 3" />
+                                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                        </svg>
+                                    </a>
+                                @endif
+                            </td>
+                        @endif
                     </tr>
                     @if($hasLineNote)
                         <tr class="line-note-row">
                             <td colspan="3">&nbsp;</td>
-                            <td colspan="{{ $showPrices ? 4 : 2 }}" class="line-note-cell"><strong>Note:</strong> {{ $line->notes }}</td>
+                            <td colspan="{{ $columnCount - 3 }}" class="line-note-cell"><strong>Note:</strong> {{ $line->notes }}</td>
                         </tr>
                     @endif
                     @if($isFinalLineItemRow)
+                        @if($showPrices)
+                        <tr class="quote-total-row">
+                            <td colspan="{{ $columnCount }}">
+                                <div class="quote-summary">
+                                    <table class="quote-summary-table">
+                                        <tr class="grand">
+                                            <td class="label">Total:</td>
+                                            <td class="value">{{ $project->formatCurrency($grandTotal) }}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </td>
+                        </tr>
+                        @endif
                         <tr class="legal-blurb-row">
-                            <td colspan="{{ $showPrices ? 7 : 5 }}">
+                            <td colspan="{{ $columnCount }}">
                                 <div class="legal-blurb">
                                     <table class="legal-blurb-table">
                                         <tr>
@@ -611,6 +649,17 @@
 
         </div>
     @endforeach
+
+    @if($showPrices && $areasWithLines->isEmpty())
+    <div class="quote-summary">
+        <table class="quote-summary-table">
+            <tr class="grand">
+                <td class="label">Total:</td>
+                <td class="value">{{ $project->formatCurrency($grandTotal) }}</td>
+            </tr>
+        </table>
+    </div>
+    @endif
 
     {{-- Quote / general notes --}}
     @if($project->quote_notes || $project->general_notes)

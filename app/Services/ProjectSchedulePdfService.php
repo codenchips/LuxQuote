@@ -76,7 +76,7 @@ class ProjectSchedulePdfService
     /**
      * @param  array<int, int>  $areaIds
      */
-    public function builder(Project $project, ProjectRevision $revision, string $documentType = 'schedule', array $areaIds = []): PdfBuilder
+    public function builder(Project $project, ProjectRevision $revision, string $documentType = 'schedule', array $areaIds = [], bool $includeDatasheetLinks = true, bool $mergeAreas = false): PdfBuilder
     {
         $areasQuery = ProjectArea::where('project_revision_id', $revision->id)
             ->with([
@@ -104,7 +104,12 @@ class ProjectSchedulePdfService
             ->filter(fn (ProjectArea $area): bool => $area->lines->isNotEmpty())
             ->values();
 
-        $generatedAt = now()->format('M d Y H:i');
+        if ($mergeAreas && $areas->isNotEmpty()) {
+            $mergedArea = new ProjectArea(['name' => 'All Areas']);
+            $mergedArea->setRelation('lines', $areas->flatMap->lines->values());
+            $areas = collect([$mergedArea]);
+        }
+
         $salesEngineer = $this->salesEngineerForProject($project);
         $branchName = $this->branchNameForProject($project);
 
@@ -122,9 +127,9 @@ class ProjectSchedulePdfService
         </style>
         <div class="f">
             <div class="blocks">
-                <div class="block">Tamlite Technical<br>Stafford Park 12<br>Telford, Shropshire,<br>TF3 3BJ</div>
-                <div class="block">T: +44 (0)1952 292441<br>E: technical@tamlite.co.uk<br>W: www.tamlite.co.uk</div>
-                <div class="block">Generated on: '.$generatedAt.'<br>Produced by Tamlite Lighting</div>
+                <div class="block">Tamlite Lighting<br>Stafford Park 12<br>Telford, Shropshire,<br>TF3 3BJ</div>
+                <div class="block">T: +44 (0)1952 292441<br>E: projects@tamlite.co.uk<br>W: www.tamlite.co.uk</div>
+                <div class="block">Produced by Tamlite Lighting</div>
             </div>
             <div class="pg">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>
         </div>';
@@ -138,7 +143,9 @@ class ProjectSchedulePdfService
             'showPrices' => $documentType === 'quote',
             'salesEngineerName' => $salesEngineer['name'] ?? null,
             'salesEngineerEmail' => $salesEngineer['email'] ?? $project->owner_email,
+            'salesEngineerPhone' => $salesEngineer['mobile_phone'] ?? null,
             'branchName' => $branchName,
+            'includeDatasheetLinks' => $includeDatasheetLinks,
         ])
             ->withBrowsershot(function ($browsershot) use ($footerHtml): void {
                 $this->configureBrowsershot($browsershot);
@@ -153,9 +160,9 @@ class ProjectSchedulePdfService
     /**
      * @param  array<int, int>  $areaIds
      */
-    public function quoteBuilder(Project $project, ProjectRevision $revision, array $areaIds = []): PdfBuilder
+    public function quoteBuilder(Project $project, ProjectRevision $revision, array $areaIds = [], bool $includeDatasheetLinks = true, bool $mergeAreas = false): PdfBuilder
     {
-        return $this->builder($project, $revision, 'quote', $areaIds);
+        return $this->builder($project, $revision, 'quote', $areaIds, $includeDatasheetLinks, $mergeAreas);
     }
 
     private function specialLineShouldShow(ProjectLine $line, string $documentType): bool
@@ -174,9 +181,9 @@ class ProjectSchedulePdfService
     /**
      * @param  array<int, int>  $areaIds
      */
-    public function quoteContent(Project $project, ProjectRevision $revision, ?ProjectTender $tender = null, bool $includeCover = true, array $areaIds = []): string
+    public function quoteContent(Project $project, ProjectRevision $revision, ?ProjectTender $tender = null, bool $includeCover = true, array $areaIds = [], bool $includeDatasheetLinks = true, bool $mergeAreas = false): string
     {
-        $quoteContent = $this->contentFromBuilder($this->quoteBuilder($project, $revision, $areaIds));
+        $quoteContent = $this->contentFromBuilder($this->quoteBuilder($project, $revision, $areaIds, $includeDatasheetLinks, $mergeAreas));
 
         $tenderBelongsToProject = $tender === null
             || (int) $tender->project_id === (int) $project->getKey();

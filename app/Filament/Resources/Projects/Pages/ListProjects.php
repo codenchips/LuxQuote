@@ -5,6 +5,8 @@ namespace App\Filament\Resources\Projects\Pages;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Filament\Resources\Projects\Schemas\ProjectForm;
 use App\Models\Project;
+use App\Models\SalesforceCustomerDefault;
+use App\Services\SalesforceService;
 use Filament\Actions\CreateAction;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
@@ -43,6 +45,7 @@ class ListProjects extends ListRecords
                     }
 
                     $data['user_id'] = auth()->id();
+                    $customerCoverDefaults = null;
 
                     if (! empty($data['salesforce_project']) && ! empty($data['salesforce_pending_data'])) {
                         $sfData = json_decode((string) $data['salesforce_pending_data'], true);
@@ -54,7 +57,7 @@ class ListProjects extends ListRecords
                             $data['branch_name'] = data_get($sfData, 'CEF_Branch__r.Name');
                             $hasSalesforceCover = filled($sfData['CEF_Cover__c'] ?? null);
                             $data['has_cover'] = $hasSalesforceCover;
-                            $data['cover_direction'] = 'deducted';
+                            $data['cover_direction'] = 'added';
                             $data['cover_1'] = $hasSalesforceCover ? $sfData['CEF_Cover__c'] : null;
                             $data['cover_2'] = $hasSalesforceCover ? '5.00' : null;
                             $data['cover_3'] = $hasSalesforceCover ? '0.00' : null;
@@ -62,7 +65,23 @@ class ListProjects extends ListRecords
                         }
                     }
 
-                    return ProjectForm::normaliseVisibilityData($data);
+                    if ($data['salesforce_project']) {
+                        $opportunity = app(SalesforceService::class)->getOpportunityById($data['salesforce_id']);
+                        if ($opportunity === null) {
+                            throw ValidationException::withMessages(['salesforce_id' => 'The Salesforce project could not be verified. Select the project again.']);
+                        }
+                        if (filled($opportunity['AccountId'] ?? null)) {
+                            $customerCoverDefaults = SalesforceCustomerDefault::coverValues($opportunity['AccountId']);
+                        }
+                    }
+
+                    $data = ProjectForm::normaliseVisibilityData($data);
+
+                    if ($customerCoverDefaults !== null) {
+                        $data = array_replace($data, $customerCoverDefaults, ['has_cover' => true, 'cover_direction' => 'added']);
+                    }
+
+                    return $data;
                 })
                 ->successRedirectUrl(fn (Project $record): string => ProjectResource::getUrl('view', ['record' => $record])),
         ];

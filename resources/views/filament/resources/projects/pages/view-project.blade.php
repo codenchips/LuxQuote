@@ -215,7 +215,7 @@
             <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{{ number_format($revisionTotals['qty']) }}</div>
         </div>
         <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
-            <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Line Items</div>
+            <div class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Lines</div>
             <div class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{{ number_format($revisionTotals['items']) }}</div>
         </div>
         @if($canViewPrices)
@@ -249,7 +249,7 @@
 
                 <span class="font-medium text-gray-900 dark:text-white">{{ $area->name }}</span>
 
-                <span class="text-sm text-gray-400">({{ $area->lines->count() }} {{ Str::plural('item', $area->lines->count()) }})</span>
+                <span class="text-sm text-gray-400">({{ $area->lines->count() }} {{ Str::plural('Line', $area->lines->count()) }})</span>
 
                 <div class="flex-1"></div>
 

@@ -52,8 +52,59 @@ class PdfGenerationQueueTest extends TestCase
         $this->assertSame($project->id, $generation->project_id);
         $this->assertSame(PdfGeneration::TypeSchedule, $generation->type);
         $this->assertTrue($generation->parameters['include_datasheets']);
+        $this->assertTrue($generation->parameters['include_datasheet_links']);
+        $this->assertFalse($generation->parameters['merge_areas']);
         $this->assertArrayNotHasKey('area_ids', $generation->parameters);
         Queue::assertPushedOn('pdf', GeneratePdf::class);
+    }
+
+    public function test_pdf_queue_preserves_the_disabled_datasheet_links_choice(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+        $project = Project::factory()->for($admin)->create();
+        $project->activeRevision->update(['validated' => true, 'status' => ProjectRevisionStatus::Approved]);
+
+        foreach (['projects.pdf.schedule.queue', 'projects.pdf.quote.queue', 'projects.pdf.quote.prepare.queue'] as $routeName) {
+            $this->postJson(route($routeName, ['project' => $project]), [
+                'revision' => $project->active_revision_id,
+                'include_datasheets' => true,
+                'include_datasheet_links' => false,
+            ])->assertAccepted();
+
+            $parameters = PdfGeneration::query()->latest('id')->firstOrFail()->parameters;
+            $this->assertFalse($parameters['include_datasheet_links']);
+            $this->assertTrue($parameters['include_datasheets']);
+        }
+    }
+
+    public function test_pdf_queue_preserves_merging_and_selected_areas(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+        $project = Project::factory()->for($admin)->create();
+        $areaId = $project->activeRevision->areas()->first()->id;
+        $project->activeRevision->areas()->create(['project_id' => $project->id, 'name' => 'Excluded area']);
+        $project->activeRevision->update(['validated' => true, 'status' => ProjectRevisionStatus::Approved]);
+
+        foreach (['projects.pdf.schedule.queue', 'projects.pdf.quote.queue', 'projects.pdf.quote.prepare.queue'] as $routeName) {
+            $this->postJson(route($routeName, ['project' => $project]), [
+                'revision' => $project->active_revision_id,
+                'area_ids' => [$areaId],
+                'merge_areas' => true,
+                'include_legal_page' => true,
+            ])->assertAccepted();
+
+            $parameters = PdfGeneration::query()->latest('id')->firstOrFail()->parameters;
+            $this->assertTrue($parameters['merge_areas']);
+            $this->assertSame([$areaId], $parameters['area_ids']);
+
+            if ($routeName !== 'projects.pdf.schedule.queue') {
+                $this->assertFalse($parameters['include_legal_page']);
+            }
+        }
     }
 
     public function test_quote_queue_endpoint_enforces_quote_permissions(): void
@@ -67,6 +118,8 @@ class PdfGenerationQueueTest extends TestCase
             ->postJson(route('projects.pdf.quote.queue', [
                 'project' => $project,
                 'revision' => $project->active_revision_id,
+                'include_datasheet_links' => false,
+                'merge_areas' => true,
             ]))
             ->assertForbidden();
 
@@ -229,13 +282,15 @@ class PdfGenerationQueueTest extends TestCase
         $project = Project::factory()->for($admin)->create();
         $generation = PdfGeneration::factory()->for($admin)->for($project)->create([
             'type' => PdfGeneration::TypeSchedule,
-            'parameters' => ['revision' => $project->active_revision_id],
+            'parameters' => ['revision' => $project->active_revision_id, 'include_datasheet_links' => false, 'merge_areas' => true],
         ]);
 
         $projectController = Mockery::mock(ProjectPdfController::class);
         $projectController->shouldReceive('schedule')
             ->once()
             ->withArgs(fn (Request $request, Project $queuedProject): bool => $request->boolean('pdf_delivery_link')
+                && ! $request->boolean('include_datasheet_links', true)
+                && $request->boolean('merge_areas')
                 && $request->attributes->get('queued_pdf_worker') === true
                 && $queuedProject->is($project))
             ->andReturn(response()->json([

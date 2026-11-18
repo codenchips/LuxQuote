@@ -3,7 +3,7 @@
 namespace App\Enums;
 
 use App\Filament\Pages\Calendar;
-use App\Filament\Pages\Salesforce;
+use App\Filament\Pages\SalesforceCustomers;
 use App\Filament\Pages\Statistics;
 use App\Filament\Resources\ActivityLogs\ActivityLogResource;
 use App\Filament\Resources\PermissionGroups\PermissionGroupResource;
@@ -36,7 +36,7 @@ enum LandingPage: string
         return match ($this) {
             self::Dashboard => 'Dashboard',
             self::Projects => 'Projects',
-            self::SalesforceProjects => 'Projects',
+            self::SalesforceProjects => 'Salesforce',
             self::Visits => 'Visits',
             self::History => 'History',
             self::Specials => 'Specials',
@@ -54,7 +54,7 @@ enum LandingPage: string
         return match ($this) {
             self::Dashboard => rtrim((string) Filament::getUrl(), '/'),
             self::Projects => ProjectResource::getUrl('index'),
-            self::SalesforceProjects => Salesforce::getUrl(),
+            self::SalesforceProjects => SalesforceCustomers::getUrl(),
             self::Visits => Calendar::getUrl(),
             self::History => ActivityLogResource::getUrl('index'),
             self::Specials => SpecialOrderCodeResource::getUrl('index'),

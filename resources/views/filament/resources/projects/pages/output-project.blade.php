@@ -19,7 +19,6 @@
         $canSelectDocumentPackResources = $this->canSelectResourcesForDocumentPack();
         $canViewOutputHistory = $this->canViewOutputHistory();
         $includeQuoteDatasheets = $this->includeQuoteDatasheets;
-        $includeQuoteLegalPage = $this->includeQuoteLegalPage;
         $includeScheduleDatasheets = $this->includeScheduleDatasheets;
         $quoteTenderOptions = $canProduceQuote ? $this->quoteTenderOptions() : [];
         $hasQuoteTenders = $quoteTenderOptions !== [];
@@ -68,7 +67,8 @@
             documentPackUrl: @js($documentPackDownloadUrl),
             documentPackZipUrl: @js($documentPackZipUrl),
             includeDatasheets: @js($includeQuoteDatasheets),
-            includeLegalPage: @js($includeQuoteLegalPage),
+            includeQuoteDatasheetLinks: @js($this->includeQuoteDatasheetLinks),
+            includeScheduleDatasheetLinks: @js($this->includeScheduleDatasheetLinks),
             includeScheduleDatasheets: @js($includeScheduleDatasheets),
             csrfToken: @js(csrf_token()),
         })"
@@ -887,16 +887,17 @@
                                         </span>
                                     </label>
 
-                                    <label class="flex items-center justify-between gap-3 border-l border-gray-200 pl-4 dark:border-white/10">
-                                        <span>Include legal page</span>
-                                        <input type="checkbox" x-model="includeLegalPage" class="sr-only">
+                                    <div></div>
+                                    <label class="flex items-center justify-between gap-3">
+                                        <span>Include Links to Datasheets</span>
+                                        <input type="checkbox" x-model="includeQuoteDatasheetLinks" class="sr-only">
                                         <span
-                                            x-bind:class="includeLegalPage ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"
+                                            x-bind:class="includeQuoteDatasheetLinks ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"
                                             class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition"
                                             aria-hidden="true"
                                         >
                                             <span
-                                                x-bind:class="includeLegalPage ? 'translate-x-5' : ''"
+                                                x-bind:class="includeQuoteDatasheetLinks ? 'translate-x-5' : ''"
                                                 class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"
                                             ></span>
                                         </span>
@@ -975,6 +976,20 @@
                                         </span>
                                     </label>
                                     <div aria-hidden="true"></div>
+                                    <label class="flex items-center justify-between gap-3">
+                                        <span>Include Links to Datasheets</span>
+                                        <input type="checkbox" x-model="includeScheduleDatasheetLinks" class="sr-only">
+                                        <span
+                                            x-bind:class="includeScheduleDatasheetLinks ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"
+                                            class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition"
+                                            aria-hidden="true"
+                                        >
+                                            <span
+                                                x-bind:class="includeScheduleDatasheetLinks ? 'translate-x-5' : ''"
+                                                class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"
+                                            ></span>
+                                        </span>
+                                    </label>
                                 </div>
 
                                 <div class="mt-4 space-y-3">
@@ -1074,6 +1089,15 @@
                             </label>
                         </template>
                     </div>
+
+                    <label class="mt-5 flex cursor-pointer items-center gap-3">
+                        <span class="relative inline-flex h-6 w-11 shrink-0 items-center">
+                            <input type="checkbox" x-model="mergeAreasDraft" class="sr-only">
+                            <span class="absolute inset-0 rounded-full transition" x-bind:class="mergeAreasDraft ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"></span>
+                            <span class="relative ml-0.5 h-5 w-5 rounded-full bg-white shadow transition" x-bind:class="mergeAreasDraft ? 'translate-x-5' : ''"></span>
+                        </span>
+                        <span class="text-sm font-medium text-gray-950 dark:text-white">Merge selected areas in output</span>
+                    </label>
 
                     <p x-show="areaError" x-text="areaError" class="mt-4 rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-sm text-danger-300"></p>
                 </div>
@@ -1225,6 +1249,8 @@
                     areas: config.areas || [],
                     selectedAreas: {},
                     areaDraft: {},
+                    mergeAreas: false,
+                    mergeAreasDraft: false,
                     areaError: null,
                     selected: {},
                     status: {},
@@ -1234,7 +1260,8 @@
                     dotCount: 1,
                     dotTimer: null,
                     includeDatasheets: Boolean(config.includeDatasheets),
-                    includeLegalPage: config.includeLegalPage !== false,
+                    includeQuoteDatasheetLinks: config.includeQuoteDatasheetLinks !== false,
+                    includeScheduleDatasheetLinks: config.includeScheduleDatasheetLinks !== false,
                     quoteUrl: config.quoteUrl,
                     scheduleUrl: config.scheduleUrl,
                     includeScheduleDatasheets: Boolean(config.includeScheduleDatasheets),
@@ -1252,6 +1279,7 @@
                     openAreaDialog() {
                         this.areaError = null;
                         this.areaDraft = { ...this.selectedAreas };
+                        this.mergeAreasDraft = this.mergeAreas;
                         this.areaOpen = true;
                     },
                     closeAreaDialog() {
@@ -1279,6 +1307,7 @@
                         }
 
                         this.selectedAreas = { ...this.areaDraft };
+                        this.mergeAreas = this.mergeAreasDraft;
                         this.areaOpen = false;
                     },
                     areaDraftSelectedIds() {
@@ -1312,6 +1341,7 @@
                     },
                     applyAreaParams(url) {
                         const areaIds = this.outputAreaIds();
+                        url.searchParams.set('merge_areas', this.mergeAreas ? '1' : '0');
                         url.searchParams.delete('area_ids');
                         url.searchParams.delete('area_ids[]');
 
@@ -1369,7 +1399,8 @@
                         const url = new URL(this.quoteUrl, window.location.origin);
 
                         url.searchParams.set('include_cover', '0');
-                        url.searchParams.set('include_legal_page', this.includeLegalPage ? '1' : '0');
+                        url.searchParams.set('include_datasheet_links', this.includeQuoteDatasheetLinks ? '1' : '0');
+                        url.searchParams.set('include_legal_page', '0');
 
                         if (this.includeDatasheets) {
                             url.searchParams.set('include_datasheets', '1');
@@ -1383,6 +1414,7 @@
                     },
                     directScheduleUrl() {
                         const url = new URL(this.scheduleUrl, window.location.origin);
+                        url.searchParams.set('include_datasheet_links', this.includeScheduleDatasheetLinks ? '1' : '0');
 
                         if (this.includeScheduleDatasheets) {
                             url.searchParams.set('include_datasheets', '1');
@@ -1602,7 +1634,9 @@
                         const payload = {
                             include_cover: includeCover,
                             include_datasheets: this.includeDatasheets,
-                            include_legal_page: this.includeLegalPage,
+                            include_datasheet_links: this.includeQuoteDatasheetLinks,
+                            merge_areas: this.mergeAreas,
+                            include_legal_page: false,
                             salesforce_upload: true,
                             generation_batch_key: this.generationBatchKey,
                             generation_batch_size: this.generationBatchSize,

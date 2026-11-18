@@ -11,6 +11,7 @@ use App\Models\Project;
 use App\Models\ProjectArea;
 use App\Models\ProjectRevision;
 use App\Models\Team;
+use App\Services\ArchivedProjectDeletionService;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
@@ -240,13 +241,30 @@ class ProjectsTable
                     ->color('gray')
                     ->form(fn (Schema $schema): Schema => ProjectForm::configure($schema))
                     ->slideOver()
-                    ->visible(fn (): bool => auth()->user()?->can('projects.update-details') ?? false)
+                    ->visible(fn (Project $record): bool => $record->status !== ProjectStatus::Archived
+                        && (auth()->user()?->can('projects.update-details') ?? false))
                     ->modalSubmitAction(fn (Action $action, Project $record): Action|false => ProjectForm::projectDetailsAreReadOnly($record) ? false : $action)
                     ->modalCancelActionLabel(fn (Project $record): string => ProjectForm::projectDetailsAreReadOnly($record) ? 'Close' : 'Cancel')
                     ->using(function (Project $record, array $data): void {
                         abort_if(ProjectForm::projectDetailsAreReadOnly($record), 403, 'Approved revisions are locked against editing.');
 
                         $record->update(ProjectForm::normaliseVisibilityData($data, $record));
+                    }),
+
+                Action::make('deleteArchived')
+                    ->label('Delete archived project permanently')
+                    ->icon('heroicon-o-trash')
+                    ->iconButton()
+                    ->color('danger')
+                    ->tooltip('Delete archived project permanently')
+                    ->visible(fn (Project $record): bool => $record->status === ProjectStatus::Archived
+                        && (auth()->user()?->can('projects.delete-archived') ?? false))
+                    ->requiresConfirmation()
+                    ->modalHeading('Delete archived project permanently?')
+                    ->modalDescription('This permanently deletes the project, all revisions, areas, lines, document packs and associated project data and files. This cannot be undone.')
+                    ->modalSubmitActionLabel('Yes, delete permanently')
+                    ->action(function (Project $record): void {
+                        app(ArchivedProjectDeletionService::class)->delete($record, auth()->user());
                     }),
 
                 Action::make('duplicate')

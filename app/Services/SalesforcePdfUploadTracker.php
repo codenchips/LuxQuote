@@ -26,6 +26,8 @@ class SalesforcePdfUploadTracker
         ?ProjectTender $tender = null,
         array $areaIds = [],
         bool $includeLegalPage = true,
+        bool $includeDatasheetLinks = true,
+        bool $mergeAreas = false,
     ): string {
         $areasQuery = ProjectArea::where('project_revision_id', $revision->id)
             ->with(['lines' => fn ($query) => $query->orderBy('sort_order')])
@@ -42,6 +44,8 @@ class SalesforcePdfUploadTracker
             'document_type' => $documentType,
             'show_prices' => $showPrices,
             'include_datasheets' => $includeDatasheets,
+            'include_datasheet_links' => $includeDatasheetLinks,
+            'merge_areas' => $mergeAreas,
             'include_cover' => $documentType === 'quote' ? $includeCover : false,
             'include_legal_page' => $includeLegalPage,
             'area_ids' => $areaIds,

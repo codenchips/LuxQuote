@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use JsonException;
+use RuntimeException;
 use Throwable;
 
 class SalesforceService
@@ -427,6 +428,7 @@ class SalesforceService
         ?string $sortColumn = null,
         ?string $sortDirection = null,
         array $fields = ['Id', 'Name', 'StageName', 'CloseDate', 'Amount'],
+        array $stages = [],
     ): LengthAwarePaginator {
         $auth = $this->authenticate();
 
@@ -434,9 +436,11 @@ class SalesforceService
             return new LengthAwarePaginator([], 0, $perPage, $page);
         }
 
-        $where = $this->openOpportunityWhereClause(
+        $conditions = array_filter([
+            $this->soqlSelectionCondition('StageName', $stages),
             filled($search) ? "Name LIKE '%".$this->soqlEscape($search)."%'" : null,
-        );
+        ]);
+        $where = $this->openOpportunityWhereClause(implode(' AND ', $conditions));
 
         // Allowlisted sort columns to prevent SOQL injection
         $allowedColumns = ['Name', 'StageName', 'CreatedDate', 'Amount', 'Project_Reference_Number__c', 'Owner.Name'];
@@ -459,7 +463,182 @@ class SalesforceService
             $records = $data['records'] ?? [];
         }
 
-        return new LengthAwarePaginator($records, $total, $perPage, $page);
+        return new LengthAwarePaginator(collect($records)->keyBy('Id'), $total, $perPage, $page);
+    }
+
+    /** @param array<mixed> $values */
+    private function soqlSelectionCondition(string $field, array $values): ?string
+    {
+        $values = collect($values)->filter(fn (mixed $value): bool => is_string($value) && filled($value))
+            ->unique()->take(100)
+            ->map(fn (string $value): string => "'".str_replace(['\\', "'"], ['\\\\', "\\'"], mb_substr($value, 0, 255))."'")
+            ->implode(', ');
+
+        return $values === '' ? null : "{$field} IN ({$values})";
+    }
+
+    /** @return array<string, string> */
+    public function getOpportunityStageOptions(): array
+    {
+        $auth = $this->authenticate();
+        if ($auth === null) {
+            return [];
+        }
+
+        return Cache::remember('salesforce.open-stages.'.hash('sha256', $auth['instanceUrl'].'|'.$auth['token']), now()->addMinutes(5), function () use ($auth): array {
+            $result = $this->soqlQuery($auth, 'SELECT StageName FROM Opportunity'.$this->openOpportunityWhereClause().' GROUP BY StageName ORDER BY StageName');
+
+            return collect($result['records'] ?? [])->pluck('StageName')->filter()->mapWithKeys(fn (string $stage): array => [$stage => $stage])->all();
+        });
+    }
+
+    /** @return array<string, string> */
+    public function getAccountTypeOptions(): array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return [];
+        }
+
+        return Cache::remember('salesforce.account-types.'.hash('sha256', $auth['instanceUrl'].'|'.$auth['token']), now()->addHour(), function () use ($auth): array {
+            $field = collect($this->describeObjectUsingAuth($auth, 'Account')['fields'] ?? [])->firstWhere('name', 'Type');
+
+            return collect($field['picklistValues'] ?? [])
+                ->filter(fn (array $option): bool => ($option['active'] ?? false) && filled($option['value'] ?? null))
+                ->mapWithKeys(fn (array $option): array => [$option['value'] => $option['label'] ?? $option['value']])->all();
+        });
+    }
+
+    /** @return array<string, mixed>|null */
+    public function getAccountDetails(string $id): ?array
+    {
+        $basicFields = ['Id', 'Name', 'Type', 'Phone', 'Website', 'BillingCity', 'BillingPostalCode', 'BillingCountry', 'CreatedDate'];
+
+        return $this->recordDetailsById('Account', $id, [
+            ...$basicFields, 'Industry', 'Description', 'BillingStreet', 'BillingState',
+            'ShippingStreet', 'ShippingCity', 'ShippingState', 'ShippingPostalCode', 'ShippingCountry',
+            'OwnerId', 'Owner.Name', 'Owner.Email',
+        ], $basicFields);
+    }
+
+    /** @return array<string, mixed>|null */
+    public function getOpportunityDetails(string $id, bool $includePrices = false): ?array
+    {
+        $basicFields = ['Id', 'Name', 'Project_Reference_Number__c', 'StageName', 'CreatedDate', 'Owner.Name', 'Owner.Email'];
+
+        if ($includePrices) {
+            $basicFields[] = 'Amount';
+        }
+
+        return $this->recordDetailsById('Opportunity', $id, [
+            ...$basicFields, 'AccountId', 'Account.Name', 'Miscellaneous_Customer_Name__c',
+            'OwnerId', 'CloseDate', 'Description',
+            'CEF_Branch__r.Name',
+        ], $basicFields);
+    }
+
+    /**
+     * @param  array<int, string>  $fields
+     * @param  array<int, string>  $fallbackFields
+     * @return array<string, mixed>|null
+     */
+    private function recordDetailsById(string $object, string $id, array $fields, array $fallbackFields): ?array
+    {
+        $prefix = $object === 'Account' ? '001' : '006';
+
+        if (! in_array($object, ['Account', 'Opportunity'], true)
+            || ! preg_match('/^'.$prefix.'[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/', $id)) {
+            return null;
+        }
+
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return null;
+        }
+
+        $result = $this->soqlQuery($auth, 'SELECT '.implode(', ', $fields)." FROM {$object} WHERE Id = '{$id}' LIMIT 1");
+
+        if ($result === null) {
+            $result = $this->soqlQuery($auth, 'SELECT '.implode(', ', $fallbackFields)." FROM {$object} WHERE Id = '{$id}' LIMIT 1");
+        }
+
+        $record = ($result['records'] ?? [])[0] ?? null;
+
+        $recordId = (string) ($record['Id'] ?? '');
+
+        return $recordId === $id || (strlen($id) === 15 && substr($recordId, 0, 15) === $id) ? $record : null;
+    }
+
+    public function getAccounts(
+        int $page = 1,
+        int $perPage = 25,
+        ?string $search = null,
+        ?string $sortColumn = null,
+        ?string $sortDirection = null,
+        array $types = [],
+    ): LengthAwarePaginator {
+        $page = max(1, $page);
+        $perPage = max(1, min(100, $perPage));
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            throw new RuntimeException('Salesforce Account authentication failed.');
+        }
+
+        $conditions = array_filter([$this->soqlSelectionCondition('Type', $types)]);
+
+        if (filled($search)) {
+            $escaped = $this->soqlEscape(mb_substr(trim($search), 0, 200));
+            $conditions[] = "(Name LIKE '%{$escaped}%' OR BillingCity LIKE '%{$escaped}%' OR BillingPostalCode LIKE '%{$escaped}%' OR Phone LIKE '%{$escaped}%')";
+        }
+
+        $where = $conditions === [] ? '' : ' WHERE '.implode(' AND ', $conditions);
+
+        $allowedColumns = ['Name', 'Type', 'BillingCity', 'BillingPostalCode', 'BillingCountry', 'CreatedDate'];
+        $sortColumn = in_array($sortColumn, $allowedColumns, true) ? $sortColumn : 'Name';
+        $direction = strtoupper($sortDirection ?? '') === 'DESC' ? 'DESC' : 'ASC';
+        $soql = 'SELECT Id, Name, Type, Phone, BillingCity, BillingPostalCode, BillingCountry, Website, CreatedDate'
+            ." FROM Account{$where} ORDER BY {$sortColumn} {$direction}, Id ASC";
+        $cacheKey = 'salesforce:accounts:'.hash('sha256', $auth['instanceUrl'].'|'.$auth['token'].'|'.$soql);
+        $batch = Cache::remember($cacheKey, 60, fn (): array => $this->soqlQuery($auth, $soql)
+            ?? throw new RuntimeException('Salesforce Accounts could not be read.'));
+        $total = (int) ($batch['totalSize'] ?? 0);
+        $offset = ($page - 1) * $perPage;
+        if ($offset >= $total) {
+            return new LengthAwarePaginator([], $total, $perPage, $page);
+        }
+
+        $batchStart = 0;
+        $records = collect();
+        $visited = [];
+
+        while (true) {
+            $batchRecords = collect($batch['records'] ?? []);
+            $records = $records->concat($batchRecords->slice(max(0, $offset - $batchStart), $perPage - $records->count()));
+            $nextUrl = $batch['nextRecordsUrl'] ?? null;
+
+            if ($records->count() >= $perPage || blank($nextUrl)) {
+                break;
+            }
+
+            if (isset($visited[$nextUrl]) || ! preg_match('#^/services/data/v[0-9]+\.[0-9]+/query/[A-Za-z0-9_-]+$#', $nextUrl)) {
+                throw new RuntimeException('Salesforce returned an invalid Account pagination cursor.');
+            }
+
+            $visited[$nextUrl] = true;
+            $batchStart += $batchRecords->count();
+            $batch = Cache::remember($cacheKey.':'.hash('sha256', $nextUrl), 60, function () use ($auth, $nextUrl): array {
+                $response = $this->request()->withToken($auth['token'])->acceptJson()
+                    ->get($auth['instanceUrl'].$nextUrl);
+                $response->throw();
+
+                return $response->json();
+            });
+        }
+
+        return new LengthAwarePaginator($records->keyBy('Id'), $total, $perPage, $page);
     }
 
     /**
@@ -675,7 +854,7 @@ class SalesforceService
         $where = $this->openOpportunityWhereClause("Id = '{$escaped}'");
         $result = $this->soqlQuery(
             $auth,
-            "SELECT Id, Owner.Name, Owner.Email, Account.Name FROM Opportunity{$where} LIMIT 1",
+            "SELECT Id, AccountId, Owner.Name, Owner.Email, Account.Name FROM Opportunity{$where} LIMIT 1",
         );
 
         return ($result['records'] ?? [])[0] ?? null;

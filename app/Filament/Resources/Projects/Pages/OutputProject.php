@@ -103,9 +103,11 @@ class OutputProject extends ViewRecord
 
     public bool $includeQuoteDatasheets = false;
 
-    public bool $includeQuoteLegalPage = true;
+    public bool $includeQuoteDatasheetLinks = true;
 
     public bool $includeScheduleDatasheets = false;
+
+    public bool $includeScheduleDatasheetLinks = true;
 
     public string $outputHistorySearch = '';
 
@@ -164,6 +166,10 @@ class OutputProject extends ViewRecord
             'salesforce_upload' => true,
         ];
 
+        if (! $this->includeScheduleDatasheetLinks) {
+            $parameters['include_datasheet_links'] = false;
+        }
+
         if ($this->includeScheduleDatasheets) {
             $parameters['include_datasheets'] = true;
         }
@@ -181,13 +187,15 @@ class OutputProject extends ViewRecord
             'salesforce_upload' => true,
         ];
 
+        if (! $this->includeQuoteDatasheetLinks) {
+            $parameters['include_datasheet_links'] = false;
+        }
+
         if ($this->includeQuoteDatasheets) {
             $parameters['include_datasheets'] = true;
         }
 
-        if (! $this->includeQuoteLegalPage) {
-            $parameters['include_legal_page'] = false;
-        }
+        $parameters['include_legal_page'] = false;
 
         return route('projects.pdf.quote', $parameters);
     }
@@ -1712,6 +1720,14 @@ class OutputProject extends ViewRecord
             'salesforce_upload' => false,
         ];
 
+        if (array_key_exists('include_datasheet_links', $payload)) {
+            $parameters['include_datasheet_links'] = (bool) $payload['include_datasheet_links'];
+        }
+
+        if ((bool) ($payload['merge_areas'] ?? false)) {
+            $parameters['merge_areas'] = true;
+        }
+
         if ((bool) ($payload['include_datasheets'] ?? false)) {
             $parameters['include_datasheets'] = true;
         }
@@ -1729,9 +1745,7 @@ class OutputProject extends ViewRecord
                 $parameters['include_cover'] = (bool) $payload['include_cover'];
             }
 
-            if (array_key_exists('include_legal_page', $payload)) {
-                $parameters['include_legal_page'] = (bool) $payload['include_legal_page'];
-            }
+            $parameters['include_legal_page'] = false;
 
             return route('projects.pdf.quote', $parameters);
         }

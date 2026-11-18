@@ -95,6 +95,18 @@ class PdfDownloadUrlService
         ];
     }
 
+    public function revoke(string $token, int $userId): void
+    {
+        $download = $this->metadata($token, $userId);
+
+        if ($download === null) {
+            return;
+        }
+
+        File::delete((string) $download['path']);
+        Cache::forget($this->cacheKey($token));
+    }
+
     public function metadata(string $token, int $userId): ?array
     {
         abort_if(blank($token) || ! preg_match('/^[A-Za-z0-9]{48}$/', $token), 404);

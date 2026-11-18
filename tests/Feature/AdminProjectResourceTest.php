@@ -445,6 +445,89 @@ class AdminProjectResourceTest extends TestCase
         $this->assertSame(1, Project::query()->where('reference_number', '25948')->count());
     }
 
+    public function test_existing_salesforce_project_details_show_and_save_a_missing_branch_from_the_pdf_lookup(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->actingAs($admin);
+        $project = Project::factory()->for($admin)->create([
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+            'branch_name' => null,
+        ]);
+
+        $service = $this->mock(SalesforceService::class);
+        $service->shouldReceive('getOpportunityBranch')->atLeast()->once()->with($project->salesforce_id)->andReturn('CEF Glasgow City Centre');
+        $service->shouldReceive('getOpportunityOwner')->andReturn(null);
+
+        $component = Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->mountAction('editProject')
+            ->assertActionDataSet(['branch_name' => 'CEF Glasgow City Centre']);
+
+        $this->assertNull($project->fresh()->branch_name);
+        $component->callMountedAction()->assertHasNoActionErrors();
+        $this->assertSame('CEF Glasgow City Centre', $project->fresh()->branch_name);
+    }
+
+    public function test_saved_branch_is_preserved_when_opening_project_details(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $project = Project::factory()->create([
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+            'branch_name' => 'Stored Branch',
+        ]);
+        $service = $this->mock(SalesforceService::class);
+        $service->shouldNotReceive('getOpportunityBranch');
+        $service->shouldReceive('getOpportunityOwner')->andReturn(null);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->mountAction('editProject')
+            ->assertActionDataSet(['branch_name' => 'Stored Branch']);
+    }
+
+    public function test_failed_branch_lookup_does_not_prevent_project_details_from_opening(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $project = Project::factory()->create([
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+            'branch_name' => null,
+        ]);
+        $service = $this->mock(SalesforceService::class);
+        $service->shouldReceive('getOpportunityBranch')->andThrow(new \RuntimeException('Salesforce unavailable'));
+        $service->shouldReceive('getOpportunityOwner')->andReturn(null);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->mountAction('editProject')
+            ->assertActionDataSet(['branch_name' => null]);
+        $this->assertNull($project->fresh()->branch_name);
+    }
+
+    public function test_salesforce_branch_refresh_only_replaces_the_branch_when_selected(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $project = Project::factory()->create([
+            'name' => 'Original Name',
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+            'branch_name' => 'Original Branch',
+        ]);
+        $this->mock(SalesforceService::class)->shouldReceive('getOpportunityById')->twice()->andReturn([
+            'Name' => 'Fetched Name',
+            'CEF_Branch__r' => ['Name' => 'CEF Glasgow City Centre'],
+        ]);
+        $service = app(SalesforceProjectRefreshService::class);
+        $preview = $service->preview($project);
+        $this->assertSame('Branch Name', $service->fieldLabels($project, $preview['token'])['branch_name']);
+        $this->assertTrue($service->refresh($project, $preview['token'], [])['success']);
+        $this->assertSame('Original Branch', $project->fresh()->branch_name);
+
+        $preview = $service->preview($project);
+        $this->assertTrue($service->refresh($project, $preview['token'], ['branch_name'])['success']);
+        $this->assertSame('CEF Glasgow City Centre', $project->fresh()->branch_name);
+        $this->assertSame('Original Name', $project->fresh()->name);
+    }
+
     public function test_salesforce_project_creation_stores_the_opportunity_branch(): void
     {
         $admin = User::factory()->admin()->create();
@@ -2281,6 +2364,33 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('schedule-PDF-REF-P1.pdf');
     }
 
+    public function test_project_details_value_displays_as_currency_and_saves_as_a_number(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $project = Project::factory()->create(['value' => 13930]);
+
+        $component = Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->mountAction('editProject');
+
+        $this->assertSame('13,930.00', $component->instance()->mountedActions[0]['data']['value']);
+
+        $component->setActionData(['value' => '24,567.80'])
+            ->callMountedAction()
+            ->assertHasNoActionErrors();
+
+        $this->assertSame('24567.80', $project->fresh()->value);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->callAction('editProject', ['value' => '1,234'])
+            ->assertHasNoActionErrors();
+        $this->assertSame('1234.00', $project->fresh()->value);
+
+        Livewire::test(ViewProject::class, ['record' => $project->id])
+            ->callAction('editProject', ['value' => '1,000,000,000.00'])
+            ->assertHasActionErrors(['value' => 'max']);
+        $this->assertSame('1234.00', $project->fresh()->value);
+    }
+
     public function test_project_page_displays_revision_totals(): void
     {
         $admin = User::factory()->admin()->create();
@@ -2312,7 +2422,8 @@ class AdminProjectResourceTest extends TestCase
         Livewire::test(ViewProject::class, ['record' => $project->id])
             ->assertSee('Total Qty')
             ->assertSee('5')
-            ->assertSee('Line Items')
+            ->assertSee('Lines')
+            ->assertSee('2 Lines')
             ->assertSee('2')
             ->assertSee('Project Total')
             ->assertSee('42.50')
@@ -2443,7 +2554,7 @@ class AdminProjectResourceTest extends TestCase
             ->assertSee('All outputs include links to product datasheets.')
             ->assertSee('Generate a document')
             ->assertSee('Quote PDF')
-            ->assertSee('Include legal page')
+            ->assertDontSee('Include legal page')
             ->assertSee('Schedule PDF')
             ->assertSee('Download as CSV')
             ->assertSee(e(route('projects.pdf.schedule', [
@@ -2519,7 +2630,7 @@ class AdminProjectResourceTest extends TestCase
                 return 'no-tender-cover.pdf';
             }
 
-            public function quoteContent(Project $project, ProjectRevision $revision, mixed $tender = null, bool $includeCover = true, array $areaIds = []): string
+            public function quoteContent(Project $project, ProjectRevision $revision, mixed $tender = null, bool $includeCover = true, array $areaIds = [], bool $includeDatasheetLinks = true, bool $mergeAreas = false): string
             {
                 $this->includeCover = $includeCover;
 
@@ -2645,6 +2756,50 @@ class AdminProjectResourceTest extends TestCase
         $this->assertLessThan(strpos($html, '<th class="col-desc">Description</th>'), strpos($html, '<th class="col-code">Code</th>'));
     }
 
+    public function test_quote_and_schedule_show_the_generation_date_and_salesforce_owner_mobile(): void
+    {
+        $this->travelTo(now()->setDateTime(2026, 11, 17, 10, 0));
+        $project = Project::factory()->create([
+            'date' => '2026-06-18',
+            'salesforce_project' => true,
+            'salesforce_id' => '006000000000001AAA',
+            'branch_name' => 'Stored Branch',
+        ]);
+        $salesforce = new class extends SalesforceService
+        {
+            public ?string $phone = '07961 805168';
+
+            public function getOpportunityOwner(string $opportunityId): ?array
+            {
+                return [
+                    'id' => '005000000000001AAA',
+                    'name' => 'Jamie Engineer',
+                    'email' => 'jamie.engineer@example.com',
+                    'mobile_phone' => $this->phone,
+                ];
+            }
+        };
+        $this->instance(SalesforceService::class, $salesforce);
+
+        foreach (['schedule', 'quote'] as $documentType) {
+            $html = app(ProjectSchedulePdfService::class)->builder($project, $project->activeRevision, $documentType)->getHtml();
+            $this->assertStringContainsString('Date: </span><span class="ref-val">17<sup>th</sup> Nov 2026</span>', $html);
+            $this->assertStringNotContainsString('18<sup>th</sup> Jun 2026', $html);
+            $this->assertStringContainsString('Sales Engineer: </span><span class="ref-val">Jamie Engineer</span>', $html);
+            $this->assertStringContainsString('Email: </span><span class="ref-val">jamie.engineer@example.com</span>', $html);
+            $this->assertStringContainsString('Phone: </span><span class="ref-val">07961 805168</span>', $html);
+        }
+
+        $salesforce->phone = null;
+
+        foreach (['schedule', 'quote'] as $documentType) {
+            $html = app(ProjectSchedulePdfService::class)->builder($project, $project->activeRevision, $documentType)->getHtml();
+            $this->assertStringContainsString('Phone: </span><span class="ref-val">-</span>', $html);
+        }
+
+        $this->assertSame('2026-06-18', $project->fresh()->date->toDateString());
+    }
+
     public function test_pdf_builder_continues_when_salesforce_owner_lookup_throws_an_exception(): void
     {
         $admin = User::factory()->admin()->create();
@@ -2709,6 +2864,128 @@ class AdminProjectResourceTest extends TestCase
                 && $context['salesforce_id'] === '006000000000001AAA');
     }
 
+    public function test_pdf_can_merge_only_selected_areas_with_combined_totals(): void
+    {
+        $project = Project::factory()->create();
+        $revision = $project->activeRevision;
+        $first = $revision->areas()->first();
+        $first->update(['name' => 'First selected area', 'sort_order' => 1]);
+        $second = $revision->areas()->create(['project_id' => $project->id, 'name' => 'Second selected area', 'sort_order' => 2]);
+        $excluded = $revision->areas()->create(['project_id' => $project->id, 'name' => 'Excluded area', 'sort_order' => 3]);
+        $first->lines()->create(['code' => 'FIRST-LINE', 'qty' => 2, 'unit_price' => 10, 'sort_order' => 1]);
+        $first->lines()->create(['code' => null, 'sort_order' => 2]);
+        $second->lines()->create(['code' => 'SECOND-LINE', 'qty' => 3, 'unit_price' => 20, 'sort_order' => 1, 'notes' => 'Merged line note']);
+        $second->lines()->create(['code' => 'EACH-LINE', 'qty_is_each' => true, 'unit_price' => 999, 'sort_order' => 2]);
+        $excluded->lines()->create(['code' => 'EXCLUDED-LINE', 'qty' => 100, 'unit_price' => 100]);
+        $service = app(ProjectSchedulePdfService::class);
+
+        foreach (['schedule', 'quote'] as $documentType) {
+            $builder = $documentType === 'quote'
+                ? $service->quoteBuilder($project, $revision, [$second->id, $first->id], true, true)
+                : $service->builder($project, $revision, $documentType, [$second->id, $first->id], true, true);
+            $html = $builder->getHtml();
+            $this->assertSame(1, substr_count($html, '<table class="line-table">'));
+            $this->assertStringContainsString('<span class="area-name">All Areas</span>', $html);
+            $this->assertStringContainsString('4 Lines', $html);
+            $this->assertStringContainsString('Qty 5', $html);
+            $this->assertStringContainsString('Merged line note', $html);
+            $this->assertStringContainsString('Each', $html);
+            $this->assertStringNotContainsString('First selected area', $html);
+            $this->assertStringNotContainsString('Second selected area', $html);
+            $this->assertStringNotContainsString('EXCLUDED-LINE', $html);
+            $this->assertLessThan(strpos($html, 'SECOND-LINE'), strpos($html, 'FIRST-LINE'));
+
+            if ($documentType === 'quote') {
+                $this->assertStringContainsString($project->formatCurrency(80), $html);
+            } else {
+                $this->assertStringNotContainsString($project->formatCurrency(80), $html);
+            }
+
+            $separateHtml = $service->builder($project, $revision, $documentType, [$first->id, $second->id])->getHtml();
+            $this->assertSame(2, substr_count($separateHtml, '<table class="line-table">'));
+            $this->assertStringNotContainsString('<span class="area-name">All Areas</span>', $separateHtml);
+        }
+
+        $this->assertSame('First selected area', $first->fresh()->name);
+        $this->assertSame(2, $first->lines()->count());
+        $this->assertSame(2, $second->lines()->count());
+    }
+
+    public function test_pdf_empty_references_show_a_centred_em_dash(): void
+    {
+        $project = Project::factory()->create();
+        $area = $project->activeRevision->areas()->first();
+
+        foreach ([null, '', '   ', '0', 'A1'] as $reference) {
+            $area->lines()->create([
+                'code' => 'REF-TEST',
+                'ref' => $reference,
+                'qty' => 1,
+                'unit_price' => 10,
+            ]);
+        }
+
+        $area->lines()->create(['code' => null, 'ref' => null]);
+
+        foreach (['schedule', 'quote'] as $documentType) {
+            $html = app(ProjectSchedulePdfService::class)
+                ->builder($project, $project->activeRevision, $documentType)->getHtml();
+
+            $this->assertSame(3, substr_count($html, '<td class="col-ref col-ref-empty">—</td>'));
+            $this->assertStringContainsString('.col-ref-empty { text-align: center; }', $html);
+            $this->assertStringContainsString('<td class="col-ref">0</td>', $html);
+            $this->assertStringContainsString('<td class="col-ref">A1</td>', $html);
+            $this->assertStringContainsString('<td class="col-ref">&nbsp;</td>', $html);
+        }
+    }
+
+    public function test_pdf_datasheet_links_column_can_be_removed_for_schedule_and_quote(): void
+    {
+        $project = Project::factory()->create();
+        $product = Product::factory()->create(['sku' => 'DS-LINK-TEST']);
+        $project->activeRevision->areas()->first()->lines()->create([
+            'code' => $product->sku,
+            'description' => 'Datasheet link test',
+            'qty' => 2,
+            'unit_price' => 10,
+            'notes' => 'Keep this note visible',
+        ]);
+        $service = app(ProjectSchedulePdfService::class);
+
+        foreach (['schedule', 'quote'] as $documentType) {
+            $defaultHtml = $service->builder($project, $project->activeRevision, $documentType)->getHtml();
+            $this->assertStringContainsString('<th class="col-ds">Datasheet</th>', $defaultHtml);
+            $this->assertStringContainsString('data-sheet/DS-LINK-TEST', $defaultHtml);
+
+            $withoutLinks = $documentType === 'quote'
+                ? $service->quoteBuilder($project, $project->activeRevision, [], false)->getHtml()
+                : $service->builder($project, $project->activeRevision, $documentType, [], false)->getHtml();
+            $this->assertStringNotContainsString('<th class="col-ds">', $withoutLinks);
+            $this->assertStringNotContainsString('<td class="col-ds">', $withoutLinks);
+            $this->assertStringNotContainsString('data-sheet/DS-LINK-TEST', $withoutLinks);
+            $this->assertStringContainsString('Keep this note visible', $withoutLinks);
+            $this->assertStringContainsString('colspan="'.($documentType === 'quote' ? 6 : 4).'" class="area-header-cell"', $withoutLinks);
+        }
+    }
+
+    public function test_output_pdf_datasheet_link_switches_default_on_and_are_independent(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        $project = Project::factory()->create();
+        $component = Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->assertSet('includeQuoteDatasheetLinks', true)
+            ->assertSet('includeScheduleDatasheetLinks', true)
+            ->assertSee('Include Links to Datasheets');
+
+        $component->set('includeScheduleDatasheetLinks', false);
+        $this->assertStringContainsString('include_datasheet_links=0', $component->instance()->getSchedulePdfUrl());
+        $this->assertStringNotContainsString('include_datasheet_links=0', $component->instance()->getQuotePdfUrl());
+
+        $component->set('includeQuoteDatasheetLinks', false)->set('includeQuoteDatasheets', true);
+        $this->assertStringContainsString('include_datasheet_links=0', $component->instance()->getQuotePdfUrl());
+        $this->assertStringContainsString('include_datasheets=1', $component->instance()->getQuotePdfUrl());
+    }
+
     public function test_output_pdf_urls_include_datasheet_flag_when_enabled(): void
     {
         $admin = User::factory()->admin()->create();
@@ -2727,12 +3004,11 @@ class AdminProjectResourceTest extends TestCase
         $component = Livewire::test(OutputProject::class, ['record' => $project->id]);
 
         $this->assertStringNotContainsString('include_datasheets', $component->instance()->getSchedulePdfUrl());
-        $this->assertStringNotContainsString('include_legal_page', $component->instance()->getQuotePdfUrl());
+        $this->assertStringContainsString('include_legal_page=0', $component->instance()->getQuotePdfUrl());
 
         $component
             ->set('includeScheduleDatasheets', true)
-            ->set('includeQuoteDatasheets', true)
-            ->set('includeQuoteLegalPage', false);
+            ->set('includeQuoteDatasheets', true);
 
         $this->assertStringContainsString('include_datasheets=1', $component->instance()->getSchedulePdfUrl());
         $this->assertStringContainsString('include_datasheets=1', $component->instance()->getQuotePdfUrl());
@@ -2953,7 +3229,7 @@ class AdminProjectResourceTest extends TestCase
                 };
             }
 
-            public function quoteContent(Project $project, ProjectRevision $revision, mixed $tender = null, bool $includeCover = true, array $areaIds = []): string
+            public function quoteContent(Project $project, ProjectRevision $revision, mixed $tender = null, bool $includeCover = true, array $areaIds = [], bool $includeDatasheetLinks = true, bool $mergeAreas = false): string
             {
                 return AdminProjectResourceTest::pdfFixtureContent();
             }
@@ -2982,13 +3258,14 @@ class AdminProjectResourceTest extends TestCase
             'project' => $project,
             'revision' => $project->active_revision_id,
             'include_datasheets' => true,
+            'include_legal_page' => true,
         ]));
 
         $response
             ->assertOk()
             ->assertDownload('quote-QDS-001-P1-with-datasheets.pdf');
 
-        $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 3);
+        $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 2);
         File::delete($response->baseResponse->getFile()->getPathname());
 
         $response = $this->get(route('projects.pdf.quote', [
@@ -2996,6 +3273,7 @@ class AdminProjectResourceTest extends TestCase
             'revision' => $project->active_revision_id,
             'include_datasheets' => true,
             'include_legal_page' => false,
+            'merge_areas' => true,
         ]));
 
         $response
@@ -3012,12 +3290,14 @@ class AdminProjectResourceTest extends TestCase
             ->firstOrFail();
 
         $this->assertFalse($latestQuoteLog->payload['include_legal_page']);
+        $this->assertTrue($latestQuoteLog->payload['merge_areas']);
 
         $historyRows = Livewire::test(OutputProject::class, ['record' => $project->id])
             ->instance()
             ->outputHistoryRows();
 
         $this->assertStringContainsString('include_legal_page=0', $historyRows[0]['regenerate_url']);
+        $this->assertStringContainsString('merge_areas=1', $historyRows[0]['regenerate_url']);
 
         $this->assertSame(ProjectStatus::Quoted, $project->fresh()->status);
     }
@@ -3229,7 +3509,7 @@ class AdminProjectResourceTest extends TestCase
                 };
             }
 
-            public function quoteContent(Project $project, ProjectRevision $revision, mixed $tender = null, bool $includeCover = true, array $areaIds = []): string
+            public function quoteContent(Project $project, ProjectRevision $revision, mixed $tender = null, bool $includeCover = true, array $areaIds = [], bool $includeDatasheetLinks = true, bool $mergeAreas = false): string
             {
                 return AdminProjectResourceTest::pdfFixtureContent();
             }
@@ -3249,7 +3529,7 @@ class AdminProjectResourceTest extends TestCase
             ->assertOk()
             ->assertDownload('quote-QUOTE-REF-P1.pdf');
 
-        $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 2);
+        $this->assertPdfPageCount($response->baseResponse->getFile()->getPathname(), 1);
         File::delete($response->baseResponse->getFile()->getPathname());
 
         $this->assertSame(ProjectStatus::Quoted, $project->fresh()->status);
@@ -3299,10 +3579,24 @@ class AdminProjectResourceTest extends TestCase
             'showPrices' => true,
         ])->render();
 
-        $this->assertStringContainsString('Quote total', $html);
+        $this->assertStringContainsString('Total:', $html);
         $this->assertStringContainsString('£85.00', $html);
-        $this->assertStringContainsString('Total quantity', $html);
-        $this->assertStringContainsString('Line items', $html);
+        $this->assertStringContainsString('<span>Total Quantity <strong>6</strong></span>', $html);
+        $this->assertStringContainsString('<span>Total Lines <strong>2</strong></span>', $html);
+        $this->assertLessThan(strpos($html, '<span>Total Quantity'), strpos($html, '<span>Total Lines'));
+        $this->assertStringContainsString('Lines', $html);
+        $this->assertStringContainsString('2 Lines', $html);
+        $this->assertStringContainsString('Qty 6', $html);
+        $this->assertLessThan(strpos($html, '<div class="area-block">'), strpos($html, '<div class="output-summary">'));
+        $this->assertGreaterThan(strrpos($html, '<div class="area-block">'), strpos($html, '<div class="quote-summary">'));
+        $this->assertLessThan(strrpos($html, 'class="legal-blurb-row"'), strpos($html, '<td class="label">Total:</td>'));
+        $this->assertGreaterThan(strpos($html, 'class="final-line-and-legal"'), strpos($html, '<td class="label">Total:</td>'));
+
+        $scheduleHtml = app(ProjectSchedulePdfService::class)->builder($project, $revision)->getHtml();
+        $this->assertStringContainsString('<span>Total Quantity <strong>6</strong></span>', $scheduleHtml);
+        $this->assertStringContainsString('<span>Total Lines <strong>2</strong></span>', $scheduleHtml);
+        $this->assertLessThan(strpos($scheduleHtml, '<span>Total Quantity'), strpos($scheduleHtml, '<span>Total Lines'));
+        $this->assertStringNotContainsString('<td class="label">Total:</td>', $scheduleHtml);
     }
 
     public function test_p1_schedule_and_quote_show_revision_and_hide_contractor_metadata(): void
@@ -3359,6 +3653,75 @@ class AdminProjectResourceTest extends TestCase
 
             $this->assertStringNotContainsString('Project Location:', $html);
             $this->assertStringNotContainsString('Branch:', $html);
+        }
+    }
+
+    public function test_pdf_pagination_keeps_the_final_product_total_and_legal_notes_together(): void
+    {
+        $chrome = new Process(['node', '--input-type=module', '-e', 'import puppeteer from "puppeteer"; process.stdout.write(await puppeteer.executablePath({headless:"shell"}));']);
+        $chrome->mustRun();
+        config(['laravel-pdf.browsershot.chrome_path' => trim($chrome->getOutput())]);
+
+        $project = Project::factory()->create();
+        $revision = $project->activeRevision;
+        $area = $revision->areas()->firstOrFail();
+        $directory = storage_path('app/private/pdf-pagination-'.uniqid());
+        File::ensureDirectoryExists($directory);
+
+        try {
+            foreach ([18, 28, 40] as $lineCount) {
+                $area->lines()->delete();
+
+                for ($index = 1; $index <= $lineCount; $index++) {
+                    $area->lines()->create([
+                        'code' => $index === $lineCount ? 'FINAL-PRODUCT' : 'PRODUCT-'.$index,
+                        'description' => 'Lighting product with a description for pagination testing',
+                        'qty' => 1,
+                        'unit_price' => 10,
+                        'sort_order' => $index,
+                    ]);
+                }
+
+                $area->lines()->create(['code' => null, 'sort_order' => $lineCount + 1]);
+
+                foreach (['schedule', 'quote'] as $documentType) {
+                    $caseDirectory = $directory.'/'.$documentType.'-'.$lineCount;
+                    File::ensureDirectoryExists($caseDirectory);
+                    $pdfPath = $caseDirectory.'/output.pdf';
+                    app(ProjectSchedulePdfService::class)->builder($project, $revision, $documentType)->save($pdfPath);
+                    $text = new Process(['gs', '-q', '-dBATCH', '-dNOPAUSE', '-sDEVICE=txtwrite', '-sOutputFile='.$caseDirectory.'/page-%d.txt', $pdfPath]);
+                    $text->mustRun();
+                    $pages = File::glob($caseDirectory.'/page-*.txt');
+                    $this->assertNotEmpty($pages);
+                    $foundFinalProduct = false;
+
+                    foreach ($pages as $page) {
+                        $content = preg_replace('/\s+/', ' ', File::get($page));
+                        $this->assertStringContainsString('Tamlite Lighting', $content);
+                        $this->assertStringContainsString('projects@tamlite.co.uk', $content);
+                        $this->assertStringNotContainsString('Tamlite Technical', $content);
+                        $this->assertStringNotContainsString('technical@tamlite.co.uk', $content);
+                        $this->assertStringNotContainsString('Generated on:', $content);
+
+                        if (str_contains($content, 'FINAL-PRODUCT')) {
+                            $foundFinalProduct = true;
+                            $this->assertStringContainsString('NOTE: ALL QUANTITIES', $content);
+                            $this->assertStringContainsString('professional on-site commissioning', $content);
+
+                            if ($documentType === 'quote') {
+                                $this->assertStringContainsString('Total:', $content);
+                                $this->assertLessThan(strpos($content, 'NOTE: ALL QUANTITIES'), strpos($content, 'Total:'));
+                            }
+                        } elseif (str_contains($content, 'NOTE: ALL QUANTITIES') || str_contains($content, 'Total:') || str_contains($content, 'professional on-site commissioning')) {
+                            $this->fail('The total or legal notes were separated from the final product in '.$documentType.' with '.$lineCount.' lines.');
+                        }
+                    }
+
+                    $this->assertTrue($foundFinalProduct);
+                }
+            }
+        } finally {
+            File::deleteDirectory($directory);
         }
     }
 
@@ -4430,7 +4793,7 @@ PDF;
 
     private function assertPdfPageCount(string $path, int $expectedPages): void
     {
-        $process = new Process([(string) config('document-packs.qpdf_binary', 'qpdf'), '--show-npages', $path]);
+        $process = new Process([(string) config('document-packs.qpdf_binary', 'qpdf'), '--warning-exit-0', '--show-npages', $path]);
         $process->mustRun();
 
         $this->assertSame((string) $expectedPages, trim($process->getOutput()));

@@ -27,6 +27,17 @@ class AdminPermissionGateTest extends TestCase
         $technical = User::factory()->technical()->create();
         $manager = User::factory()->manager()->create();
 
+        $this->assertTrue($admin->can('projects.delete-archived'));
+        $this->assertTrue($manager->can('projects.delete-archived'));
+
+        foreach ([$user, $sales, $technical] as $nonManager) {
+            $this->assertFalse($nonManager->can('projects.delete-archived'));
+        }
+
+        $this->assertSame(['admin', 'manager'], Permission::query()
+            ->where('key', 'projects.delete-archived')->firstOrFail()
+            ->groups()->orderBy('slug')->pluck('slug')->all());
+
         foreach (['projects.update-creator-email', 'projects.update-date'] as $permissionKey) {
             $this->assertTrue($admin->can($permissionKey));
 

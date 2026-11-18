@@ -14,6 +14,7 @@ enum PermissionKey: string
     case ProjectsManageTenders = 'projects.manage-tenders';
     case ProjectsMarkDesignComplete = 'projects.mark-design-complete';
     case ProjectsDeletePermanently = 'projects.delete-permanently';
+    case ProjectsDeleteArchived = 'projects.delete-archived';
     case RevisionsCreate = 'revisions.create';
     case ProjectHistoryView = 'project-history.view';
     case ActivityLogView = 'activity-log.view';
@@ -48,6 +49,7 @@ enum PermissionKey: string
     case CalendarUpdate = 'calendar.update';
     case CalendarDelete = 'calendar.delete';
     case SalesforceView = 'salesforce.view';
+    case SalesforceCustomersUpdate = 'salesforce.customers.update';
     case SalesforceManagePush = 'salesforce.manage-push';
     case UsersView = 'users.view';
     case UsersCreate = 'users.create';
@@ -69,6 +71,7 @@ enum PermissionKey: string
             self::ProjectsManageTenders => 'Manage project tenders',
             self::ProjectsMarkDesignComplete => 'Mark design complete',
             self::ProjectsDeletePermanently => 'Delete projects permanently',
+            self::ProjectsDeleteArchived => 'Delete archived projects permanently',
             self::RevisionsCreate => 'Create project revisions',
             self::ProjectHistoryView => 'View project history',
             self::ActivityLogView => 'View global history',
@@ -102,7 +105,8 @@ enum PermissionKey: string
             self::CalendarCreate => 'Create company calendar events',
             self::CalendarUpdate => 'Update company calendar events',
             self::CalendarDelete => 'Delete company calendar events',
-            self::SalesforceView => 'View Salesforce projects list page',
+            self::SalesforceView => 'View Salesforce customers and projects',
+            self::SalesforceCustomersUpdate => 'Edit Salesforce customer defaults',
             self::SalesforceManagePush => 'Manage Salesforce push switch',
             self::UsersView => 'View users list page',
             self::UsersCreate => 'Create users',
@@ -125,7 +129,8 @@ enum PermissionKey: string
             self::ProjectsUpdateLines,
             self::ProjectsManageTenders,
             self::ProjectsMarkDesignComplete,
-            self::ProjectsDeletePermanently => 'Projects',
+            self::ProjectsDeletePermanently,
+            self::ProjectsDeleteArchived => 'Projects',
 
             self::RevisionsCreate,
             self::RevisionsApprove,
@@ -164,7 +169,8 @@ enum PermissionKey: string
             self::CalendarCreate,
             self::CalendarUpdate,
             self::CalendarDelete => 'Calendar',
-            self::SalesforceView => 'Salesforce',
+            self::SalesforceView,
+            self::SalesforceCustomersUpdate => 'Salesforce',
             self::SalesforceManagePush => 'Salesforce',
             self::ActivityLogView => 'History',
             self::StatisticsView => 'Statistics',
@@ -181,6 +187,7 @@ enum PermissionKey: string
     public function description(): string
     {
         return match ($this) {
+            self::SalesforceCustomersUpdate => 'Allows editing locally stored customer cover defaults. Requires Salesforce access and price visibility.',
             self::PricingView => 'Global switch for price columns and price-based outputs.',
             self::ProjectsUpdateCreatorEmail => 'Allows editing Created By email on local and Salesforce projects without reassigning project ownership.',
             self::ProjectsUpdateDate => 'Allows editing the project date on local and Salesforce projects.',
@@ -190,6 +197,7 @@ enum PermissionKey: string
             self::ProjectsManageTenders => 'Allows adding, removing, and choosing primary contractor tenders for a project.',
             self::ProjectsMarkDesignComplete => 'Allows toggling the Design Complete project status without granting full project-detail editing.',
             self::ProjectsDeletePermanently => 'Allows permanently deleting active projects and all of their related project data. This cannot be undone.',
+            self::ProjectsDeleteArchived => 'Allows permanently deleting archived projects and their related data and files. Defaults to Admin and Manager. This cannot be undone.',
             self::SpecialsManage => 'Allows managing special order codes that affect project entry, validation, and PDF outputs.',
             self::ResourcesView => 'Allows viewing the Resources page and previewing or downloading its files.',
             self::ResourcesCreate => 'Allows uploading new files to the Resources library.',
@@ -197,6 +205,7 @@ enum PermissionKey: string
             self::ResourcesDelete => 'Allows permanently deleting resources and their stored files.',
             self::OutputHistoryView => 'Allows viewing and regenerating previously generated project quote and schedule outputs.',
             self::SalesforceManagePush => 'Allows pausing and resuming outbound Salesforce writes while keeping Salesforce project import/search available.',
+            self::SalesforceView => 'Allows viewing the Salesforce Customers and Projects sections. Customer records are read-only Salesforce Accounts identified by Account ID.',
             self::CalendarCreate => 'Allows creating events on the configured Salesforce public calendar.',
             self::CalendarUpdate => 'Allows updating events on the configured Salesforce public calendar.',
             self::CalendarDelete => 'Allows permanently removing events from the configured Salesforce public calendar.',
@@ -295,6 +304,7 @@ enum PermissionKey: string
                 'description' => 'Project management, pricing, approval, and reporting access.',
                 'permissions' => [
                     self::ProjectsView,
+                    self::ProjectsDeleteArchived,
                     self::ProjectsCreate,
                     self::ProjectsUpdateDetails,
                     self::ProjectsUpdateLines,
@@ -328,6 +338,7 @@ enum PermissionKey: string
                     self::CalendarUpdate,
                     self::CalendarDelete,
                     self::SalesforceView,
+                    self::SalesforceCustomersUpdate,
                 ],
             ],
         ];

@@ -66,7 +66,7 @@ class ProjectPdfController extends Controller
         $tender = $this->resolveQuoteTender($request, $project);
         $parameters = $this->queuedParameters($request, $revision);
         $parameters['tender_id'] = $tender?->id;
-        $parameters['include_legal_page'] = $request->boolean('include_legal_page', true);
+        $parameters['include_legal_page'] = false;
         $parameters['include_cover'] = $this->shouldIncludeQuoteCover($request, $tender);
         $generation = $dispatcher->dispatch(
             $request->user(),
@@ -97,7 +97,7 @@ class ProjectPdfController extends Controller
         $parameters = $this->queuedParameters($request, $revision);
         $parameters['tender_id'] = $tender?->id;
         $parameters['include_cover'] = $this->shouldIncludeQuoteCover($request, $tender);
-        $parameters['include_legal_page'] = $request->boolean('include_legal_page', true);
+        $parameters['include_legal_page'] = false;
         $parameters['generation_batch_key'] = $this->generationBatchKey($request);
         $parameters['generation_batch_size'] = $this->generationBatchSize($request, (bool) $parameters['include_cover']);
         $datasheetToken = $request->string('datasheet_token')->toString();
@@ -157,7 +157,7 @@ class ProjectPdfController extends Controller
 
         $pdf = app(ProjectSchedulePdfService::class);
         $filename = $pdf->filename($project, $revision, $areaIds);
-        $builder = $pdf->builder($project, $revision, 'schedule', $areaIds);
+        $builder = $pdf->builder($project, $revision, 'schedule', $areaIds, $request->boolean('include_datasheet_links', true), $request->boolean('merge_areas'));
         $legalPdf = $this->legalPdf(
             pdfContent: fn (): string => $pdf->contentFromBuilder($builder),
             filename: $filename,
@@ -200,6 +200,9 @@ class ProjectPdfController extends Controller
                         false,
                         null,
                         $areaIds,
+                        true,
+                        $request->boolean('include_datasheet_links', true),
+                        $request->boolean('merge_areas'),
                     ),
                 );
             }
@@ -215,6 +218,8 @@ class ProjectPdfController extends Controller
                     filename: $filename,
                     revision: $revision,
                     includeDatasheets: $request->boolean('include_datasheets'),
+                    includeDatasheetLinks: $request->boolean('include_datasheet_links', true),
+                    mergeAreas: $request->boolean('merge_areas'),
                     areaIds: $areaIds,
                     generationBatchKey: $this->generationBatchKey($request),
                 ) + [
@@ -257,7 +262,7 @@ class ProjectPdfController extends Controller
         $pdf = app(ProjectSchedulePdfService::class);
         $tender = $this->resolveQuoteTender($request, $project);
         $includeCover = $this->shouldIncludeQuoteCover($request, $tender);
-        $includeLegalPage = $request->boolean('include_legal_page', true);
+        $includeLegalPage = false;
         $salesforceNotification = null;
         $quotePdf = $this->quotePdf(
             request: $request,
@@ -265,7 +270,6 @@ class ProjectPdfController extends Controller
             revision: $revision,
             tender: $tender,
             includeCover: $includeCover,
-            includeLegalPage: $includeLegalPage,
             areaIds: $areaIds,
         );
 
@@ -288,6 +292,8 @@ class ProjectPdfController extends Controller
                         $includeCover ? $tender : null,
                         $areaIds,
                         $includeLegalPage,
+                        $request->boolean('include_datasheet_links', true),
+                        $request->boolean('merge_areas'),
                     ),
                 );
             }
@@ -303,6 +309,8 @@ class ProjectPdfController extends Controller
                     filename: $quotePdf['pdf']['filename'],
                     revision: $revision,
                     includeDatasheets: $request->boolean('include_datasheets'),
+                    includeDatasheetLinks: $request->boolean('include_datasheet_links', true),
+                    mergeAreas: $request->boolean('merge_areas'),
                     areaIds: $areaIds,
                     tender: $tender,
                     includeCover: $includeCover,
@@ -343,14 +351,13 @@ class ProjectPdfController extends Controller
 
         $tender = $this->resolveQuoteTender($request, $project);
         $includeCover = $this->shouldIncludeQuoteCover($request, $tender);
-        $includeLegalPage = $request->boolean('include_legal_page', true);
+        $includeLegalPage = false;
         $quotePdf = $this->quotePdf(
             request: $request,
             project: $project,
             revision: $revision,
             tender: $tender,
             includeCover: $includeCover,
-            includeLegalPage: $includeLegalPage,
             preparedDatasheetsPath: $this->preparedDatasheetsPath($request, $downloads),
             areaIds: $areaIds,
         );
@@ -376,6 +383,8 @@ class ProjectPdfController extends Controller
                         $includeCover ? $tender : null,
                         $areaIds,
                         $includeLegalPage,
+                        $request->boolean('include_datasheet_links', true),
+                        $request->boolean('merge_areas'),
                     ),
                 );
             }
@@ -391,6 +400,8 @@ class ProjectPdfController extends Controller
                     filename: $quotePdf['pdf']['filename'],
                     revision: $revision,
                     includeDatasheets: $request->boolean('include_datasheets'),
+                    includeDatasheetLinks: $request->boolean('include_datasheet_links', true),
+                    mergeAreas: $request->boolean('merge_areas'),
                     areaIds: $areaIds,
                     tender: $tender,
                     includeCover: $includeCover,
@@ -678,17 +689,14 @@ class ProjectPdfController extends Controller
         ProjectRevision $revision,
         ?ProjectTender $tender,
         bool $includeCover,
-        bool $includeLegalPage,
         ?string $preparedDatasheetsPath = null,
         array $areaIds = [],
     ): array {
         $pdf = app(ProjectSchedulePdfService::class);
         $filename = $pdf->quoteFilename($project, $revision, $includeCover ? $tender : null, $areaIds);
-        $quoteContent = $pdf->quoteContent($project, $revision, $tender, $includeCover, $areaIds);
+        $quoteContent = $pdf->quoteContent($project, $revision, $tender, $includeCover, $areaIds, $request->boolean('include_datasheet_links', true), $request->boolean('merge_areas'));
         $legalPdfService = app(ProjectLegalPdfService::class);
-        $legalPdf = $includeLegalPage
-            ? $legalPdfService->appendLegalPage($quoteContent, $filename)
-            : $legalPdfService->storeWithoutLegalPage($quoteContent, $filename);
+        $legalPdf = $legalPdfService->storeWithoutLegalPage($quoteContent, $filename);
 
         try {
             $filename = $legalPdf['filename'];
@@ -906,7 +914,7 @@ class ProjectPdfController extends Controller
     }
 
     /**
-     * @return array{filename: string, revision_id: int, revision_number: int, revision_label: string, include_datasheets: bool, area_ids: array<int, int>, area_count: int|null, area_scope: string, generation_batch_key: string, generation_batch_size?: int, tender_id?: int|null, tender_account_name?: string|null, include_cover?: bool, include_legal_page?: bool}
+     * @return array{filename: string, revision_id: int, revision_number: int, revision_label: string, include_datasheets: bool, include_datasheet_links: bool, merge_areas: bool, area_ids: array<int, int>, area_count: int|null, area_scope: string, generation_batch_key: string, generation_batch_size?: int, tender_id?: int|null, tender_account_name?: string|null, include_cover?: bool, include_legal_page?: bool}
      */
     private function pdfActivityPayload(
         string $filename,
@@ -918,6 +926,8 @@ class ProjectPdfController extends Controller
         ?bool $includeLegalPage = null,
         string $generationBatchKey = '',
         ?int $generationBatchSize = null,
+        bool $includeDatasheetLinks = true,
+        bool $mergeAreas = false,
     ): array {
         $payload = [
             'filename' => $filename,
@@ -925,6 +935,8 @@ class ProjectPdfController extends Controller
             'revision_number' => $revision->revision_number,
             'revision_label' => $revision->label(),
             'include_datasheets' => $includeDatasheets,
+            'include_datasheet_links' => $includeDatasheetLinks,
+            'merge_areas' => $mergeAreas,
             'area_ids' => array_values(array_map(fn (int|string $areaId): int => (int) $areaId, $areaIds)),
             'area_count' => $areaIds === [] ? null : count($areaIds),
             'area_scope' => $areaIds === [] ? 'full' : 'selected',
@@ -973,6 +985,8 @@ class ProjectPdfController extends Controller
         $parameters = [
             'revision' => $revision->id,
             'include_datasheets' => $request->boolean('include_datasheets'),
+            'include_datasheet_links' => $request->boolean('include_datasheet_links', true),
+            'merge_areas' => $request->boolean('merge_areas'),
             'salesforce_upload' => $request->boolean('salesforce_upload'),
             'generation_batch_key' => $this->generationBatchKey($request),
         ];

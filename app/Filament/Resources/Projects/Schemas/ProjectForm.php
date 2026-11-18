@@ -6,6 +6,7 @@ use App\Enums\ProjectRevisionStatus;
 use App\Enums\ProjectVisibility;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\Project;
+use App\Models\SalesforceCustomerDefault;
 use App\Models\User;
 use App\Services\ProjectNameFormatter;
 use App\Services\ProjectOwnershipService;
@@ -28,7 +29,10 @@ use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\RawJs;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class ProjectForm
 {
@@ -260,7 +264,13 @@ class ProjectForm
                             $set('cover_1', $hasSalesforceCover ? $data['CEF_Cover__c'] : null);
                             $set('cover_2', $hasSalesforceCover ? '5.00' : null);
                             $set('cover_3', $hasSalesforceCover ? '0.00' : null);
-                            $set('value', $data['Amount'] ?? null);
+                            if (filled($data['AccountId'] ?? null)) {
+                                $set('has_cover', true);
+                                foreach (SalesforceCustomerDefault::coverValues($data['AccountId']) as $field => $value) {
+                                    $set($field, $value);
+                                }
+                            }
+                            $set('value', isset($data['Amount']) ? number_format((float) $data['Amount'], 2, '.', '') : null);
                         }),
                 ])
                     ->alignStart()
@@ -423,7 +433,25 @@ class ProjectForm
                 TextInput::make('value')
                     ->label('Value')
                     ->placeholder('0.00')
-                    ->numeric()
+                    ->inputMode('decimal')
+                    ->rule('numeric')
+                    ->formatStateUsing(fn (mixed $state): ?string => filled($state)
+                        ? number_format((float) str_replace(',', '', (string) $state), 2, '.', ',')
+                        : null)
+                    ->mask(RawJs::make('$money($input)'))
+                    ->mutateStateForValidationUsing(fn (mixed $state): mixed => is_string($state) ? str_replace(',', '', $state) : $state)
+                    ->dehydrateStateUsing(fn (mixed $state): mixed => is_string($state) ? str_replace(',', '', $state) : $state)
+                    ->extraAlpineAttributes([
+                        'x-on:blur' => <<<'JS'
+                            if ($el.value !== '') {
+                                $el.value = Number($el.value.replaceAll(',', '')).toLocaleString('en-GB', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                });
+                                $el.dispatchEvent(new Event('input', { bubbles: true }));
+                            }
+                            JS,
+                    ])
                     ->minValue(0)
                     ->maxValue(self::MaxProjectValue)
                     ->visible(fn (): bool => auth()->user()?->can('pricing.view') ?? false)
@@ -434,6 +462,25 @@ class ProjectForm
                     ->label('Branch Name')
                     ->placeholder('e.g. Birmingham Central')
                     ->maxLength(255)
+                    ->afterStateHydrated(function (TextInput $component, ?Project $record): void {
+                        if ($record === null || filled($component->getState()) || blank($record->salesforce_id)) {
+                            return;
+                        }
+
+                        try {
+                            $branchName = app(SalesforceService::class)->getOpportunityBranch((string) $record->salesforce_id);
+
+                            if (filled($branchName)) {
+                                $component->state(mb_substr($branchName, 0, 255));
+                            }
+                        } catch (Throwable $exception) {
+                            Log::warning('Salesforce branch lookup failed during project details loading', [
+                                'project_id' => $record->id,
+                                'salesforce_id' => $record->salesforce_id,
+                                'exception' => $exception::class,
+                            ]);
+                        }
+                    })
                     ->readOnly(fn (Get $get, ?Project $record): bool => $get('salesforce_project') === true || self::projectDetailsAreReadOnly($record, $forceReadOnly)),
 
                 Toggle::make('has_cover')
