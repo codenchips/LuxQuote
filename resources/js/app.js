@@ -340,3 +340,48 @@ function sleep(milliseconds) {
         setTimeout(resolve, milliseconds);
     });
 }
+
+window.luxQuoteSectionMenu = (menus) => ({
+    open: false,
+    menu: null,
+    anchor: null,
+    left: 0,
+    top: 0,
+    closeTimeout: null,
+    show({ key, anchor, focus = false }) {
+        if (!menus[key]) return;
+        this.cancelClose();
+        this.anchor?.querySelector('a')?.setAttribute('aria-expanded', 'false');
+        this.menu = menus[key];
+        this.anchor = anchor;
+        this.anchor.querySelector('a')?.setAttribute('aria-expanded', 'true');
+        const bounds = anchor.getBoundingClientRect();
+        this.left = Math.max(8, Math.min(bounds.right + 8, window.innerWidth - 264));
+        this.top = Math.max(8, Math.min(bounds.top, window.innerHeight - (48 + this.menu.links.length * 44) - 8));
+        this.open = true;
+        if (focus) this.$nextTick(() => this.$refs.menu.querySelector('a')?.focus());
+    },
+    cancelClose() {
+        clearTimeout(this.closeTimeout);
+    },
+    scheduleClose() {
+        this.cancelClose();
+        this.closeTimeout = setTimeout(() => this.close(), 180);
+    },
+    close(restoreFocus = false) {
+        this.cancelClose();
+        const wasOpen = this.open;
+        this.anchor?.querySelector('a')?.setAttribute('aria-expanded', 'false');
+        this.open = false;
+        if (restoreFocus && wasOpen && this.anchor) {
+            this.anchor.querySelector('a')?.focus();
+            this.open = false;
+            this.anchor.querySelector('a')?.setAttribute('aria-expanded', 'false');
+        }
+    },
+    moveFocus(direction) {
+        const links = [...this.$refs.menu.querySelectorAll('a')];
+        const current = links.indexOf(document.activeElement);
+        links[(current + direction + links.length) % links.length]?.focus();
+    },
+});

@@ -5,12 +5,14 @@ namespace App\Providers\Filament;
 use App\Filament\AvatarProviders\SkyBlueUiAvatarsProvider;
 use App\Filament\Pages\Auth\EditProfile;
 use App\Filament\Pages\Dashboard;
+use App\Filament\Support\SectionNavigation;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Enums\ThemeMode;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationBuilder;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Assets\Css;
@@ -47,11 +49,7 @@ class AdminPanelProvider extends PanelProvider
             ->globalSearch(false)
             ->sidebarWidth('13rem')
             ->sidebarCollapsibleOnDesktop()
-            ->navigationGroups([
-                'Salesforce',
-                'Admin',
-                'Users',
-            ])
+            ->navigation(fn (NavigationBuilder $builder): NavigationBuilder => $builder->items(SectionNavigation::sidebarItems()))
             ->maxContentWidth(Width::Full)
             ->renderHook(
                 PanelsRenderHook::BODY_START,
@@ -61,6 +59,8 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::GLOBAL_SEARCH_AFTER,
                 fn (): string => view('filament.resources.projects.pages.topbar-project-sub-navigation')->render(),
             )
+            ->renderHook(PanelsRenderHook::PAGE_START, fn (): string => view('filament.partials.section-sub-navigation')->render())
+            ->renderHook(PanelsRenderHook::BODY_END, fn (): string => view('filament.partials.section-sidebar-menus')->render())
             ->renderHook(
                 PanelsRenderHook::SIDEBAR_FOOTER,
                 fn (): string => view('filament.partials.sidebar-app-version')->render(),

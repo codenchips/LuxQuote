@@ -234,7 +234,7 @@ class AdminResourceFileTest extends TestCase
         $this->assertSame('Resources', LandingPage::Resources->label());
         $this->assertArrayHasKey(
             LandingPage::Resources->value,
-            LandingPage::groupedOptions()['Admin'],
+            LandingPage::groupedOptions()['Resources'],
         );
         $this->assertFalse(LandingPage::Resources->isAccessibleTo(User::factory()->create()));
         $this->assertTrue(LandingPage::Resources->isAccessibleTo(User::factory()->admin()->create()));

@@ -1,8 +1,8 @@
 @php
     $links = \App\Filament\Resources\Projects\Support\ProjectSubNavigation::forCurrentRequest();
 
-    if (empty($links) && request()->routeIs(\App\Filament\Pages\Salesforce::getRouteName(), \App\Filament\Pages\SalesforceCustomers::getRouteName())) {
-        $links = \App\Filament\Pages\Salesforce::subNavigationLinks();
+    if (empty($links)) {
+        $links = \App\Filament\Support\SectionNavigation::forCurrentRequest();
     }
 @endphp
 

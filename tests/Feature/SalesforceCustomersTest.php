@@ -72,7 +72,7 @@ class SalesforceCustomersTest extends TestCase
         $this->assertSame(SalesforceCustomers::getUrl(), LandingPage::SalesforceProjects->url());
         $this->assertSame('Salesforce', LandingPage::SalesforceProjects->label());
         $links = Salesforce::subNavigationLinks(SalesforceCustomers::getUrl());
-        $this->assertSame(['Customers', 'Projects'], array_column($links, 'label'));
+        $this->assertSame(['Customers', 'Projects', 'Visits'], array_column($links, 'label'));
         $this->assertTrue($links[0]['active']);
         $this->assertFalse($links[1]['active']);
         $links = Salesforce::subNavigationLinks(Salesforce::getUrl());

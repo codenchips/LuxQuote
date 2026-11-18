@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Support\BadgeStyle;
+use App\Filament\Support\SectionNavigation;
 use App\Services\SalesforcePushControl;
 use App\Services\SalesforceService;
 use BackedEnum;
@@ -59,16 +60,7 @@ class Salesforce extends Page implements HasTable
     /** @return array<array{label: string, url: string, icon: string, active: bool}> */
     public static function subNavigationLinks(?string $currentUrl = null): array
     {
-        if (! static::canAccess()) {
-            return [];
-        }
-
-        $currentUrl ??= request()->url();
-
-        return [
-            ['label' => 'Customers', 'url' => SalesforceCustomers::getUrl(), 'icon' => 'heroicon-o-building-office-2', 'active' => $currentUrl === SalesforceCustomers::getUrl()],
-            ['label' => 'Projects', 'url' => Salesforce::getUrl(), 'icon' => 'heroicon-o-folder', 'active' => $currentUrl === Salesforce::getUrl()],
-        ];
+        return SectionNavigation::links('salesforce', $currentUrl);
     }
 
     public function getHeader(): ?View

@@ -20,7 +20,7 @@ class PermissionGroupResource extends Resource
 {
     protected static ?string $model = PermissionGroup::class;
 
-    protected static ?string $navigationLabel = 'Groups';
+    protected static ?string $navigationLabel = 'Permission Groups';
 
     protected static string|UnitEnum|null $navigationGroup = 'Users';
 

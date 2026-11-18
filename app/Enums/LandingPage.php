@@ -44,7 +44,7 @@ enum LandingPage: string
             self::Resources => 'Resources',
             self::Statistics => 'Statistics',
             self::Users => 'Users',
-            self::Groups => 'Groups',
+            self::Groups => 'Permission Groups',
             self::Teams => 'Teams',
         };
     }
@@ -101,14 +101,18 @@ enum LandingPage: string
                 self::SalesforceProjects->value => self::SalesforceProjects->label(),
                 self::Visits->value => self::Visits->label(),
             ],
-            'Admin' => [
-                self::History->value => self::History->label(),
-                self::Specials->value => self::Specials->label(),
+            'Catalogue' => [
                 self::Products->value => self::Products->label(),
-                self::Resources->value => self::Resources->label(),
-                self::Statistics->value => self::Statistics->label(),
+                self::Specials->value => self::Specials->label(),
             ],
-            'Users' => [
+            'Resources' => [
+                self::Resources->value => self::Resources->label(),
+            ],
+            'Reporting' => [
+                self::Statistics->value => self::Statistics->label(),
+                self::History->value => self::History->label(),
+            ],
+            'Administration' => [
                 self::Users->value => self::Users->label(),
                 self::Groups->value => self::Groups->label(),
                 self::Teams->value => self::Teams->label(),
