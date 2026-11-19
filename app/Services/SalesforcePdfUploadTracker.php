@@ -28,6 +28,7 @@ class SalesforcePdfUploadTracker
         bool $includeLegalPage = true,
         bool $includeDatasheetLinks = true,
         bool $mergeAreas = false,
+        bool $includeDesignCover = false,
     ): string {
         $areasQuery = ProjectArea::where('project_revision_id', $revision->id)
             ->with(['lines' => fn ($query) => $query->orderBy('sort_order')])
@@ -40,12 +41,17 @@ class SalesforcePdfUploadTracker
         $areas = $areasQuery->get();
 
         $payload = [
-            'version' => 6,
+            'version' => 7,
             'document_type' => $documentType,
             'show_prices' => $showPrices,
             'include_datasheets' => $includeDatasheets,
             'include_datasheet_links' => $includeDatasheetLinks,
             'merge_areas' => $mergeAreas,
+            'design_cover' => $documentType === 'schedule' && $includeDesignCover ? [
+                'template_hash' => app(ProjectDesignCoverPdfService::class)->templateHash(),
+                'prepared_by' => $project->user?->name,
+                'date' => now()->format('d/m/Y'),
+            ] : null,
             'include_cover' => $documentType === 'quote' ? $includeCover : false,
             'include_legal_page' => $includeLegalPage,
             'area_ids' => $areaIds,
@@ -122,9 +128,16 @@ class SalesforcePdfUploadTracker
 
     private function templateHash(): ?string
     {
-        $path = resource_path('views/pdfs/schedule.blade.php');
+        $paths = [
+            resource_path('views/pdfs/schedule.blade.php'),
+            resource_path('views/pdfs/brand-panel.blade.php'),
+            resource_path('views/pdfs/brand-panel-styles.blade.php'),
+            public_path('images/design-cover/logo-white.png'),
+            public_path('fonts/chivo/Chivo-Regular.ttf'),
+            public_path('fonts/chivo/Chivo-SemiBold.ttf'),
+        ];
 
-        return is_file($path) ? sha1_file($path) ?: null : null;
+        return hash('sha256', implode('', array_map(fn (string $path): string => is_file($path) ? hash_file('sha256', $path) : '', $paths)));
     }
 
     private function quoteCoverTemplateHash(): ?string

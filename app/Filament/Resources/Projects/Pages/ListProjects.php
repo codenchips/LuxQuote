@@ -78,7 +78,7 @@ class ListProjects extends ListRecords
                     $data = ProjectForm::normaliseVisibilityData($data);
 
                     if ($customerCoverDefaults !== null) {
-                        $data = array_replace($data, $customerCoverDefaults, ['has_cover' => true, 'cover_direction' => 'added']);
+                        $data = array_replace($data, $customerCoverDefaults, ['has_cover' => true]);
                     }
 
                     return $data;

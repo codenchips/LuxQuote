@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['salesforce_account_id', 'cover_1', 'cover_2', 'cover_3'])]
+#[Fillable(['salesforce_account_id', 'cover_1', 'cover_2', 'cover_3', 'cover_direction'])]
 class SalesforceCustomerDefault extends Model
 {
     use HasFactory;
@@ -18,7 +18,7 @@ class SalesforceCustomerDefault extends Model
 
         return collect(['cover_1', 'cover_2', 'cover_3'])
             ->mapWithKeys(fn (string $field): array => [$field => $defaults?->{$field} ?? '5.00'])
-            ->all();
+            ->all() + ['cover_direction' => $defaults?->cover_direction ?? 'added'];
     }
 
     protected function casts(): array

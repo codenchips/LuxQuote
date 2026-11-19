@@ -19,6 +19,7 @@ use App\Services\DocumentPackGeneratedOptionsService;
 use App\Services\DocumentPackPdfService;
 use App\Services\PdfDownloadUrlService;
 use App\Services\PdfGenerationDispatcher;
+use App\Services\ProjectDesignCoverPdfService;
 use App\Services\ProjectExportFilenameService;
 use App\Services\ProjectLegalPdfService;
 use Illuminate\Http\JsonResponse;
@@ -374,6 +375,21 @@ class DocumentPackController extends Controller
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => $disposition,
             'Content-Length' => (string) $fileSize,
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    public function designCoverPage(
+        Request $request,
+        Project $project,
+        ProjectDesignCoverPdfService $cover,
+    ): Response {
+        $this->authorizeProjectAccess($request, $project);
+        abort_unless($request->user()->can(PermissionKey::OutputManageDocumentPacks->value), 403);
+
+        return response($cover->content($project), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="design-cover.pdf"',
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }

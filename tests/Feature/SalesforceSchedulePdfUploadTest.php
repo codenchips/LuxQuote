@@ -134,7 +134,7 @@ class SalesforceSchedulePdfUploadTest extends TestCase
         );
 
         $this->assertSame(1, $records->total());
-        $this->assertSame('Open Project', $records->items()[0]['Name']);
+        $this->assertSame('Open Project', $records->items()['006000000000001AAA']['Name']);
 
         $queries = Http::recorded()
             ->map(fn (array $record): string => (string) ($record[0]->data()['q'] ?? ''))

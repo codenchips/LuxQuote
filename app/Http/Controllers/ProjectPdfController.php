@@ -11,6 +11,7 @@ use App\Models\ProjectTender;
 use App\Services\PdfDownloadUrlService;
 use App\Services\PdfGenerationDispatcher;
 use App\Services\ProjectDatasheetPdfService;
+use App\Services\ProjectDesignCoverPdfService;
 use App\Services\ProjectExportFilenameService;
 use App\Services\ProjectLegalPdfService;
 use App\Services\ProjectSchedulePdfService;
@@ -37,6 +38,7 @@ class ProjectPdfController extends Controller
 
         $revision = $this->resolveRevision($request, $project);
         $parameters = $this->queuedParameters($request, $revision);
+        $parameters['include_design_cover'] = $request->boolean('include_design_cover');
         $parameters['salesforce_upload'] = $request->boolean('salesforce_upload', true);
         $generation = $dispatcher->dispatch(
             $request->user(),
@@ -159,7 +161,13 @@ class ProjectPdfController extends Controller
         $filename = $pdf->filename($project, $revision, $areaIds);
         $builder = $pdf->builder($project, $revision, 'schedule', $areaIds, $request->boolean('include_datasheet_links', true), $request->boolean('merge_areas'));
         $legalPdf = $this->legalPdf(
-            pdfContent: fn (): string => $pdf->contentFromBuilder($builder),
+            pdfContent: function () use ($request, $project, $pdf, $builder): string {
+                $content = $pdf->contentFromBuilder($builder);
+
+                return $request->boolean('include_design_cover')
+                    ? app(ProjectDesignCoverPdfService::class)->prependTo($content, $project)
+                    : $content;
+            },
             filename: $filename,
         );
         $salesforceNotification = null;
@@ -203,6 +211,7 @@ class ProjectPdfController extends Controller
                         true,
                         $request->boolean('include_datasheet_links', true),
                         $request->boolean('merge_areas'),
+                        $request->boolean('include_design_cover'),
                     ),
                 );
             }
@@ -224,6 +233,7 @@ class ProjectPdfController extends Controller
                     generationBatchKey: $this->generationBatchKey($request),
                 ) + [
                     'filename' => $filename,
+                    'include_design_cover' => $request->boolean('include_design_cover'),
                 ],
             ]);
 

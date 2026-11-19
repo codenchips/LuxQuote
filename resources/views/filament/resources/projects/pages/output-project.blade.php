@@ -70,6 +70,7 @@
             includeQuoteDatasheetLinks: @js($this->includeQuoteDatasheetLinks),
             includeScheduleDatasheetLinks: @js($this->includeScheduleDatasheetLinks),
             includeScheduleDatasheets: @js($includeScheduleDatasheets),
+            includeScheduleDesignCover: @js($this->includeScheduleDesignCover),
             csrfToken: @js(csrf_token()),
         })"
     >
@@ -975,7 +976,20 @@
                                             ></span>
                                         </span>
                                     </label>
-                                    <div aria-hidden="true"></div>
+                                    <label class="flex items-center justify-between gap-3">
+                                        <span>Design Cover Page</span>
+                                        <input type="checkbox" role="switch" x-model="includeScheduleDesignCover" x-bind:aria-checked="includeScheduleDesignCover" class="sr-only">
+                                        <span
+                                            x-bind:class="includeScheduleDesignCover ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"
+                                            class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition"
+                                            aria-hidden="true"
+                                        >
+                                            <span
+                                                x-bind:class="includeScheduleDesignCover ? 'translate-x-5' : ''"
+                                                class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition"
+                                            ></span>
+                                        </span>
+                                    </label>
                                     <label class="flex items-center justify-between gap-3">
                                         <span>Include Links to Datasheets</span>
                                         <input type="checkbox" x-model="includeScheduleDatasheetLinks" class="sr-only">
@@ -1265,6 +1279,7 @@
                     quoteUrl: config.quoteUrl,
                     scheduleUrl: config.scheduleUrl,
                     includeScheduleDatasheets: Boolean(config.includeScheduleDatasheets),
+                    includeScheduleDesignCover: config.includeScheduleDesignCover !== false,
                     prepareUrl: config.prepareUrl,
                     prepareDatasheetsUrl: config.prepareDatasheetsUrl,
                     zipUrl: config.zipUrl,
@@ -1415,6 +1430,7 @@
                     directScheduleUrl() {
                         const url = new URL(this.scheduleUrl, window.location.origin);
                         url.searchParams.set('include_datasheet_links', this.includeScheduleDatasheetLinks ? '1' : '0');
+                        url.searchParams.set('include_design_cover', this.includeScheduleDesignCover ? '1' : '0');
 
                         if (this.includeScheduleDatasheets) {
                             url.searchParams.set('include_datasheets', '1');

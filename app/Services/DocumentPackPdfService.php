@@ -155,6 +155,7 @@ class DocumentPackPdfService
         $content = match ($role) {
             DocumentPackItemRole::Quote => $this->quoteContent($revision, $user, $areaIds, $tender, $includeQuoteCover),
             DocumentPackItemRole::UnpricedSchedule => $this->scheduleContent($revision, $user, $areaIds),
+            DocumentPackItemRole::DesignCover => app(ProjectDesignCoverPdfService::class)->content($revision->project),
             DocumentPackItemRole::StandardLegalPage => File::get($this->projectLegalPdfService->legalPagePath()),
             default => throw new RuntimeException('The generated document role is not supported.'),
         };

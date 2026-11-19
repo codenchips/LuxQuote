@@ -1,14 +1,9 @@
 {{--
     Tamlite Lighting Schedule / Quote PDF
     Standalone template — does not extend master.
-    Position:fixed header + footer repeat on every printed page via headless Chrome.
+    First-page header and native repeating footer via headless Chrome.
 --}}
 @php
-    $logoPath  = public_path('images/tamlite-logo.png');
-    $logoSrc   = file_exists($logoPath)
-        ? 'data:image/png;base64,' . base64_encode(file_get_contents($logoPath))
-        : null;
-
     $grandQty   = $areas->sum(fn ($a) => $a->lines->sum('qty'));
     $grandItems = $areas->sum(fn ($a) => $a->lines->count());
     $grandTotal = $areas->sum(fn ($a) => $a->lines->sum(
@@ -51,6 +46,7 @@
     <meta charset="UTF-8">
     <title>{{ $documentTitle }} &mdash; {{ $project->reference_number ?? $project->name }}</title>
     <style>
+        @include('pdfs.brand-panel-styles')
         /* ── Page & reset ───────────────────────────────────────────────── */
         @page          { size: A4 portrait; margin: 12mm 0 20mm; }
         @page :first   { margin-top: 0; }
@@ -70,46 +66,20 @@
 
         /* ── Page header (first page only — not fixed, flows normally) ──── */
         .page-header {
+            position: relative;
             background: #fff;
+            break-inside: avoid;
         }
 
         .page-header-inner {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
             padding: 8mm 14mm 4mm;
-            gap: 10mm;
+            min-height: 55mm;
         }
 
-        /* Left: logo + address */
-        .header-brand {
-            display: flex;
-            flex-direction: column;
-            gap: 2.5mm;
-        }
-
-        .header-logo {
-            height: 13mm;
-            width: auto;
-            align-self: flex-start;
-            flex-shrink: 0;
-        }
-
-        .header-address {
-            font-size: 7.5pt;
-            color: #555;
-            line-height: 1.55;
-        }
-
-        .header-address strong {
-            font-size: 8pt;
-            color: #1a1a1a;
-        }
-
-        /* Right: doc title + ref meta */
         .header-meta {
-            text-align: right;
-            flex-shrink: 0;
+            width: 80mm;
+            text-align: left;
+            overflow-wrap: anywhere;
         }
 
         .doc-title {
@@ -124,7 +94,7 @@
         .ref-lines {
             font-size: 8pt;
             line-height: 1.9;
-            text-align: right;
+            text-align: left;
         }
 
         .ref-label {
@@ -437,23 +407,9 @@
 
 {{-- ── Page header (first page only) ─────────────────────────────────────── --}}
 <div class="page-header">
+    @include('pdfs.brand-panel')
     <div class="page-header-inner">
 
-        {{-- Left: logo + company address --}}
-        <div class="header-brand">
-            @if($logoSrc)
-                <img src="{{ $logoSrc }}" class="header-logo" alt="Tamlite">
-            @endif
-            <div class="header-address">
-                <strong>Tamlite Lighting</strong><br>
-                Park Farm Industrial Estate, Pipers Road,<br>
-                Redditch, Worcestershire, B98 0HU<br>
-                01527 526730<br>
-                sales@tamlite.co.uk &nbsp;&middot;&nbsp; www.tamlite.co.uk
-            </div>
-        </div>
-
-        {{-- Right: document title + reference meta --}}
         <div class="header-meta">
             <div class="doc-title">{{ $documentTitle }}</div>
             <div class="ref-lines">

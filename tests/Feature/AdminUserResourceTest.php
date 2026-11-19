@@ -48,6 +48,32 @@ class AdminUserResourceTest extends TestCase
             ->assertSee('3');
     }
 
+    public function test_admin_can_filter_users_by_one_or_more_permission_groups(): void
+    {
+        $admin = $this->adminUser();
+        $manager = User::factory()->manager()->create();
+        $standard = User::factory()->create();
+        $group = PermissionGroup::create(['name' => 'Estimating', 'slug' => 'estimating']);
+        $estimator = User::factory()->create(['permission_group_id' => $group->id]);
+        $this->actingAs($admin);
+
+        $component = Livewire::test(ListUsers::class)
+            ->filterTable('permission_group_id', [$manager->permission_group_id])
+            ->assertCanSeeTableRecords([$manager])
+            ->assertCanNotSeeTableRecords([$admin, $standard, $estimator]);
+
+        $component->filterTable('permission_group_id', [$manager->permission_group_id, $group->id])
+            ->assertCanSeeTableRecords([$manager, $estimator])
+            ->assertCanNotSeeTableRecords([$admin, $standard]);
+
+        Livewire::test(ListUsers::class)
+            ->assertCanSeeTableRecords([$manager, $estimator])
+            ->assertCanNotSeeTableRecords([$admin, $standard]);
+
+        $component->filterTable('permission_group_id', [])
+            ->assertCanSeeTableRecords([$admin, $manager, $standard, $estimator]);
+    }
+
     public function test_users_table_shows_active_project_presence_state(): void
     {
         $this->travelTo('2026-07-09 12:00:00');

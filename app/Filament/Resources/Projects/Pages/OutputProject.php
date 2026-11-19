@@ -105,6 +105,8 @@ class OutputProject extends ViewRecord
 
     public bool $includeQuoteDatasheetLinks = true;
 
+    public bool $includeScheduleDesignCover = true;
+
     public bool $includeScheduleDatasheets = false;
 
     public bool $includeScheduleDatasheetLinks = true;
@@ -165,6 +167,8 @@ class OutputProject extends ViewRecord
             'revision' => $this->record->active_revision_id,
             'salesforce_upload' => true,
         ];
+
+        $parameters['include_design_cover'] = $this->includeScheduleDesignCover;
 
         if (! $this->includeScheduleDatasheetLinks) {
             $parameters['include_datasheet_links'] = false;
@@ -540,6 +544,10 @@ class OutputProject extends ViewRecord
     public function documentPackItemPdfUrl(array $item): ?string
     {
         $role = DocumentPackItemRole::tryFrom($item['role'] ?? '');
+
+        if ($role === DocumentPackItemRole::DesignCover) {
+            return route('projects.document-packs.design-cover.file', ['project' => $this->record]);
+        }
 
         if ($role === DocumentPackItemRole::StandardLegalPage) {
             return route('projects.document-packs.standard-legal-page.file', [
@@ -1720,6 +1728,10 @@ class OutputProject extends ViewRecord
             'salesforce_upload' => false,
         ];
 
+        if (! $isQuote) {
+            $parameters['include_design_cover'] = (bool) ($payload['include_design_cover'] ?? false);
+        }
+
         if (array_key_exists('include_datasheet_links', $payload)) {
             $parameters['include_datasheet_links'] = (bool) $payload['include_datasheet_links'];
         }
@@ -2043,6 +2055,7 @@ class OutputProject extends ViewRecord
             DocumentPackItemRole::Cover,
             DocumentPackItemRole::Legal,
             DocumentPackItemRole::CustomPdf,
+            DocumentPackItemRole::DesignCover,
             DocumentPackItemRole::StandardLegalPage => $this->canManageDocumentPacks(),
         };
     }

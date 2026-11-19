@@ -41,7 +41,7 @@ class ActivityLogResource extends Resource
 
     public static function table(Table $table): Table
     {
-        return ActivityLogsTable::configure($table);
+        return ActivityLogsTable::configure($table, includeGlobalFilters: true);
     }
 
     public static function getRelations(): array

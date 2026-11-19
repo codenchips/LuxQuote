@@ -571,6 +571,82 @@ class SalesforceService
         return $recordId === $id || (strlen($id) === 15 && substr($recordId, 0, 15) === $id) ? $record : null;
     }
 
+    /** @return array<string, string> */
+    public function getAccountOwnerOptions(): array
+    {
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            return [];
+        }
+
+        return Cache::remember('salesforce.account-owners.v2.'.hash('sha256', $auth['instanceUrl'].'|'.$auth['token']), now()->addMinutes(5), function () use ($auth): array {
+            $result = $this->soqlQuery($auth, 'SELECT OwnerId, Owner.Name FROM Account GROUP BY OwnerId, Owner.Name ORDER BY Owner.Name');
+
+            $records = collect($result['records'] ?? [])->filter(fn (array $record): bool => filled($record['OwnerId'] ?? null));
+            $options = $records->mapWithKeys(fn (array $record): array => [(string) $record['OwnerId'] => (string) (data_get($record, 'Owner.Name') ?: ($record['Name'] ?? ''))]);
+            $missingIds = $options->filter(fn (string $name): bool => blank($name))->keys()->all();
+
+            foreach (array_chunk($missingIds, 100) as $ids) {
+                $condition = $this->soqlSelectionCondition('Id', $ids);
+                $users = $this->soqlQuery($auth, 'SELECT Id, Name FROM User WHERE '.$condition);
+                foreach ($users['records'] ?? [] as $user) {
+                    if (in_array($user['Id'] ?? null, $ids, true) && filled($user['Name'] ?? null)) {
+                        $options[$user['Id']] = $user['Name'];
+                    }
+                }
+            }
+
+            return $options->filter(fn (string $name): bool => filled($name))->sort(SORT_NATURAL | SORT_FLAG_CASE)->all();
+        });
+    }
+
+    /** @return array<string, string> */
+    public function getAccountNameOptions(?string $search = null, array $ids = []): array
+    {
+        $auth = $this->authenticate();
+        if ($auth === null) {
+            return [];
+        }
+
+        $conditions = array_filter([
+            $this->soqlSelectionCondition('Id', $ids),
+            filled($search) ? "Name LIKE '%".$this->soqlEscape(mb_substr(trim($search), 0, 200))."%'" : null,
+        ]);
+        $where = $conditions === [] ? '' : ' WHERE '.implode(' AND ', $conditions);
+        $result = $this->soqlQuery($auth, 'SELECT Id, Name FROM Account'.$where.' ORDER BY Name ASC, Id ASC LIMIT 100');
+
+        return collect($result['records'] ?? [])->filter(fn (array $record): bool => filled($record['Id'] ?? null) && filled($record['Name'] ?? null))
+            ->mapWithKeys(fn (array $record): array => [$record['Id'] => $record['Name']])->all();
+    }
+
+    /** @return array<string, int> */
+    public function getCustomerProjectCounts(array $accountIds): array
+    {
+        $accountIds = collect($accountIds)->filter(fn (mixed $id): bool => is_string($id) && (bool) preg_match('/^001[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/', $id))->unique()->sort()->take(100)->values()->all();
+        if ($accountIds === []) {
+            return [];
+        }
+        $auth = $this->authenticate();
+        if ($auth === null) {
+            throw new RuntimeException('Salesforce project counts could not be read.');
+        }
+        $condition = $this->soqlSelectionCondition('AccountId', $accountIds);
+        $query = 'SELECT AccountId, COUNT(Id) projectCount FROM Opportunity WHERE '.$condition.' GROUP BY AccountId';
+
+        return Cache::remember('salesforce.project-counts.'.hash('sha256', $auth['instanceUrl'].'|'.$auth['token'].'|'.$query), 60, function () use ($auth, $query, $accountIds): array {
+            $result = $this->soqlQuery($auth, $query) ?? throw new RuntimeException('Salesforce project counts could not be read.');
+            $counts = array_fill_keys($accountIds, 0);
+            foreach ($result['records'] ?? [] as $record) {
+                if (array_key_exists($record['AccountId'] ?? '', $counts)) {
+                    $counts[$record['AccountId']] = (int) ($record['projectCount'] ?? $record['expr0'] ?? 0);
+                }
+            }
+
+            return $counts;
+        });
+    }
+
     public function getAccounts(
         int $page = 1,
         int $perPage = 25,
@@ -578,6 +654,8 @@ class SalesforceService
         ?string $sortColumn = null,
         ?string $sortDirection = null,
         array $types = [],
+        array $owners = [],
+        array $customers = [],
     ): LengthAwarePaginator {
         $page = max(1, $page);
         $perPage = max(1, min(100, $perPage));
@@ -587,7 +665,7 @@ class SalesforceService
             throw new RuntimeException('Salesforce Account authentication failed.');
         }
 
-        $conditions = array_filter([$this->soqlSelectionCondition('Type', $types)]);
+        $conditions = array_filter([$this->soqlSelectionCondition('Type', $types), $this->soqlSelectionCondition('OwnerId', $owners), $this->soqlSelectionCondition('Id', $customers)]);
 
         if (filled($search)) {
             $escaped = $this->soqlEscape(mb_substr(trim($search), 0, 200));
@@ -596,14 +674,48 @@ class SalesforceService
 
         $where = $conditions === [] ? '' : ' WHERE '.implode(' AND ', $conditions);
 
-        $allowedColumns = ['Name', 'Type', 'BillingCity', 'BillingPostalCode', 'BillingCountry', 'CreatedDate'];
+        $allowedColumns = ['Name', 'Type', 'BillingCity', 'BillingPostalCode', 'BillingCountry', 'CreatedDate', 'Owner.Name'];
         $sortColumn = in_array($sortColumn, $allowedColumns, true) ? $sortColumn : 'Name';
         $direction = strtoupper($sortDirection ?? '') === 'DESC' ? 'DESC' : 'ASC';
-        $soql = 'SELECT Id, Name, Type, Phone, BillingCity, BillingPostalCode, BillingCountry, Website, CreatedDate'
+        $soql = 'SELECT Id, Name, Type, Phone, BillingCity, BillingPostalCode, BillingCountry, Website, CreatedDate, OwnerId, Owner.Name'
             ." FROM Account{$where} ORDER BY {$sortColumn} {$direction}, Id ASC";
-        $cacheKey = 'salesforce:accounts:'.hash('sha256', $auth['instanceUrl'].'|'.$auth['token'].'|'.$soql);
+
+        $accounts = $this->paginateSoqlRecords($auth, $soql, $page, $perPage);
+        try {
+            $counts = $this->getCustomerProjectCounts($accounts->getCollection()->pluck('Id')->all());
+        } catch (Throwable $exception) {
+            report($exception);
+            $counts = [];
+        }
+        $accounts->setCollection($accounts->getCollection()->map(fn (array $account): array => [...$account, 'PastProjectsCount' => $counts[$account['Id']] ?? null]));
+
+        return $accounts;
+    }
+
+    public function getCustomerProjects(string $accountId, int $page = 1): LengthAwarePaginator
+    {
+        if (! preg_match('/^001[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/', $accountId)) {
+            throw new RuntimeException('The Salesforce customer ID is invalid.');
+        }
+
+        $auth = $this->authenticate();
+
+        if ($auth === null) {
+            throw new RuntimeException('Salesforce authentication failed.');
+        }
+
+        $soql = 'SELECT Id, Name, Project_Reference_Number__c, StageName, CreatedDate, CloseDate'
+            ." FROM Opportunity WHERE AccountId = '{$accountId}' ORDER BY CreatedDate DESC, Id DESC";
+
+        return $this->paginateSoqlRecords($auth, $soql, max(1, $page), 5);
+    }
+
+    /** @param array{token: string, instanceUrl: string} $auth */
+    private function paginateSoqlRecords(array $auth, string $soql, int $page, int $perPage): LengthAwarePaginator
+    {
+        $cacheKey = 'salesforce:records:'.hash('sha256', $auth['instanceUrl'].'|'.$auth['token'].'|'.$soql);
         $batch = Cache::remember($cacheKey, 60, fn (): array => $this->soqlQuery($auth, $soql)
-            ?? throw new RuntimeException('Salesforce Accounts could not be read.'));
+            ?? throw new RuntimeException('Salesforce records could not be read.'));
         $total = (int) ($batch['totalSize'] ?? 0);
         $offset = ($page - 1) * $perPage;
         if ($offset >= $total) {
@@ -624,7 +736,7 @@ class SalesforceService
             }
 
             if (isset($visited[$nextUrl]) || ! preg_match('#^/services/data/v[0-9]+\.[0-9]+/query/[A-Za-z0-9_-]+$#', $nextUrl)) {
-                throw new RuntimeException('Salesforce returned an invalid Account pagination cursor.');
+                throw new RuntimeException('Salesforce returned an invalid pagination cursor.');
             }
 
             $visited[$nextUrl] = true;

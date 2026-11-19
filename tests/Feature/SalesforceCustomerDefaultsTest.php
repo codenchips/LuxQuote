@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\SalesforceCustomerDefault;
 use App\Models\User;
 use App\Services\SalesforceService;
+use Filament\Actions\Testing\TestAction;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -39,22 +40,23 @@ class SalesforceCustomerDefaultsTest extends TestCase
         $service->shouldReceive('getAccounts')->andReturn(new LengthAwarePaginator(collect([$record])->keyBy('Id'), 1, 25));
         $service->shouldReceive('getAccountDetails')->with(self::AccountId)->andReturn($record);
         $service->shouldReceive('getAccountTypeOptions')->andReturn(['Contractor' => 'Contractor', 'Consultant' => 'Consultant']);
+        $service->shouldReceive('getAccountOwnerOptions')->andReturn([]);
     }
 
     public function test_manager_can_save_defaults_by_customer_id_without_updating_salesforce_fields_or_existing_projects(): void
     {
         $this->actingAs(User::factory()->manager()->create());
         $this->fakeCustomer();
-        $existing = Project::factory()->create(['cover_1' => 17, 'cover_2' => 8, 'cover_3' => 2]);
+        $existing = Project::factory()->create(['cover_1' => 17, 'cover_2' => 8, 'cover_3' => 2, 'cover_direction' => 'added']);
         $component = Livewire::test(SalesforceCustomers::class)
             ->mountTableAction('viewRecord', self::AccountId)
-            ->assertActionDataSet(['cover_1' => '5.00', 'cover_2' => '5.00', 'cover_3' => '5.00'])
+            ->assertActionDataSet(['cover_1' => '5.00', 'cover_2' => '5.00', 'cover_3' => '5.00', 'cover_direction' => 'added'])
             ->assertActionDataSet(['CreatedDate' => '23/10/2025'])
             ->assertFormFieldDoesNotExist('Website')
             ->assertFormFieldDoesNotExist('Industry')
             ->assertFormFieldDoesNotExist('Description')
             ->assertFormFieldDisabled('Name')->assertFormFieldDisabled('Type')
-            ->assertFormFieldEnabled('cover_1')
+            ->assertFormFieldEnabled('cover_1')->assertFormFieldEnabled('cover_direction')
             ->assertDontSee('Salesforce Account ID');
         $schema = $component->instance()->getMountedAction()->getSchema(Schema::make($component->instance()));
         $addresses = collect($schema->getComponents())->filter(fn ($component): bool => $component instanceof Section);
@@ -65,14 +67,15 @@ class SalesforceCustomerDefaultsTest extends TestCase
         }
         $component->set('mountedActions.0.data.Id', '001000000000002AAA')
             ->set('mountedActions.0.data.Name', 'Forged name')
-            ->setActionData(['cover_1' => 7.25, 'cover_2' => 6, 'cover_3' => 0])
+            ->setActionData(['cover_1' => 7.25, 'cover_2' => 6, 'cover_3' => 0, 'cover_direction' => 'deducted'])
             ->callMountedTableAction()->assertHasNoActionErrors()->assertNotified('Customer cover defaults saved');
-        $this->assertDatabaseHas('salesforce_customer_defaults', ['salesforce_account_id' => self::AccountId, 'cover_1' => 7.25, 'cover_2' => 6, 'cover_3' => 0]);
+        $this->assertDatabaseHas('salesforce_customer_defaults', ['salesforce_account_id' => self::AccountId, 'cover_1' => 7.25, 'cover_2' => 6, 'cover_3' => 0, 'cover_direction' => 'deducted']);
         $this->assertDatabaseCount('salesforce_customer_defaults', 1);
         $this->assertSame('17.00', $existing->fresh()->cover_1);
-        $this->assertSame(['cover_1' => '5.00', 'cover_2' => '5.00', 'cover_3' => '5.00'], SalesforceCustomerDefault::coverValues('001000000000002AAA'));
+        $this->assertSame('added', $existing->fresh()->cover_direction);
+        $this->assertSame(['cover_1' => '5.00', 'cover_2' => '5.00', 'cover_3' => '5.00', 'cover_direction' => 'added'], SalesforceCustomerDefault::coverValues('001000000000002AAA'));
         Livewire::test(SalesforceCustomers::class)->mountTableAction('viewRecord', self::AccountId)
-            ->assertActionDataSet(['cover_1' => '7.25', 'cover_2' => '6.00', 'cover_3' => '0.00']);
+            ->assertActionDataSet(['cover_1' => '7.25', 'cover_2' => '6.00', 'cover_3' => '0.00', 'cover_direction' => 'deducted']);
         Http::assertNothingSent();
     }
 
@@ -83,9 +86,9 @@ class SalesforceCustomerDefaultsTest extends TestCase
         $this->actingAs($actor);
         $this->fakeCustomer();
         $component = Livewire::test(SalesforceCustomers::class)->mountTableAction('viewRecord', self::AccountId)
-            ->assertFormFieldDisabled('cover_1');
+            ->assertFormFieldDisabled('cover_1')->assertFormFieldDisabled('cover_direction');
         $this->assertNull($component->instance()->getMountedAction()->getModalSubmitAction());
-        $component->set('mountedActions.0.data.cover_1', 99)->callMountedTableAction()->assertForbidden();
+        $component->set('mountedActions.0.data.cover_1', 99)->set('mountedActions.0.data.cover_direction', 'deducted')->callMountedTableAction()->assertForbidden();
         $this->assertDatabaseCount('salesforce_customer_defaults', 0);
     }
 
@@ -97,6 +100,7 @@ class SalesforceCustomerDefaultsTest extends TestCase
         $this->fakeCustomer();
         $component = Livewire::test(SalesforceCustomers::class)->mountTableAction('viewRecord', self::AccountId)->assertDontSee('Default Cover (applied to new projects)');
         $this->assertArrayNotHasKey('cover_1', $component->instance()->mountedActions[0]['data']);
+        $this->assertArrayNotHasKey('cover_direction', $component->instance()->mountedActions[0]['data']);
         $component->callMountedTableAction()->assertForbidden();
     }
 
@@ -122,22 +126,22 @@ class SalesforceCustomerDefaultsTest extends TestCase
         $this->assertDatabaseCount('salesforce_customer_defaults', 0);
     }
 
-    /** @return array<string, array{bool}> */
+    /** @return array<string, array{bool, string}> */
     public static function customerDefaults(): array
     {
-        return ['initial defaults' => [false], 'saved defaults' => [true]];
+        return ['initial Added defaults' => [false, 'added'], 'saved Added defaults' => [true, 'added'], 'saved Deducted defaults' => [true, 'deducted']];
     }
 
     #[DataProvider('customerDefaults')]
-    public function test_new_projects_use_verified_customer_defaults_even_when_pending_data_names_another_account(bool $hasSavedDefaults): void
+    public function test_new_projects_use_verified_customer_defaults_even_when_pending_data_names_another_account(bool $hasSavedDefaults, string $direction): void
     {
         $actor = User::factory()->admin()->create();
         $this->actingAs($actor);
         if ($hasSavedDefaults) {
-            SalesforceCustomerDefault::factory()->create(['salesforce_account_id' => self::AccountId, 'cover_1' => 8, 'cover_2' => 4, 'cover_3' => 2]);
+            SalesforceCustomerDefault::factory()->create(['salesforce_account_id' => self::AccountId, 'cover_1' => 8, 'cover_2' => 4, 'cover_3' => 2, 'cover_direction' => $direction]);
         }
         SalesforceCustomerDefault::factory()->create(['salesforce_account_id' => '001000000000002AAA', 'cover_1' => 99]);
-        $opportunity = ['Id' => '006000000000001AAA', 'Name' => 'NEW CUSTOMER PROJECT', 'Project_Reference_Number__c' => 'CUSTOMER-001', 'AccountId' => self::AccountId];
+        $opportunity = ['Id' => '006000000000001AAA', 'Name' => 'NEW CUSTOMER PROJECT', 'Project_Reference_Number__c' => 'CUSTOMER-001', 'AccountId' => self::AccountId, 'CEF_Cover__c' => 80];
         $this->mock(SalesforceService::class)->shouldReceive('getOpportunityById')->with($opportunity['Id'])->andReturn($opportunity);
         Livewire::test(ListProjects::class)->mountAction('create')->setActionData([
             'salesforce_project' => true, 'salesforce_id' => $opportunity['Id'],
@@ -146,7 +150,37 @@ class SalesforceCustomerDefaultsTest extends TestCase
             'name' => $opportunity['Name'], 'reference_number' => $opportunity['Project_Reference_Number__c'],
             'customer_name' => 'Customer', 'created_by_email' => $actor->email, 'date' => now()->toDateString(),
         ])->callMountedAction()->assertHasNoActionErrors();
-        $this->assertDatabaseHas('projects', ['salesforce_id' => $opportunity['Id'], 'has_cover' => true, 'cover_direction' => 'added', 'cover_1' => $hasSavedDefaults ? 8 : 5, 'cover_2' => $hasSavedDefaults ? 4 : 5, 'cover_3' => $hasSavedDefaults ? 2 : 5]);
+        $this->assertDatabaseHas('projects', ['salesforce_id' => $opportunity['Id'], 'has_cover' => true, 'cover_direction' => $direction, 'cover_1' => $hasSavedDefaults ? 8 : 5, 'cover_2' => $hasSavedDefaults ? 4 : 5, 'cover_3' => $hasSavedDefaults ? 2 : 5]);
+    }
+
+    public function test_customer_cover_direction_must_be_added_or_deducted(): void
+    {
+        $this->actingAs(User::factory()->manager()->create());
+        $this->fakeCustomer();
+        Livewire::test(SalesforceCustomers::class)->mountTableAction('viewRecord', self::AccountId)
+            ->setActionData(['cover_direction' => 'invalid'])
+            ->callMountedTableAction()->assertHasActionErrors(['cover_direction']);
+        $this->assertDatabaseCount('salesforce_customer_defaults', 0);
+    }
+
+    public function test_populating_new_project_form_uses_customer_cover_values_and_direction(): void
+    {
+        $this->actingAs(User::factory()->admin()->create());
+        SalesforceCustomerDefault::factory()->create([
+            'salesforce_account_id' => self::AccountId,
+            'cover_1' => 8, 'cover_2' => 4, 'cover_3' => 2, 'cover_direction' => 'deducted',
+        ]);
+        $opportunity = [
+            'Id' => '006000000000001AAA', 'Name' => 'CUSTOMER FORM PROJECT',
+            'Project_Reference_Number__c' => 'CUSTOMER-FORM-001',
+            'AccountId' => self::AccountId, 'CEF_Cover__c' => 80,
+            'Account' => ['Name' => 'Customer'],
+        ];
+        $this->mock(SalesforceService::class)->shouldReceive('getOpportunityById')->andReturn($opportunity);
+        Livewire::test(ListProjects::class)->mountAction('create')->setActionData([
+            'salesforce_id' => $opportunity['Id'], 'salesforce_pending_data' => json_encode($opportunity),
+        ])->callAction(TestAction::make('confirm_salesforce')->schemaComponent('salesforcePopulateActions', 'mountedActionSchema0'))
+            ->assertActionDataSet(['has_cover' => true, 'cover_1' => '8.00', 'cover_2' => '4.00', 'cover_3' => '2.00', 'cover_direction' => 'deducted']);
     }
 
     public function test_account_types_use_active_salesforce_picklist_values_and_cache_metadata(): void

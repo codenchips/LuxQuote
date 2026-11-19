@@ -22,6 +22,7 @@ class SalesforceCustomerDefaultFactory extends Factory
             'cover_1' => 5,
             'cover_2' => 5,
             'cover_3' => 5,
+            'cover_direction' => 'added',
         ];
     }
 }

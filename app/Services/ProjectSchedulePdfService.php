@@ -151,7 +151,7 @@ class ProjectSchedulePdfService
                 $this->configureBrowsershot($browsershot);
                 $browsershot->noSandbox();
                 $browsershot->showBrowserHeaderAndFooter();
-                $browsershot->headerHtml('<p>Header</p>');
+                $browsershot->headerHtml('<div></div>');
                 $browsershot->footerHtml($footerHtml);
             })
             ->format('A4');
@@ -395,7 +395,7 @@ class ProjectSchedulePdfService
         }
     }
 
-    private function configureBrowsershot(object $browsershot): void
+    public function configureBrowsershot(object $browsershot): void
     {
         $tempPath = config('laravel-pdf.browsershot.temp_path') ?: storage_path('app/browsershot');
 

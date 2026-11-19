@@ -1,8 +1,4 @@
 @php
-    $logoPath = public_path('images/tamlite-logo.png');
-    $logoSrc = file_exists($logoPath)
-        ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath))
-        : null;
     $footerLogosPath = public_path('images/quote-cover-footer-logos.png');
     $footerLogosSrc = file_exists($footerLogosPath)
         ? 'data:image/png;base64,'.base64_encode(file_get_contents($footerLogosPath))
@@ -46,6 +42,7 @@
     <meta charset="UTF-8">
     <title>Project Quotation Cover &mdash; {{ $reference }}</title>
     <style>
+        @include('pdfs.brand-panel-styles')
         @page { size: A4 portrait; margin: 0; }
 
         @if($windSongRegularSrc)
@@ -86,6 +83,7 @@
         }
 
         .page {
+            position: relative;
             min-height: 297mm;
             padding: 14mm 15mm 12mm;
             display: flex;
@@ -101,52 +99,27 @@
             border-bottom: 1.4pt solid #192542;
         }
 
-        .brand {
-            display: flex;
-            flex-direction: column;
-            gap: 3mm;
-            max-width: 76mm;
-        }
-
-        .logo {
-            width: 20mm;
-            height: 13mm;
-            object-fit: contain;
-            object-position: left top;
-        }
-
-        .address {
-            color: #4b5563;
-            font-size: 8pt;
-            line-height: 1.5;
-        }
-
-        .address strong {
-            color: #111827;
-            font-size: 8.5pt;
-        }
-
         .quotation-meta {
             width: 82mm;
-            text-align: right;
+            text-align: left;
         }
 
         .title {
             margin-bottom: 4mm;
             color: #192542;
-            font-size: 17pt;
+            font-size: 13pt;
             font-weight: 700;
             letter-spacing: 0.05em;
             text-transform: uppercase;
         }
 
         .meta-grid {
-            margin-left: auto;
+            margin-left: 0;
             margin-top: 4mm;
             width: 68mm;
             font-size: 8.5pt;
             line-height: 1.9;
-            text-align: right;
+            text-align: left;
         }
 
         .meta-label {
@@ -159,7 +132,7 @@
         }
 
         .contractor {
-            margin-left: auto;
+            margin-left: 0;
             width: 68mm;
             color: #374151;
             font-size: 8.5pt;
@@ -257,20 +230,8 @@
 </head>
 <body>
     <main class="page">
+        @include('pdfs.brand-panel')
         <header class="header">
-            <section class="brand">
-                @if($logoSrc)
-                    <img src="{{ $logoSrc }}" class="logo" alt="Tamlite">
-                @endif
-                <div class="address">
-                    <strong>Tamlite Lighting</strong><br>
-                    Park Farm Industrial Estate, Pipers Road,<br>
-                    Redditch, Worcestershire, B98 0HU<br>
-                    01527 526730<br>
-                    sales@tamlite.co.uk &nbsp;&middot;&nbsp; www.tamlite.co.uk
-                </div>
-            </section>
-
             <section class="quotation-meta">
                 <div class="title">Project Quotation</div>
                 <div class="contractor">

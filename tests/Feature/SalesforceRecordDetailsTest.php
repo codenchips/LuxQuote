@@ -41,6 +41,7 @@ class SalesforceRecordDetailsTest extends TestCase
         $service = $this->mock(SalesforceService::class);
         $service->shouldReceive('getOpportunityStageOptions')->andReturn([]);
         $service->shouldReceive('getAccountTypeOptions')->andReturn([]);
+        $service->shouldReceive('getAccountOwnerOptions')->andReturn([]);
         $service->shouldReceive('getAccounts')->andReturn($this->paginator([$first, $second]));
         $service->shouldReceive('getAccountDetails')->once()->with($second['Id'])->andReturn($second + [
             'Phone' => '01234 567890', 'BillingStreet' => '12 High Street', 'ShippingCity' => 'London',
@@ -67,6 +68,7 @@ class SalesforceRecordDetailsTest extends TestCase
         $service = $this->mock(SalesforceService::class);
         $service->shouldReceive('getOpportunityStageOptions')->andReturn([]);
         $service->shouldReceive('getAccountTypeOptions')->andReturn([]);
+        $service->shouldReceive('getAccountOwnerOptions')->andReturn([]);
         $service->shouldReceive('getOpportunities')->andReturn($this->paginator([$record]));
         $service->shouldReceive('getOpportunityDetails')->with($record['Id'], true)->andReturn($record + [
             'CreatedDate' => '2026-02-26T15:49:50.000+0000', 'CloseDate' => '2026-03-08',
@@ -78,8 +80,74 @@ class SalesforceRecordDetailsTest extends TestCase
             ->mountTableAction('viewRecord', $record['Id'])
             ->assertActionDataSet(['Id' => $record['Id'], 'Name' => 'Salesforce project', 'Amount' => '1,234.56', 'CreatedDate' => '26/02/2026', 'CloseDate' => '08/03/2026', 'CustomerName' => 'Customer', 'AccountId' => '001000000000001AAA'])
             ->assertFormFieldDisabled('Name')->assertFormFieldDisabled('Amount');
+        $component->assertFormFieldDoesNotExist('CustomerName');
+        $url = SalesforceCustomers::getUrl(['tableAction' => 'viewRecord', 'tableActionRecord' => '001000000000001AAA']);
+        $this->assertStringContainsString('href="'.e($url).'"', $component->getMountedActionModalHtml());
         $this->assertNull($component->instance()->getMountedAction()->getModalSubmitAction());
         $this->assertSame('viewRecord', $component->instance()->getTable()->getRecordAction($record));
+    }
+
+    public function test_projects_table_shows_customer_names_by_default_and_queries_account_ids(): void
+    {
+        $this->actingAs(User::factory()->manager()->create());
+        $service = $this->mock(SalesforceService::class);
+        $service->shouldReceive('getOpportunityStageOptions')->andReturn([]);
+        $service->shouldReceive('getOpportunities')->withArgs(fn (...$arguments): bool => in_array('AccountId', $arguments[5], true)
+            && in_array('Account.Name', $arguments[5], true)
+            && in_array('Miscellaneous_Customer_Name__c', $arguments[5], true))->andReturn($this->paginator([
+                ['Id' => '006000000000001AAA', 'Name' => 'First project', 'Account' => ['Name' => 'Account customer']],
+                ['Id' => '006000000000002AAA', 'Name' => 'Second project', 'Miscellaneous_Customer_Name__c' => 'Custom customer', 'Account' => ['Name' => 'Other account']],
+                ['Id' => '006000000000003AAA', 'Name' => 'Third project', 'Miscellaneous_Customer_Name__c' => '', 'Account' => ['Name' => 'Blank name fallback']],
+            ]));
+        Livewire::test(Salesforce::class)->assertCanRenderTableColumn('CustomerName')
+            ->assertSee('Account customer')->assertSee('Custom customer')->assertSee('Blank name fallback');
+    }
+
+    public function test_customer_link_opens_the_correct_account_outside_the_current_table_page(): void
+    {
+        $this->actingAs(User::factory()->manager()->create());
+        $first = ['Id' => '001000000000001AAA', 'Name' => 'Same customer name'];
+        $target = ['Id' => '001000000000099AAA', 'Name' => 'Same customer name', 'Phone' => '01952 123456'];
+        $service = $this->mock(SalesforceService::class);
+        $service->shouldReceive('getAccounts')->andReturn($this->paginator([$first]));
+        $service->shouldReceive('getAccountDetails')->once()->with($target['Id'])->andReturn($target);
+        $service->shouldReceive('getAccountTypeOptions')->andReturn([]);
+        $service->shouldReceive('getAccountOwnerOptions')->andReturn([]);
+        $component = Livewire::withQueryParams(['tableAction' => 'viewRecord', 'tableActionRecord' => $target['Id']])
+            ->test(SalesforceCustomers::class)
+            ->assertSet('defaultTableAction', 'viewRecord')
+            ->assertSet('defaultTableActionRecord', $target['Id']);
+        $this->assertStringContainsString('wire:init="mountAction(', $component->html());
+        $component->call('mountAction', 'viewRecord', [], $component->instance()->getDefaultTableActionUrlContext())
+            ->assertActionMounted()
+            ->assertSet('mountedActions.0.name', 'viewRecord')
+            ->assertActionDataSet(['Id' => $target['Id'], 'Name' => 'Same customer name', 'Phone' => '01952 123456']);
+    }
+
+    public function test_customer_without_account_id_is_plain_text_in_project_details(): void
+    {
+        $this->actingAs(User::factory()->manager()->create());
+        $project = ['Id' => '006000000000001AAA', 'Name' => 'Unlinked project'];
+        $service = $this->mock(SalesforceService::class);
+        $service->shouldReceive('getOpportunityStageOptions')->andReturn([]);
+        $service->shouldReceive('getOpportunities')->andReturn($this->paginator([$project]));
+        $service->shouldReceive('getOpportunityDetails')->andReturn($project + ['Miscellaneous_Customer_Name__c' => 'Display only customer']);
+        $component = Livewire::test(Salesforce::class)->mountTableAction('viewRecord', $project['Id']);
+        $component->assertFormFieldDoesNotExist('CustomerName');
+        $this->assertStringContainsString('Display only customer', $component->getMountedActionModalHtml());
+        $this->assertStringNotContainsString('tableActionRecord=', $component->getMountedActionModalHtml());
+    }
+
+    public function test_invalid_customer_deep_link_does_not_read_salesforce(): void
+    {
+        $this->actingAs(User::factory()->manager()->create());
+        $service = $this->mock(SalesforceService::class);
+        $service->shouldReceive('getAccounts')->andReturn($this->paginator([]));
+        $service->shouldReceive('getAccountTypeOptions')->andReturn([]);
+        $service->shouldReceive('getAccountOwnerOptions')->andReturn([]);
+        $service->shouldNotReceive('getAccountDetails');
+        Livewire::test(SalesforceCustomers::class)->mountTableAction('viewRecord', "001' OR Id != ''")
+            ->assertActionNotMounted('viewRecord');
     }
 
     public function test_project_details_never_include_amounts_without_price_visibility(): void
@@ -91,6 +159,7 @@ class SalesforceRecordDetailsTest extends TestCase
         $service = $this->mock(SalesforceService::class);
         $service->shouldReceive('getOpportunityStageOptions')->andReturn([]);
         $service->shouldReceive('getAccountTypeOptions')->andReturn([]);
+        $service->shouldReceive('getAccountOwnerOptions')->andReturn([]);
         $service->shouldReceive('getOpportunities')->andReturn($this->paginator([$record]));
         $service->shouldReceive('getOpportunityDetails')->once()->with($record['Id'], false)->andReturn($record + ['Amount' => 99999.99]);
         $component = Livewire::test(Salesforce::class)->mountTableAction('viewRecord', $record['Id']);
@@ -105,6 +174,7 @@ class SalesforceRecordDetailsTest extends TestCase
         $service = $this->mock(SalesforceService::class);
         $service->shouldReceive('getOpportunityStageOptions')->andReturn([]);
         $service->shouldReceive('getAccountTypeOptions')->andReturn([]);
+        $service->shouldReceive('getAccountOwnerOptions')->andReturn([]);
         $service->shouldReceive('getAccounts')->andReturn($this->paginator([$record]));
         $service->shouldReceive('getAccountDetails')->andReturn($record);
         Livewire::test(SalesforceCustomers::class)->mountTableAction('viewRecord', $record['Id'])
@@ -119,6 +189,7 @@ class SalesforceRecordDetailsTest extends TestCase
         $service = $this->mock(SalesforceService::class);
         $service->shouldReceive('getOpportunityStageOptions')->andReturn([]);
         $service->shouldReceive('getAccountTypeOptions')->andReturn([]);
+        $service->shouldReceive('getAccountOwnerOptions')->andReturn([]);
         $service->shouldReceive('getAccounts')->andReturn($this->paginator([$record]));
         $service->shouldReceive('getAccountDetails')->andReturnNull();
         Livewire::test(SalesforceCustomers::class)->mountTableAction('viewRecord', $record['Id'])
@@ -192,6 +263,7 @@ class SalesforceRecordDetailsTest extends TestCase
         $service = $this->mock(SalesforceService::class);
         $service->shouldReceive('getOpportunityStageOptions')->andReturn([]);
         $service->shouldReceive('getAccountTypeOptions')->andReturn([]);
+        $service->shouldReceive('getAccountOwnerOptions')->andReturn([]);
         $service->shouldReceive('getAccounts')->andReturn($this->paginator([$record]));
         $service->shouldNotReceive('getAccountDetails');
         $component = Livewire::test(SalesforceCustomers::class);

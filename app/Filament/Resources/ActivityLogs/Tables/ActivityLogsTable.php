@@ -4,17 +4,23 @@ namespace App\Filament\Resources\ActivityLogs\Tables;
 
 use App\Models\ActivityLog;
 use App\Models\ProjectRevision;
+use Filament\Forms\Components\DatePicker;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\Indicator;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
 class ActivityLogsTable
 {
     private const ACTION_DISPLAY_LIMIT = 160;
 
-    public static function configure(Table $table): Table
+    public static function configure(Table $table, bool $includeGlobalFilters = false): Table
     {
         $columns = [
             TextColumn::make('user.name')
@@ -306,17 +312,64 @@ class ActivityLogsTable
                 ]),
         ];
 
+        $filters = [
+            SelectFilter::make('action_type')->label('Action')->options(self::actionFilterOptions()),
+        ];
+        if ($includeGlobalFilters) {
+            $filters[] = SelectFilter::make('user_id')->label('Who')
+                ->relationship('user', 'name')->searchable()->preload()->multiple();
+            $filters[] = SelectFilter::make('project_id')->label('Reference')
+                ->relationship('project', 'reference_number')->searchable()->multiple();
+            $filters[] = Filter::make('date_range')->label('Date range')
+                ->schema([
+                    DatePicker::make('from')->label('From')->native(false)->displayFormat('d/m/Y')->live(),
+                    DatePicker::make('until')->label('To')->native(false)->displayFormat('d/m/Y')
+                        ->minDate(fn (Get $get): ?string => self::dateRangeIsValid(['from' => $get('from')]) ? $get('from') : null),
+                ])
+                ->query(fn (Builder $query, array $data): Builder => ! self::dateRangeIsValid($data)
+                    ? $query->whereRaw('1 = 0')
+                    : $query->when($data['from'] ?? null, fn (Builder $query, string $from): Builder => $query
+                        ->where('activity_logs.created_at', '>=', Carbon::parse($from)->startOfDay()))
+                        ->when($data['until'] ?? null, fn (Builder $query, string $until): Builder => $query
+                            ->where('activity_logs.created_at', '<', Carbon::parse($until)->addDay()->startOfDay())))
+                ->indicateUsing(function (array $data): array {
+                    if (! self::dateRangeIsValid($data)) {
+                        return [Indicator::make('Invalid date range')];
+                    }
+                    $indicators = [];
+                    if (filled($data['from'] ?? null)) {
+                        $indicators[] = Indicator::make('From: '.Carbon::parse($data['from'])->format('d/m/Y'))->removeField('from');
+                    }
+                    if (filled($data['until'] ?? null)) {
+                        $indicators[] = Indicator::make('To: '.Carbon::parse($data['until'])->format('d/m/Y'))->removeField('until');
+                    }
+
+                    return $indicators;
+                });
+        }
+
         return $table
             ->columns($columns)
-            ->filters([
-                SelectFilter::make('action_type')
-                    ->label('Action')
-                    ->options(self::actionFilterOptions()),
-            ])
+            ->filters($filters)
+            ->persistFiltersInSession($includeGlobalFilters)
             ->defaultSort('created_at', 'desc')
             ->paginationPageOptions([15, 25, 50])
             ->recordActions([])
             ->toolbarActions([]);
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function dateRangeIsValid(array $data): bool
+    {
+        if (Validator::make($data, [
+            'from' => ['nullable', 'date'],
+            'until' => ['nullable', 'date'],
+        ])->fails()) {
+            return false;
+        }
+
+        return blank($data['from'] ?? null) || blank($data['until'] ?? null)
+            || Carbon::parse($data['from'])->startOfDay()->lte(Carbon::parse($data['until'])->startOfDay());
     }
 
     private static function searchActionPerformed(Builder $query, string $search): Builder

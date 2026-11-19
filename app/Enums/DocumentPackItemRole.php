@@ -7,6 +7,7 @@ enum DocumentPackItemRole: string
     case Cover = 'cover';
     case Legal = 'legal';
     case CustomPdf = 'custom_pdf';
+    case DesignCover = 'design_cover';
     case StandardLegalPage = 'standard_legal_page';
     case Quote = 'quote';
     case UnpricedSchedule = 'unpriced_schedule';
@@ -17,6 +18,7 @@ enum DocumentPackItemRole: string
             self::Cover => 'Cover',
             self::Legal => 'Legal',
             self::CustomPdf => 'Custom PDF',
+            self::DesignCover => 'Design Cover Page',
             self::StandardLegalPage => 'Standard Legal Page',
             self::Quote => 'Quote',
             self::UnpricedSchedule => 'Schedule',
@@ -29,6 +31,7 @@ enum DocumentPackItemRole: string
             self::Cover => 'An external PDF used as a cover or introductory document.',
             self::Legal => 'An external PDF containing terms, conditions, or legal content.',
             self::CustomPdf => 'An uploaded PDF included exactly where it appears in the pack.',
+            self::DesignCover => 'The two-page lighting design cover, populated with the project details.',
             self::StandardLegalPage => 'The standard Tamlite legal page supplied by the application.',
             self::Quote => 'The priced quote generated for the revision selected at output time.',
             self::UnpricedSchedule => 'The schedule generated for the revision selected at output time.',
@@ -39,7 +42,7 @@ enum DocumentPackItemRole: string
     {
         return match ($this) {
             self::Cover, self::Legal, self::CustomPdf => DocumentPackItemSource::Uploaded,
-            self::StandardLegalPage => DocumentPackItemSource::Template,
+            self::DesignCover, self::StandardLegalPage => DocumentPackItemSource::Template,
             self::Quote, self::UnpricedSchedule => DocumentPackItemSource::Generated,
         };
     }

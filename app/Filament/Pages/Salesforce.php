@@ -10,10 +10,12 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
@@ -98,7 +100,7 @@ class Salesforce extends Page implements HasTable
             ): LengthAwarePaginator {
                 abort_unless(static::canAccess(), 403);
                 $canViewPrices = auth()->user()?->can('pricing.view') ?? false;
-                $fields = ['Id', 'Project_Reference_Number__c', 'Name', 'StageName', 'CreatedDate', 'Owner.Name', 'Owner.Email'];
+                $fields = ['Id', 'Project_Reference_Number__c', 'Name', 'StageName', 'CreatedDate', 'Owner.Name', 'Owner.Email', 'AccountId', 'Account.Name', 'Miscellaneous_Customer_Name__c'];
 
                 if ($canViewPrices) {
                     $fields[] = 'Amount';
@@ -123,6 +125,12 @@ class Salesforce extends Page implements HasTable
                     ->searchable()
                     ->sortable()
                     ->wrap(),
+                TextColumn::make('CustomerName')
+                    ->label('Customer Name')
+                    ->state(fn (array $record): ?string => filled($record['Miscellaneous_Customer_Name__c'] ?? null)
+                        ? $record['Miscellaneous_Customer_Name__c']
+                        : data_get($record, 'Account.Name'))
+                    ->placeholder('—')->wrap()->toggleable(),
                 TextColumn::make('StageName')
                     ->label('Stage')
                     ->badge()
@@ -210,7 +218,18 @@ class Salesforce extends Page implements HasTable
             TextInput::make('Name')->label('Project Name')->columnSpanFull(),
             TextInput::make('StageName')->label('Stage'),
             TextInput::make('CreatedDate')->label('Created'),
-            TextInput::make('CustomerName')->label('Customer Name'),
+            TextEntry::make('CustomerLink')->label('Customer Name')
+                ->state(fn (Get $get): ?string => $get('CustomerName'))
+                ->placeholder('—')
+                ->url(function (Get $get): ?string {
+                    $accountId = $get('AccountId');
+                    if (! is_string($accountId) || ! preg_match('/^001[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/', $accountId)) {
+                        return null;
+                    }
+
+                    return SalesforceCustomers::getUrl(['tableAction' => 'viewRecord', 'tableActionRecord' => $accountId]);
+                })
+                ->color(fn (Get $get): string => filled($get('AccountId')) ? 'primary' : 'gray'),
             TextInput::make('OwnerName')->label('Owner'),
             TextInput::make('OwnerEmail')->label('Owner Email'),
             TextInput::make('CloseDate')->label('Close Date'),
@@ -241,7 +260,9 @@ class Salesforce extends Page implements HasTable
             $data[$field] = filled($record[$field] ?? null) ? Carbon::parse($record[$field])->format('d/m/Y') : null;
         }
 
-        $data['CustomerName'] = $record['Miscellaneous_Customer_Name__c'] ?? data_get($record, 'Account.Name');
+        $data['CustomerName'] = filled($record['Miscellaneous_Customer_Name__c'] ?? null)
+            ? $record['Miscellaneous_Customer_Name__c']
+            : data_get($record, 'Account.Name');
         $data['OwnerName'] = data_get($record, 'Owner.Name');
         $data['OwnerEmail'] = str_replace('.invalid', '', (string) data_get($record, 'Owner.Email', ''));
         $data['BranchName'] = data_get($record, 'CEF_Branch__r.Name');

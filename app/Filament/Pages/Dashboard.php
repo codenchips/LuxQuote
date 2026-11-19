@@ -219,6 +219,10 @@ class Dashboard extends BaseDashboard
                 ];
                 $payload = $log->payload ?? [];
 
+                if ($routeName === 'projects.pdf.schedule') {
+                    $parameters['include_design_cover'] = (bool) ($payload['include_design_cover'] ?? false);
+                }
+
                 if ((bool) ($payload['include_datasheets'] ?? false)) {
                     $parameters['include_datasheets'] = true;
                 }

@@ -9,6 +9,7 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
 class UsersTable
@@ -58,8 +59,14 @@ class UsersTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                SelectFilter::make('permission_group_id')
+                    ->label('Group')
+                    ->relationship('permissionGroup', 'name')
+                    ->multiple()
+                    ->searchable()
+                    ->preload(),
             ])
+            ->persistFiltersInSession()
             ->recordActions([
                 EditAction::make(),
             ])

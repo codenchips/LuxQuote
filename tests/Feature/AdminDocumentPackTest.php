@@ -91,6 +91,7 @@ class AdminDocumentPackTest extends TestCase
 
         $this->assertSame([
             DocumentPackItemRole::CustomPdf->value => 'Custom PDF',
+            DocumentPackItemRole::DesignCover->value => 'Design Cover Page',
             DocumentPackItemRole::StandardLegalPage->value => 'Standard Legal Page',
             DocumentPackItemRole::Quote->value => 'Quote',
             DocumentPackItemRole::UnpricedSchedule->value => 'Schedule',

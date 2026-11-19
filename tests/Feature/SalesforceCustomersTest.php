@@ -36,7 +36,7 @@ class SalesforceCustomersTest extends TestCase
     public function test_admins_and_managers_can_view_all_account_types_using_account_ids(): void
     {
         $this->fakeAccounts([
-            ['Id' => '001000000000001AAA', 'Name' => 'Same customer name', 'Type' => 'Consultant', 'Phone' => '01234 567890', 'BillingCity' => 'London'],
+            ['Id' => '001000000000001AAA', 'Name' => 'Same customer name', 'Type' => 'Consultant', 'Phone' => '01234 567890', 'BillingCity' => 'London', 'Owner' => ['Name' => 'Alex Owner']],
             ['Id' => '001000000000002AAA', 'Name' => 'Same customer name', 'Type' => 'Contractor', 'BillingCity' => 'Birmingham'],
         ]);
 
@@ -44,7 +44,8 @@ class SalesforceCustomersTest extends TestCase
             $this->actingAs($actor);
             $component = Livewire::test(SalesforceCustomers::class)
                 ->assertSee('Customer Name')->assertSee('Consultant')->assertSee('Contractor')
-                ->assertSee('London')->assertSee('Birmingham')->assertSee('01234 567890');
+                ->assertSee('Owner')->assertSee('Alex Owner')
+                ->assertDontSee('London')->assertDontSee('Birmingham')->assertDontSee('01234 567890');
             $records = $component->instance()->getTableRecords();
             $this->assertSame(['001000000000001AAA', '001000000000002AAA'], array_keys($records->items()));
             $this->assertSame('001000000000001AAA', $component->instance()->getTableRecordKey($records->first()));
@@ -229,6 +230,119 @@ class SalesforceCustomersTest extends TestCase
         app(SalesforceService::class)->getOpportunities(search: 'Test', stages: ["Client's review"]);
         Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), "Type IN ('O\\'Reilly') AND (Name LIKE '%Test%'"));
         Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), "StageName IN ('Client\\'s review') AND Name LIKE '%Test%'"));
+    }
+
+    public function test_owner_filter_uses_ids_and_applies_before_customer_pagination(): void
+    {
+        $this->actingAs(User::factory()->manager()->create());
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response(['access_token' => 'test-token', 'instance_url' => 'https://example.my.salesforce.com']);
+            }
+            if (str_contains($request->url(), '/describe')) {
+                return Http::response(['fields' => []]);
+            }
+            $query = (string) ($request->data()['q'] ?? '');
+            if (str_contains($query, 'GROUP BY OwnerId')) {
+                return Http::response(['records' => [
+                    ['OwnerId' => '005000000000001AAA', 'Name' => 'Alex Owner'],
+                    ['OwnerId' => '005000000000002AAA', 'Name' => 'Jamie Owner'],
+                ]]);
+            }
+            $rows = [['Id' => '001000000000001AAA', 'Name' => 'Alex customer', 'Owner' => ['Name' => 'Alex Owner']]];
+            if (! str_contains($query, "OwnerId IN ('005000000000001AAA')")) {
+                $rows[] = ['Id' => '001000000000002AAA', 'Name' => 'Jamie customer', 'Owner' => ['Name' => 'Jamie Owner']];
+            }
+
+            return Http::response(['records' => $rows, 'totalSize' => count($rows)]);
+        });
+        $this->assertSame(['005000000000001AAA' => 'Alex Owner', '005000000000002AAA' => 'Jamie Owner'], app(SalesforceService::class)->getAccountOwnerOptions());
+        $component = Livewire::test(SalesforceCustomers::class)->assertCanRenderTableColumn('Owner.Name')
+            ->assertSee('Alex Owner')->assertSee('Jamie Owner')
+            ->filterTable('owner', ['005000000000001AAA'])
+            ->assertSee('Alex customer')->assertDontSee('Jamie customer');
+        $this->assertSame(1, $component->instance()->getTableRecords()->total());
+        Livewire::test(SalesforceCustomers::class)->assertSee('Alex customer')->assertDontSee('Jamie customer');
+        $this->assertSame(['customer', 'type', 'owner'], array_keys($component->instance()->getTable()->getFilters()));
+        app(SalesforceService::class)->getAccounts(sortColumn: 'Owner.Name', sortDirection: 'desc', owners: ['005000000000001AAA']);
+        Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), "OwnerId IN ('005000000000001AAA') ORDER BY Owner.Name DESC"));
+    }
+
+    public function test_owner_options_resolve_missing_grouped_names_from_users_by_id(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response(['access_token' => 'test-token', 'instance_url' => 'https://example.my.salesforce.com']);
+            }
+            $query = (string) ($request->data()['q'] ?? '');
+            if (str_contains($query, 'FROM User')) {
+                return Http::response(['records' => [['Id' => '005000000000001AAA', 'Name' => 'Kris Price']]]);
+            }
+
+            return Http::response(['records' => [['OwnerId' => '005000000000001AAA'], ['OwnerId' => '005000000000002AAA']]]);
+        });
+        $this->assertSame(['005000000000001AAA' => 'Kris Price'], app(SalesforceService::class)->getAccountOwnerOptions());
+        Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), "FROM User WHERE Id IN ('005000000000001AAA', '005000000000002AAA')"));
+    }
+
+    public function test_past_project_counts_are_batched_and_cached_and_include_all_stages(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response(['access_token' => 'test-token', 'instance_url' => 'https://example.my.salesforce.com']);
+            }
+            $query = (string) ($request->data()['q'] ?? '');
+            if (str_contains($query, 'GROUP BY AccountId')) {
+                return Http::response(['records' => [['AccountId' => '001000000000001AAA', 'projectCount' => 14]]]);
+            }
+
+            return Http::response(['totalSize' => 2, 'records' => [
+                ['Id' => '001000000000001AAA', 'Name' => 'First customer'],
+                ['Id' => '001000000000002AAA', 'Name' => 'Second customer'],
+            ]]);
+        });
+        $service = app(SalesforceService::class);
+        foreach ([1, 2] as $attempt) {
+            $accounts = $service->getAccounts()->items();
+            $this->assertSame(14, $accounts['001000000000001AAA']['PastProjectsCount']);
+            $this->assertSame(0, $accounts['001000000000002AAA']['PastProjectsCount']);
+        }
+        $queries = Http::recorded()->map(fn (array $pair): string => (string) ($pair[0]->data()['q'] ?? ''))->filter(fn (string $query): bool => str_contains($query, 'GROUP BY AccountId'));
+        $this->assertCount(1, $queries);
+        $this->assertStringContainsString("AccountId IN ('001000000000001AAA', '001000000000002AAA')", $queries->first());
+        $this->assertStringNotContainsString('IsClosed', $queries->first());
+        $this->assertStringNotContainsString('IsWon', $queries->first());
+    }
+
+    public function test_customer_name_filter_searches_names_but_filters_by_account_id(): void
+    {
+        $this->actingAs(User::factory()->manager()->create());
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/services/oauth2/token')) {
+                return Http::response(['access_token' => 'test-token', 'instance_url' => 'https://example.my.salesforce.com']);
+            }
+            if (str_contains($request->url(), '/describe')) {
+                return Http::response(['fields' => []]);
+            }
+            $query = (string) ($request->data()['q'] ?? '');
+            if (str_contains($query, 'GROUP BY')) {
+                return Http::response(['records' => []]);
+            }
+            $records = [
+                ['Id' => '001000000000001AAA', 'Name' => 'Same customer', 'Type' => 'Contractor'],
+                ['Id' => '001000000000002AAA', 'Name' => 'Same customer', 'Type' => 'Consultant'],
+            ];
+            if (str_contains($query, "Id IN ('001000000000002AAA')")) {
+                $records = [$records[1]];
+            }
+
+            return Http::response(['totalSize' => count($records), 'records' => $records]);
+        });
+        $this->assertSame(['001000000000001AAA' => 'Same customer', '001000000000002AAA' => 'Same customer'], app(SalesforceService::class)->getAccountNameOptions('Same'));
+        $component = Livewire::test(SalesforceCustomers::class)->filterTable('customer', ['001000000000002AAA']);
+        $this->assertSame(['001000000000002AAA'], array_keys($component->instance()->getTableRecords()->items()));
+        $this->assertSame(1, $component->instance()->getTableRecords()->total());
+        Http::assertSent(fn (Request $request): bool => str_contains((string) ($request->data()['q'] ?? ''), "FROM Account WHERE Id IN ('001000000000002AAA')"));
     }
 
     /** @param array<int, array<string, mixed>> $records

@@ -273,6 +273,7 @@ class ProjectForm
                             $set('value', isset($data['Amount']) ? number_format((float) $data['Amount'], 2, '.', '') : null);
                         }),
                 ])
+                    ->key('salesforcePopulateActions')
                     ->alignStart()
                     ->columnSpanFull()
                     ->visible(fn (Get $get, ?Project $record): bool => $record === null && $get('salesforce_project') === true && filled($get('salesforce_id'))),
