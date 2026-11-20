@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.21 - 2026-11-20
+
+Version: `0.2.20` -> `0.2.21`
+
+Changes included:
+
+- `944ceda` bugfix: no slashes in project ref
+- `8901f50` Switch cover buttons and default
+- `9a48bd5` Edit location, do not adujust project name from SF
+- `b54f2ca` created by and date editable by permission
+- `a7c6f66` Refresh allows field selection
+- `d9e7b9c` Enter goes down a row, no arrows on numeric fields
+- `5d8ba59` full cursor control
+- `c5e8248` Qty can be Each (e)
+- `45ad7f8` pdf updated and sf accounts table, default cover
+- `4889c93` reorganised left nav
+- `9021bd1` New schedule cover sheets.  Salesforce accounts and projects improved and  tables linking.  Cant list projects  by customer
+- `d6faf35` security and safeguaring updates
+- `b167eec` maintenance mode
+
 ## 0.2.20 - 2026-10-23
 
 Version: `0.2.19` -> `0.2.20`
