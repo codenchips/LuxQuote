@@ -856,17 +856,14 @@
                                     </div>
                                 </div>
 
-                                @unless($quoteApproved)
-                                    <span class="shrink-0 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-600 dark:border-white/20 dark:text-gray-300">Requires approval</span>
-                                @endunless
                             </div>
 
                             <div class="mt-5 rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-                                <div class="mb-3 flex min-h-9 items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-300">
-                                    <span x-text="areaSelectionLabel()"></span>
-                                    <button type="button" x-on:click="openAreaDialog()" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">
-                                        Select areas
-                                    </button>
+                                <div class="mb-3 grid min-h-9 grid-cols-2 gap-4 text-sm text-gray-600 dark:text-gray-300">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <span x-text="areaSelectionLabel()"></span>
+                                        <button type="button" x-on:click="openAreaDialog()" class="{{ str_replace(' w-full', '', $primaryButtonClasses) }}">Select areas</button>
+                                    </div>
                                 </div>
 
                                 <div class="grid min-h-9 grid-cols-2 items-center gap-4 text-sm text-gray-600 dark:text-gray-300">
@@ -951,11 +948,11 @@
                             </div>
 
                             <div class="mt-5 rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-                                <div class="mb-3 flex min-h-9 items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-300">
-                                    <span x-text="areaSelectionLabel()"></span>
-                                    <button type="button" x-on:click="openAreaDialog()" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-gray-200 dark:hover:bg-white/5">
-                                        Select areas
-                                    </button>
+                                <div class="mb-3 grid min-h-9 grid-cols-2 gap-4 text-sm text-gray-600 dark:text-gray-300">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <span x-text="areaSelectionLabel()"></span>
+                                        <button type="button" x-on:click="openAreaDialog()" class="{{ str_replace(' w-full', '', $primaryButtonClasses) }}">Select areas</button>
+                                    </div>
                                 </div>
 
                                 <div class="grid min-h-9 grid-cols-2 items-center gap-4 text-sm text-gray-600 dark:text-gray-300">
@@ -977,7 +974,7 @@
                                         </span>
                                     </label>
                                     <label class="flex items-center justify-between gap-3">
-                                        <span>Design Cover Page</span>
+                                        <span>Cover Page</span>
                                         <input type="checkbox" role="switch" x-model="includeScheduleDesignCover" x-bind:aria-checked="includeScheduleDesignCover" class="sr-only">
                                         <span
                                             x-bind:class="includeScheduleDesignCover ? 'bg-orange-500' : 'bg-gray-300 dark:bg-white/10'"

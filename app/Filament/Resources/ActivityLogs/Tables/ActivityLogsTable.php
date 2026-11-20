@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\ActivityLogs\Tables;
 
+use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ActivityLog;
 use App\Models\ProjectRevision;
 use Filament\Forms\Components\DatePicker;
@@ -35,6 +36,15 @@ class ActivityLogsTable
             TextColumn::make('project.reference_number')
                 ->label('Reference')
                 ->getStateUsing(fn (ActivityLog $record): string => self::referenceLabel($record))
+                ->url(function (ActivityLog $record): ?string {
+                    if (! $record->project_id || ! ProjectResource::canViewAny()) {
+                        return null;
+                    }
+
+                    $project = ProjectResource::getEloquentQuery()->find($record->project_id);
+
+                    return $project ? ProjectResource::getUrl('view', ['record' => $project]) : null;
+                })
                 ->searchable()
                 ->sortable()
                 ->width('10rem')

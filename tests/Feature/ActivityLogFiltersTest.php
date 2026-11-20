@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ProjectVisibility;
 use App\Filament\Resources\ActivityLogs\Pages\ListActivityLogs;
 use App\Filament\Resources\Projects\Pages\ProjectHistory;
+use App\Filament\Resources\Projects\ProjectResource;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\User;
@@ -124,6 +126,23 @@ class ActivityLogFiltersTest extends TestCase
             ->assertCanSeeTableRecords([$included])->assertCanNotSeeTableRecords([$excluded]);
         $this->actingAs($actor);
         Livewire::test(ListActivityLogs::class)->assertForbidden();
+    }
+
+    public function test_project_references_link_only_to_projects_the_user_can_view(): void
+    {
+        $manager = User::factory()->manager()->create();
+        $actor = User::factory()->create();
+        $visible = Project::factory()->create(['visibility' => ProjectVisibility::Open, 'reference_number' => 'VISIBLE-REF']);
+        $private = Project::factory()->create(['visibility' => ProjectVisibility::Private, 'reference_number' => 'PRIVATE-REF']);
+        $this->log($actor, '2026-11-17 10:00:00', $visible);
+        $this->log($actor, '2026-11-17 10:00:00', $private);
+
+        $visibleUrl = ProjectResource::getUrl('view', ['record' => $visible]);
+        $privateUrl = ProjectResource::getUrl('view', ['record' => $private]);
+        Livewire::test(ListActivityLogs::class)->assertSee($visibleUrl)->assertSee($privateUrl);
+
+        $this->actingAs($manager);
+        Livewire::test(ListActivityLogs::class)->assertSee($visibleUrl)->assertDontSee($privateUrl);
     }
 
     private function log(User $actor, string $date, ?Project $project = null, string $action = 'user.login'): ActivityLog

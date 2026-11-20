@@ -57,7 +57,7 @@ class DesignCoverPdfTest extends TestCase
         $this->actingAs($admin);
         $component = Livewire::test(OutputProject::class, ['record' => $project->id])
             ->assertSet('includeScheduleDesignCover', true)
-            ->assertSee('Design Cover Page');
+            ->assertSee('Cover Page');
         $this->assertStringContainsString('include_design_cover=1', $component->instance()->getSchedulePdfUrl());
         $component->set('includeScheduleDesignCover', false);
         $this->assertStringContainsString('include_design_cover=0', $component->instance()->getSchedulePdfUrl());

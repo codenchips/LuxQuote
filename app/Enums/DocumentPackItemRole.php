@@ -18,7 +18,7 @@ enum DocumentPackItemRole: string
             self::Cover => 'Cover',
             self::Legal => 'Legal',
             self::CustomPdf => 'Custom PDF',
-            self::DesignCover => 'Design Cover Page',
+            self::DesignCover => 'Cover Page',
             self::StandardLegalPage => 'Standard Legal Page',
             self::Quote => 'Quote',
             self::UnpricedSchedule => 'Schedule',
