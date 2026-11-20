@@ -16,7 +16,7 @@ permissions:
 jobs:
   verify:
     name: Verify release quality and security
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       APP_ENV: testing
@@ -97,7 +97,10 @@ jobs:
       - name: Install PDF runtime
         run: |
           sudo apt-get update
-          sudo apt-get install --yes qpdf mysql-client
+          sudo apt-get install --yes --no-install-recommends qpdf
+          if ! command -v mysqldump >/dev/null; then
+            sudo apt-get install --yes --no-install-recommends default-mysql-client
+          fi
           sudo env "PATH=$PATH" "PUPPETEER_CACHE_DIR=$PUPPETEER_CACHE_DIR" npx puppeteer browsers install chrome --install-deps
 
           chrome_path="$(node --input-type=module -e 'import puppeteer from "puppeteer"; process.stdout.write(await puppeteer.executablePath());')"
