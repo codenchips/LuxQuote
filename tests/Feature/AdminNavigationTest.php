@@ -20,10 +20,10 @@ class AdminNavigationTest extends TestCase
         $this->assertNull(Filament::getPanel('admin')->getGlobalSearchProvider());
     }
 
-    public function test_admin_navigation_groups_are_registered_in_the_requested_order(): void
+    public function test_admin_panel_uses_section_navigation_without_legacy_groups(): void
     {
         $this->assertSame(
-            ['Salesforce', 'Admin', 'Users'],
+            [],
             Filament::getPanel('admin')->getNavigationGroups(),
         );
     }
@@ -31,7 +31,7 @@ class AdminNavigationTest extends TestCase
     public function test_salesforce_navigation_contains_projects_then_visits(): void
     {
         $this->assertSame('Salesforce', Salesforce::getNavigationGroup());
-        $this->assertSame('Projects', Salesforce::getNavigationLabel());
+        $this->assertSame('Salesforce', Salesforce::getNavigationLabel());
         $this->assertSame(1, Salesforce::getNavigationSort());
 
         $this->assertSame('Salesforce', Calendar::getNavigationGroup());

@@ -42,7 +42,6 @@ use Livewire\Livewire;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Process\Process;
 use Tests\TestCase;
-use Throwable;
 
 class AdminProjectResourceTest extends TestCase
 {
@@ -1269,7 +1268,7 @@ class AdminProjectResourceTest extends TestCase
 
         $this->assertLivewireCallFails(function () use ($project, $otherArea): void {
             Livewire::test(ViewProject::class, ['record' => $project->id])
-                ->call('copyArea', $otherArea->id);
+                ->call('copyArea', $otherArea->id)->assertNotFound();
         });
 
         $this->assertSame(1, $project->activeRevision->areas()->count());
@@ -1297,7 +1296,7 @@ class AdminProjectResourceTest extends TestCase
 
         $this->assertLivewireCallFails(function () use ($project, $otherArea): void {
             Livewire::test(ViewProject::class, ['record' => $project->id])
-                ->call('renameArea', $otherArea->id, 'Wrong Project');
+                ->call('renameArea', $otherArea->id, 'Wrong Project')->assertNotFound();
         });
 
         $this->assertNotSame('Wrong Project', $otherArea->fresh()->name);
@@ -3966,7 +3965,7 @@ class AdminProjectResourceTest extends TestCase
         $this->assertLivewireCallFails(function () use ($project, $secondRevision, $activeRevisionLine): void {
             Livewire::test(ViewProject::class, ['record' => $project->id])
                 ->set('viewingRevisionId', $secondRevision->id)
-                ->call('updateLineField', $activeRevisionLine->id, 'description', 'Cross-revision edit');
+                ->call('updateLineField', $activeRevisionLine->id, 'description', 'Cross-revision edit')->assertNotFound();
         });
 
         $this->assertSame('Active revision line', $activeRevisionLine->fresh()->description);
@@ -4293,7 +4292,7 @@ class AdminProjectResourceTest extends TestCase
 
         $this->assertLivewireCallFails(function () use ($project, $line, $otherProjectArea): void {
             Livewire::test(ViewProject::class, ['record' => $project->id])
-                ->call('sortLine', $line->id, 0, $otherProjectArea->id);
+                ->call('sortLine', $line->id, 0, $otherProjectArea->id)->assertNotFound();
         });
 
         $this->assertSame($line->project_area_id, $line->fresh()->project_area_id);
@@ -4331,7 +4330,7 @@ class AdminProjectResourceTest extends TestCase
         $this->assertLivewireCallFails(function () use ($project, $secondRevision, $activeRevisionLine): void {
             Livewire::test(ViewProject::class, ['record' => $project->id])
                 ->set('viewingRevisionId', $secondRevision->id)
-                ->call('duplicateLine', $activeRevisionLine->id);
+                ->call('duplicateLine', $activeRevisionLine->id)->assertNotFound();
         });
 
         $this->assertSame(1, $activeArea->lines()->count());
@@ -4369,7 +4368,7 @@ class AdminProjectResourceTest extends TestCase
         $this->assertLivewireCallFails(function () use ($project, $secondRevision, $activeRevisionLine): void {
             Livewire::test(ViewProject::class, ['record' => $project->id])
                 ->set('viewingRevisionId', $secondRevision->id)
-                ->call('deleteLine', $activeRevisionLine->id);
+                ->call('deleteLine', $activeRevisionLine->id)->assertNotFound();
         });
 
         $this->assertDatabaseHas('project_lines', ['id' => $activeRevisionLine->id]);
@@ -4742,15 +4741,7 @@ class AdminProjectResourceTest extends TestCase
      */
     private function assertLivewireCallFails(callable $callback): void
     {
-        $failed = false;
-
-        try {
-            $callback();
-        } catch (Throwable) {
-            $failed = true;
-        }
-
-        $this->assertTrue($failed, 'The Livewire call should fail when scoped records do not match.');
+        $callback();
     }
 
     public static function pdfFixtureContent(): string

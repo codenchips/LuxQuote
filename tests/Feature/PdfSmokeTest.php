@@ -61,7 +61,7 @@ class PdfSmokeTest extends TestCase
         File::delete($path);
     }
 
-    public function test_quote_pdf_download_renders_and_merges_the_standard_legal_page(): void
+    public function test_quote_pdf_download_renders_without_the_standard_legal_page(): void
     {
         $admin = User::factory()->admin()->create();
         $project = $this->projectWithLines($admin, 'PDF-SMOKE-QUOTE');
@@ -83,7 +83,9 @@ class PdfSmokeTest extends TestCase
 
         $path = $this->downloadedPdfPath($response->baseResponse);
         $this->assertValidPdf($path);
-        $this->assertPdfPageCountAtLeast($path, 2);
+        $pageCount = new Process([(string) config('document-packs.qpdf_binary', 'qpdf'), '--show-npages', $path]);
+        $pageCount->mustRun();
+        $this->assertSame('1', trim($pageCount->getOutput()));
         File::delete($path);
     }
 

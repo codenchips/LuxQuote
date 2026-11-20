@@ -817,7 +817,7 @@ ACTIVITY_LOG_RETENTION_MONTHS=3
 
 After changing this value, clear Laravel's cached configuration as part of the normal deployment/configuration workflow. The value is clamped to a minimum of one month.
 
-The deployment clears stale configuration caches before migrations, displays the effective retention configuration, then runs the retention command once after the forward migrations and protected-table checks while maintenance mode and the fresh full database backup are still in place. This makes the transition from the legacy archive immediate and means the only intentional production row deletion during deployment is expired activity history. The Laravel scheduler then runs the same command daily at 01:41 in bounded batches. The existing once-per-minute `schedule:run` cron is all that is required. A production-safe preview is available before allowing any manual deletion:
+The deploy does not run the retention command. The Laravel scheduler runs it daily at 01:41 in bounded batches, permanently deleting expired activity history according to the configured retention period. The existing once-per-minute `schedule:run` cron is all that is required. A production-safe preview is available before allowing any manual deletion:
 
 ```bash
 cd /home/tamliteco/luxquote.app
@@ -1036,7 +1036,7 @@ The deploy script:
 - verifies `qpdf`
 - verifies the PDF runtime with `app:diagnose-pdf-environment`
 - runs all pending migrations with `php artisan migrate --force --no-interaction`, then prints `migrate:status` in the deploy log
-- checks protected business table row counts after migrations; if all previously-populated protected tables are empty, it restores the data-only backup into the migrated schema and fails the deploy so the incident is visible
+- checks protected business table row counts after migrations and fails the deploy if a previously populated table is missing or its count decreases
 - clears/rebuilds Laravel caches
 - disables maintenance mode before the public smoke check; an exit trap also attempts to return the app to normal mode if any deploy step fails unexpectedly
 - smoke-checks `https://quote.tamlite.co.uk`
@@ -1046,7 +1046,7 @@ The deploy script:
 
 The current maintenance window includes the container build, dependency installation, npm build, Puppeteer setup, migrations, and smoke checks. A future deployment improvement should build and test an immutable release before entering maintenance mode, leaving only the short database migration and release switch inside the user-visible 503 window.
 
-The deploy data-loss guard is intentionally conservative. It only auto-restores when protected business data has catastrophically disappeared from every previously-populated protected table. If only some protected tables look emptied, the deploy stops and leaves the full backup plus `backups/latest-protected-data-restore.sql.gz` in place for manual inspection rather than risking duplicate or mixed-state rows. The rolling data-only restore file is replaced on each deploy, so only one `latest-protected-data-restore.sql.gz` should exist at a time. If the migrated-schema data restore fails, the deploy log explains that the new migrations likely changed table or column structures in a way that needs a custom manual recovery from the full backup. The protected table list can be overridden with `PROTECTED_DATA_TABLES`; automatic catastrophic restore can be disabled with `RESTORE_ON_CATASTROPHIC_DATA_LOSS=false`.
+The deploy data-loss guard stops if the count of a previously populated protected table falls or the table is missing. It does not automatically restore data; inspect the full backup and `backups/latest-protected-data-restore.sql.gz` before choosing a recovery action. The rolling data-only backup is replaced on each deploy. The protected table list can be overridden with `PROTECTED_DATA_TABLES`. Row counts do not detect every change or prove data integrity, and gzip verification does not replace a tested restore or a separate backup of uploaded files.
 
 The GitHub workflow fetches the incoming `production` revision and executes that revision's deploy script from a temporary file. This ensures deployment-safety improvements in a release, including maintenance mode, are active for that same release without checking out the new application code before the pre-deploy backup. The script writes `storage/framework/luxquote-deploy-maintenance` only when it owns the maintenance state. An `if: always()` GitHub cleanup step uses that marker to recover from abrupt deploy interruption without clearing maintenance mode that was enabled manually. If the site was already manually placed in maintenance mode before the deploy began, the script preserves that state and skips the public smoke check rather than unexpectedly bringing the site online.
 

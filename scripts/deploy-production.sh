@@ -6,8 +6,7 @@ APP_DIR="${APP_DIR:-/home/tamliteco/luxquote.app}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-production}"
 PUBLIC_URL="${PUBLIC_URL:-https://quote.tamlite.co.uk}"
 BACKUP_DIR="${BACKUP_DIR:-$APP_DIR/backups}"
-PROTECTED_DATA_TABLES="${PROTECTED_DATA_TABLES:-permission_groups permissions users products teams projects project_revisions project_areas project_lines project_tenders document_packs document_pack_items document_pack_templates document_pack_template_items resource_files permission_group_permission team_user activity_logs activity_log_archives reporting_events reporting_event_products salesforce_pdf_uploads}"
-RESTORE_ON_CATASTROPHIC_DATA_LOSS="${RESTORE_ON_CATASTROPHIC_DATA_LOSS:-true}"
+PROTECTED_DATA_TABLES="${PROTECTED_DATA_TABLES:-permission_groups permissions users products teams projects project_revisions project_areas project_lines project_tenders document_packs document_pack_items document_pack_templates document_pack_template_items resource_files permission_group_permission team_user activity_logs activity_log_archives reporting_events reporting_event_products salesforce_pdf_uploads salesforce_customer_defaults}"
 MAINTENANCE_MARKER="$APP_DIR/storage/framework/luxquote-deploy-maintenance"
 MAINTENANCE_MODE_ENABLED_BY_DEPLOY=false
 MAINTENANCE_MODE_WAS_ACTIVE=false
@@ -196,7 +195,7 @@ data_loss_summary() {
         before_populated=$((before_populated + 1))
         after="$(awk -F '\t' -v table="$table" '$1 == table { print $2; exit }' "$after_file")"
 
-        if [[ "$after" =~ ^[0-9]+$ && "$after" -gt 0 ]]; then
+        if [[ "$after" =~ ^[0-9]+$ && "$after" -ge "$before" ]]; then
             continue
         fi
 
@@ -264,7 +263,7 @@ if docker compose config --services | grep --fixed-strings --line-regexp --quiet
     docker compose stop --timeout "$pdf_worker_stop_timeout" queue
 fi
 
-log "Backing up database"
+log "Backing up database: $DB_DATABASE (read-only dump)"
 mkdir -p "$BACKUP_DIR"
 backup_timestamp="$(date +%Y%m%d-%H%M%S)"
 full_backup="$BACKUP_DIR/pre-deploy-${backup_timestamp}.sql.gz"
@@ -287,6 +286,8 @@ docker compose exec -T mysql mysqldump \
     --no-tablespaces \
     "$DB_DATABASE" | gzip > "$full_backup"
 
+[ -s "$full_backup" ] && gzip -t "$full_backup" || { log "ERROR: Full database backup failed integrity verification: $full_backup"; exit 1; }
+
 log "Backing up protected table data for migrated-schema restore fallback"
 existing_protected_tables=""
 for table in $PROTECTED_DATA_TABLES; do
@@ -306,6 +307,8 @@ if [ -n "$existing_protected_tables" ]; then
         --no-tablespaces \
         "$DB_DATABASE" \
         $existing_protected_tables | gzip > "$data_backup_tmp"
+
+    [ -s "$data_backup_tmp" ] && gzip -t "$data_backup_tmp" || { log "ERROR: Protected data backup failed integrity verification."; exit 1; }
 
     mv "$data_backup_tmp" "$data_backup"
     rm -f "$BACKUP_DIR"/pre-deploy-data-only-*.sql.gz
@@ -357,7 +360,7 @@ docker compose exec laravel.test qpdf --version
 log "Verifying PDF runtime"
 docker compose exec laravel.test php artisan app:diagnose-pdf-environment
 
-log "Running migrations"
+log "Running forward migrations on database: $DB_DATABASE (schema and data changes; no reset)"
 docker compose exec -T laravel.test php artisan migrate --force --no-interaction
 
 log "Checking migration status"
@@ -370,24 +373,9 @@ data_loss_state="$(data_loss_summary "$before_counts" "$after_counts")"
 if [ "$data_loss_state" = "catastrophic" ]; then
     log "ERROR: Catastrophic protected data loss detected after migrations."
 
-    if [ "$RESTORE_ON_CATASTROPHIC_DATA_LOSS" = "true" ] && [ -s "$data_backup" ]; then
-        log "Restoring protected table data into the migrated schema from $data_backup"
-
-        if ! gzip -dc "$data_backup" | docker compose exec -T mysql mysql -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE"; then
-            log "ERROR: The migrated-schema data restore failed."
-            log "This usually means the new migrations changed table or column structures in a way that the data-only backup cannot be inserted safely."
-            log "The database may need a custom manual recovery using the full pre-deploy backup and a purpose-built data migration."
-            log "Full backup: $full_backup"
-            log "Data-only restore backup: $data_backup"
-            exit 1
-        fi
-
-        log "Re-running migrations after data restore to confirm migrated schema state"
-        docker compose exec -T laravel.test php artisan migrate --force --no-interaction
-        log "Protected data restore completed. Failing deploy so this incident is visible."
-    else
-        log "Automatic data restore is disabled or $data_backup is missing."
-    fi
+    log "Automatic database restore is disabled. Investigate using the backups before choosing a recovery action."
+    log "Full backup: $full_backup"
+    log "Data-only backup: $data_backup"
 
     exit 1
 fi
@@ -399,10 +387,6 @@ if [ "$data_loss_state" = "partial" ]; then
     log "Data-only backup: $data_backup"
     exit 1
 fi
-
-log "Applying configured activity history retention"
-docker compose exec -T laravel.test php artisan config:show activity-log
-docker compose exec -T laravel.test php artisan app:prune-activity-logs --no-interaction
 
 log "Clearing and rebuilding Laravel caches"
 docker compose exec laravel.test php artisan optimize:clear

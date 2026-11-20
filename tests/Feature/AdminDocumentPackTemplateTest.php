@@ -16,7 +16,6 @@ use App\Models\Project;
 use App\Models\ResourceFile;
 use App\Models\Team;
 use App\Models\User;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -268,17 +267,10 @@ class AdminDocumentPackTemplateTest extends TestCase
         $this->actingAs($member);
         $this->assertTrue($member->can(PermissionKey::OutputManageDocumentPacks->value));
 
-        $denied = false;
-
-        try {
-            Livewire::test(OutputProject::class, ['record' => $project->id])
-                ->set('selectedDocumentPackTemplateId', $otherPrivate->id)
-                ->call('useSelectedDocumentPackTemplate');
-        } catch (ModelNotFoundException) {
-            $denied = true;
-        }
-
-        $this->assertTrue($denied, 'An inaccessible template ID must be rejected server-side.');
+        Livewire::test(OutputProject::class, ['record' => $project->id])
+            ->set('selectedDocumentPackTemplateId', $otherPrivate->id)
+            ->call('useSelectedDocumentPackTemplate')
+            ->assertNotFound();
         $this->get(route('projects.document-pack-templates.items.file', [
             'project' => $project,
             'documentPackTemplateItem' => $inaccessibleItem,
