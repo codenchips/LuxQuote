@@ -16,11 +16,18 @@ use App\Observers\ProjectLineObserver;
 use App\Observers\ProjectObserver;
 use App\Observers\SpecialOrderCodeObserver;
 use App\Observers\UserObserver;
+use App\Services\DatabaseImportLock;
 use App\Services\SalesforceService;
+use App\Services\ScheduledMaintenance;
 use Filament\Auth\Http\Responses\Contracts\LoginResponse as LoginResponseContract;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Queue\Events\JobExceptionOccurred;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Queue\Jobs\SyncJob;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
@@ -46,12 +53,39 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
 
+        $jobLocks = [];
+        Event::listen(JobProcessing::class, function (JobProcessing $event) use (&$jobLocks): void {
+            $locks = app(DatabaseImportLock::class)->acquire(false);
+            if ($locks === null) {
+                if ($event->job instanceof SyncJob) {
+                    throw new \RuntimeException('The database is being restored.');
+                }
+                $event->job->release(60);
+                $event->job->delete();
+
+                return;
+            }
+            $jobLocks[spl_object_id($event->job)] = $locks;
+        });
+        $releaseJobLock = function (JobProcessed|JobExceptionOccurred $event) use (&$jobLocks): void {
+            $id = spl_object_id($event->job);
+            if (isset($jobLocks[$id])) {
+                app(DatabaseImportLock::class)->release($jobLocks[$id]);
+                unset($jobLocks[$id]);
+            }
+        };
+        Event::listen(JobProcessed::class, $releaseJobLock);
+        Event::listen(JobExceptionOccurred::class, $releaseJobLock);
+
         if (app()->environment('production')) {
             URL::forceRootUrl(config('app.url'));
             URL::forceScheme('https');
         }
 
         Event::listen(Login::class, function (Login $event): void {
+            if (request()->hasSession() && ! Auth::guard($event->guard)->viaRemember()) {
+                request()->session()->put('maintenance_generation', app(ScheduledMaintenance::class)->cutoff());
+            }
             if (Schema::hasColumn('users', 'last_login_at')) {
                 $event->user->updateQuietly([
                     'last_login_at' => now(),

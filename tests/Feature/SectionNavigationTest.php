@@ -38,7 +38,7 @@ class SectionNavigationTest extends TestCase
         $menus = SectionNavigation::popupMenus();
         $this->assertSame(['salesforce', 'catalogue', 'reporting', 'administration'], array_keys($menus));
         $this->assertSame(['Customers', 'Projects', 'Visits'], array_column($menus['salesforce']['links'], 'label'));
-        $this->assertSame(['Users', 'Permission Groups', 'Teams'], array_column($menus['administration']['links'], 'label'));
+        $this->assertSame(['Users', 'Permission Groups', 'Teams', 'Tools'], array_column($menus['administration']['links'], 'label'));
         foreach ($items->filter(fn ($item) => isset($menus[$item->getExtraAttributes()['data-navigation-section'] ?? ''])) as $item) {
             $this->assertArrayHasKey('x-on:mouseenter', $item->getExtraAttributes());
             $this->assertArrayHasKey('x-on:keydown.arrow-right.prevent.stop', $item->getExtraAttributes());
@@ -78,7 +78,7 @@ class SectionNavigationTest extends TestCase
         $response->assertSee('Permission Groups')->assertSee('Teams')->assertSee('luxQuoteSectionMenu', false);
         $this->assertSame('administration', SectionNavigation::currentSection());
         $links = SectionNavigation::forCurrentRequest();
-        $this->assertSame(['Users', 'Permission Groups', 'Teams'], array_column($links, 'label'));
+        $this->assertSame(['Users', 'Permission Groups', 'Teams', 'Tools'], array_column($links, 'label'));
         $this->assertTrue($links[0]['active']);
         $this->assertFalse($links[1]['active']);
         $this->assertTrue(collect(SectionNavigation::sidebarItems())->first(fn ($item) => $item->getLabel() === 'Administration')->isActive());

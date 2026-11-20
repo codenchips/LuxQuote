@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\DatabaseBackupController;
+use App\Http\Controllers\DatabaseImportController;
 use App\Http\Controllers\DocumentPackController;
 use App\Http\Controllers\PdfGenerationController;
 use App\Http\Controllers\ProjectPdfController;
@@ -7,16 +9,38 @@ use App\Http\Controllers\ResourceFileController;
 use App\Models\Project;
 use App\Models\ProjectLock;
 use App\Models\ProjectPresence;
+use App\Services\ScheduledMaintenance;
 use Filament\Http\Middleware\Authenticate as FilamentAuthenticate;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Route;
 
 // Filament handles all routes
+
+Route::get('/maintenance/notice', function (ScheduledMaintenance $maintenance) {
+    return response()->view('maintenance.notice', ['active' => $maintenance->active()]);
+})->name('maintenance.notice');
+
+Route::get('/maintenance/status', function (Request $request, ScheduledMaintenance $maintenance) {
+    $settings = $maintenance->settings();
+    $enabled = (bool) ($settings['enabled'] ?? false);
+
+    return response()->json([
+        'enabled' => $enabled,
+        'active' => $maintenance->active($settings),
+        'signed_out' => (bool) $request->attributes->get('maintenance_signed_out'),
+        'start' => $enabled && isset($settings['start']) ? Carbon::parse($settings['start'])->timezone(config('app.timezone'))->format('d/m/Y H:i') : null,
+        'end' => $enabled && isset($settings['end']) ? Carbon::parse($settings['end'])->timezone(config('app.timezone'))->format('d/m/Y H:i') : null,
+    ])->header('Cache-Control', 'no-store');
+})->name('maintenance.status');
 
 Route::get('/resources/{resourceFile}/file', ResourceFileController::class)
     ->middleware(FilamentAuthenticate::class)
     ->name('resource-files.view');
 
 Route::middleware('auth')->group(function (): void {
+    Route::get('/admin/tools/database-export', DatabaseBackupController::class)->name('admin.tools.database-export');
+    Route::post('/admin/tools/database-import', DatabaseImportController::class)->name('admin.tools.database-import');
     Route::get('/projects/{project}/pdf/schedule', [ProjectPdfController::class, 'schedule'])
         ->name('projects.pdf.schedule');
     Route::post('/projects/{project}/pdf/schedule', [ProjectPdfController::class, 'queueSchedule'])

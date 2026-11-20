@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\ProjectLineType;
-use App\Filament\Pages\Salesforce;
+use App\Filament\Pages\Tools;
 use App\Filament\Resources\Projects\Pages\ValidationProject;
 use App\Models\AppSetting;
 use App\Models\Product;
@@ -27,7 +27,7 @@ class SalesforcePushControlTest extends TestCase
 
         Http::fake();
 
-        Livewire::test(Salesforce::class)
+        Livewire::test(Tools::class)
             ->assertSet('salesforcePushDisabled', false)
             ->call('toggleSalesforcePushDisabled')
             ->assertSet('salesforcePushDisabled', true);
@@ -35,7 +35,7 @@ class SalesforcePushControlTest extends TestCase
         $this->assertTrue(app(SalesforcePushControl::class)->disabled());
         $this->assertSame(['disabled' => true], AppSetting::where('key', 'salesforce_push_disabled')->value('value'));
 
-        Livewire::test(Salesforce::class)
+        Livewire::test(Tools::class)
             ->assertSet('salesforcePushDisabled', true)
             ->call('toggleSalesforcePushDisabled')
             ->assertSet('salesforcePushDisabled', false);
@@ -51,14 +51,14 @@ class SalesforcePushControlTest extends TestCase
 
         Http::fake();
 
-        Livewire::test(Salesforce::class)
+        Livewire::test(Tools::class)
             ->call('toggleSalesforcePushDisabled')
             ->assertSet('salesforcePushDisabled', true);
 
         auth()->logout();
         $this->actingAs($admin->fresh());
 
-        Livewire::test(Salesforce::class)
+        Livewire::test(Tools::class)
             ->assertSet('salesforcePushDisabled', true);
     }
 
@@ -72,10 +72,7 @@ class SalesforcePushControlTest extends TestCase
 
         Http::fake();
 
-        Livewire::test(Salesforce::class)
-            ->assertSet('salesforcePushDisabled', false)
-            ->call('toggleSalesforcePushDisabled')
-            ->assertForbidden();
+        $this->get(Tools::getUrl())->assertForbidden();
 
         $this->assertFalse(app(SalesforcePushControl::class)->disabled());
     }

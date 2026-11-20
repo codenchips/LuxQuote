@@ -24,7 +24,9 @@ restore_maintenance_state() {
 
     trap - EXIT
 
-    if [ "$MAINTENANCE_MODE_ENABLED_BY_DEPLOY" = true ]; then
+    if [ "$deploy_status" -ne 0 ] && [ "$MAINTENANCE_MODE_ENABLED_BY_DEPLOY" = true ]; then
+        log "Deploy failed; leaving maintenance mode enabled for investigation."
+    elif [ "$MAINTENANCE_MODE_ENABLED_BY_DEPLOY" = true ]; then
         log "Deploy exited before maintenance mode was cleared; returning the application to normal mode"
 
         if docker compose exec -T laravel.test php artisan up --no-interaction; then
@@ -120,6 +122,15 @@ write_deploy_manifest() {
 }
 
 cd "$APP_DIR"
+
+if [ ! -f "$APP_DIR/storage/framework/luxquote-database-import.lock" ]; then
+    (umask 022; touch "$APP_DIR/storage/framework/luxquote-database-import.lock") 2>/dev/null || [ -f "$APP_DIR/storage/framework/luxquote-database-import.lock" ]
+fi
+exec 9<"$APP_DIR/storage/framework/luxquote-database-import.lock"
+if ! flock -n 9; then
+    log "ERROR: A database import is running. Deployment cannot proceed."
+    exit 1
+fi
 
 env_value() {
     if [ -f .env ]; then
@@ -255,6 +266,11 @@ for attempt in {1..60}; do
 
     sleep 2
 done
+
+if docker compose exec -T laravel.test php artisan list --raw --no-interaction | grep '^app:scheduled-maintenance ' >/dev/null; then
+    log "Starting scheduled maintenance in database $DB_DATABASE (updates maintenance settings; non-destructive)"
+    docker compose exec -T laravel.test php artisan app:scheduled-maintenance start --no-interaction
+fi
 
 enable_maintenance_mode
 
@@ -418,6 +434,7 @@ if [ "$MAINTENANCE_MODE_WAS_ACTIVE" = true ]; then
 else
     log "Smoke checking $PUBLIC_URL"
     curl --fail --silent --show-error --location --max-time 20 "$PUBLIC_URL" >/dev/null
+    curl --fail --silent --show-error --max-time 20 "${PUBLIC_URL%/}/up" >/dev/null
 fi
 
 log "Writing successful deploy rollback manifest"
@@ -432,5 +449,10 @@ find "$BACKUP_DIR" -name "pre-deploy-*.sql.gz" -type f -mtime +14 -delete
 rm -f "$BACKUP_DIR"/pre-deploy-data-only-*.sql.gz "$data_backup_tmp"
 find "$BACKUP_DIR" -name "pre-deploy-counts-*.tsv" -type f -mtime +14 -delete
 find "$BACKUP_DIR" -name "post-migration-counts-*.tsv" -type f -mtime +14 -delete
+
+if [ "$MAINTENANCE_MODE_WAS_ACTIVE" != true ]; then
+    log "Clearing scheduled maintenance in database $DB_DATABASE (updates maintenance settings; non-destructive)"
+    docker compose exec -T laravel.test php artisan app:scheduled-maintenance clear --no-interaction
+fi
 
 log "Production deploy complete"

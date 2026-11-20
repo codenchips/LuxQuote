@@ -7,6 +7,7 @@ use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\Salesforce;
 use App\Filament\Pages\SalesforceCustomers;
 use App\Filament\Pages\Statistics;
+use App\Filament\Pages\Tools;
 use App\Filament\Resources\ActivityLogs\ActivityLogResource;
 use App\Filament\Resources\PermissionGroups\PermissionGroupResource;
 use App\Filament\Resources\Products\ProductResource;
@@ -46,6 +47,7 @@ class SectionNavigation
                 ['Users', UserResource::class, 'heroicon-o-users'],
                 ['Permission Groups', PermissionGroupResource::class, 'heroicon-o-shield-check'],
                 ['Teams', TeamResource::class, 'heroicon-o-user-group'],
+                ['Tools', Tools::class, 'heroicon-o-wrench-screwdriver'],
             ]],
         ];
     }

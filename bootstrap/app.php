@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\EnforceScheduledMaintenance;
+use App\Http\Middleware\LockDatabaseDuringImport;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -14,6 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
         $middleware->prepend(SecurityHeaders::class);
+        $middleware->web(append: [EnforceScheduledMaintenance::class]);
+        $middleware->web(prepend: [LockDatabaseDuringImport::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

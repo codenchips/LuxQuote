@@ -6,6 +6,8 @@ use App\Filament\AvatarProviders\SkyBlueUiAvatarsProvider;
 use App\Filament\Pages\Auth\EditProfile;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Support\SectionNavigation;
+use App\Http\Middleware\EnforceScheduledMaintenance;
+use App\Http\Middleware\LockDatabaseDuringImport;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Enums\ThemeMode;
 use Filament\Http\Middleware\Authenticate;
@@ -61,6 +63,7 @@ class AdminPanelProvider extends PanelProvider
             )
             ->renderHook(PanelsRenderHook::PAGE_START, fn (): string => view('filament.partials.section-sub-navigation')->render())
             ->renderHook(PanelsRenderHook::BODY_END, fn (): string => view('filament.partials.section-sidebar-menus')->render())
+            ->renderHook(PanelsRenderHook::BODY_END, fn (): string => view('filament.partials.maintenance-notice')->render())
             ->renderHook(
                 PanelsRenderHook::SIDEBAR_FOOTER,
                 fn (): string => view('filament.partials.sidebar-app-version')->render(),
@@ -85,9 +88,11 @@ class AdminPanelProvider extends PanelProvider
                     ->selectable(),
             )
             ->middleware([
+                LockDatabaseDuringImport::class,
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
+                EnforceScheduledMaintenance::class,
                 AuthenticateSession::class,
                 ShareErrorsFromSession::class,
                 PreventRequestForgery::class,

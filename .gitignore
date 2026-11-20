@@ -23,6 +23,8 @@ storage/*.key
 /storage/framework/cache/data/*
 /storage/framework/views/*.php
 /storage/framework/sessions/*
+/storage/framework/luxquote-database-import.lock
+/storage/framework/luxquote-database-requests.lock
 
 # Developer Operating Systems & Local Text Editor Dumps
 .DS_Store

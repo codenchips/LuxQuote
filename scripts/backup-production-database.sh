@@ -38,6 +38,14 @@ main() {
 
     cd "$APP_DIR"
     mkdir -p "$BACKUP_DIR"
+    if [ ! -f "$APP_DIR/storage/framework/luxquote-database-import.lock" ]; then
+        (umask 022; touch "$APP_DIR/storage/framework/luxquote-database-import.lock") 2>/dev/null || [ -f "$APP_DIR/storage/framework/luxquote-database-import.lock" ]
+    fi
+    exec 8<"$APP_DIR/storage/framework/luxquote-database-import.lock"
+    if ! flock -s -n 8; then
+        log 'A database import or deployment is running; skipping this backup invocation.'
+        return 0
+    fi
     umask 077
 
     lock_file="$BACKUP_DIR/.luxquote-db-backup.lock"

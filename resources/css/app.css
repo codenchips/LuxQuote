@@ -32,6 +32,10 @@
     outline: none;
 }
 
+.fi-btn.fi-color.lux-tools-primary-button:not(.fi-outlined):not(label) {
+    color: #111111;
+}
+
 input[type="number"][data-line-column] {
     -moz-appearance: textfield;
     appearance: textfield;

@@ -4,7 +4,6 @@ namespace App\Filament\Pages;
 
 use App\Filament\Support\BadgeStyle;
 use App\Filament\Support\SectionNavigation;
-use App\Services\SalesforcePushControl;
 use App\Services\SalesforceService;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -47,13 +46,6 @@ class Salesforce extends Page implements HasTable
 
     protected string $view = 'filament.pages.salesforce';
 
-    public bool $salesforcePushDisabled = false;
-
-    public function mount(): void
-    {
-        $this->salesforcePushDisabled = app(SalesforcePushControl::class)->disabled();
-    }
-
     public static function canAccess(): bool
     {
         return auth()->user()?->can('salesforce.view') ?? false;
@@ -74,17 +66,6 @@ class Salesforce extends Page implements HasTable
             'actionsAlignment' => $this->getHeaderActionsAlignment(),
             'subLinks' => self::subNavigationLinks(static::getUrl()),
         ]);
-    }
-
-    protected function getHeaderActions(): array
-    {
-        return [
-            Action::make('salesforcePushControl')
-                ->view('filament.pages.actions.salesforce-push-control', fn ($livewire): array => [
-                    'canManageSalesforcePush' => $livewire->canManageSalesforcePush(),
-                    'salesforcePushDisabled' => $livewire->salesforcePushDisabled,
-                ]),
-        ];
     }
 
     public function table(Table $table): Table
@@ -272,21 +253,5 @@ class Salesforce extends Page implements HasTable
         }
 
         return $data;
-    }
-
-    public function canManageSalesforcePush(): bool
-    {
-        return auth()->user()?->can('salesforce.manage-push') ?? false;
-    }
-
-    public function toggleSalesforcePushDisabled(): void
-    {
-        abort_unless($this->canManageSalesforcePush(), 403);
-
-        $pushControl = app(SalesforcePushControl::class);
-
-        $pushControl->setDisabled(! $pushControl->disabled());
-
-        $this->salesforcePushDisabled = $pushControl->disabled();
     }
 }
