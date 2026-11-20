@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.22 - 2026-11-20
+
+Version: `0.2.21` -> `0.2.22`
+
+Changes included:
+
+- `3b1c20d` Fix deployment verification runner dependencies
+
 ## 0.2.21 - 2026-11-20
 
 Version: `0.2.20` -> `0.2.21`
