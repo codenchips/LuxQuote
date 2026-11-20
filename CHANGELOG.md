@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.23 - 2026-11-20
+
+Version: `0.2.22` -> `0.2.23`
+
+Changes included:
+
+- `df143c5` Install Ghostscript for release verification
+
 ## 0.2.22 - 2026-11-20
 
 Version: `0.2.21` -> `0.2.22`
