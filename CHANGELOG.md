@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.24 - 2026-11-20
+
+Version: `0.2.23` -> `0.2.24`
+
+Changes included:
+
+- `f0b9f61` UI tweaks
+
 ## 0.2.23 - 2026-11-20
 
 Version: `0.2.22` -> `0.2.23`
