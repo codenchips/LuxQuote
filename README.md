@@ -11,7 +11,8 @@ A Laravel + Filament application for managing quotes and projects.
 - Running validation marks a revision ready to approve; clicking **Approve Revision** locks the revision.
 - Salesforce project creation is the default create mode and can populate reference, customer, owner email, cover, and value from the selected Opportunity.
 - Quote and Schedule output supports optional datasheets/legal pages, Tender-aware cover sheets, stable revision filenames, Salesforce version uploads, and reusable Document Packs.
-- The Admin area includes private Resources, management Statistics, three-month Activity History, Products, and Specials; Salesforce Visits provides the shared business calendar.
+- The permission-aware sidebar groups Salesforce Customers, Projects and Visits; Catalogue; Resources; Reporting; and Administration. History defaults to a three-month retention window.
+- Administrator-only Tools provides scheduled maintenance, Salesforce push control, and MySQL database export/import. Database dumps exclude uploaded files; imports replace the configured database. Read the safety guidance in [DEPLOYMENT.md](DEPLOYMENT.md) first.
 
 ## Stack
 
@@ -49,6 +50,8 @@ vendor/bin/sail stop
 ## Production Deployment
 
 Production runs on a cPanel / WHM VPS inside Docker Compose / Laravel Sail containers. Do not run bare PHP, Artisan, Composer, or npm commands on the host server; execute them through Docker Compose against the `laravel.test` container.
+
+From a clean local `main` checkout, `./deploy-production` updates the version and pushes `production`, triggering GitHub verification and, on success, the VPS deploy. It is a release action, not a read-only check; do not run the helper from the VPS checkout. The current production version and pending migrations must be checked at deployment time.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for the production command map, reverse proxy notes, database restore workflow, and PDF/Puppeteer requirements.
 

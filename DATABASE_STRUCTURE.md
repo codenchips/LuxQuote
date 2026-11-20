@@ -1,6 +1,6 @@
 # LuxQuote database relationships
 
-Based on the checked-in Eloquent models and migrations, reviewed 25 September 2026. This describes the schema defined by the repository; it has not been compared with a running database. Columns shown are selected keys and business fields, not an exhaustive column inventory. Standard timestamps are mostly omitted.
+Based on the checked-in Eloquent models and migrations, reviewed 20 November 2026. Columns shown are selected keys and business fields, not an exhaustive column inventory. Standard timestamps are mostly omitted. The production migration list was checked on 20 November; the diagrams are not a complete comparison of the live schema.
 
 Read these Mermaid diagrams in a Markdown viewer with Mermaid support, such as GitHub. Table names match the database; Eloquent models normally use the singular PascalCase equivalent (`project_lines` → `ProjectLine`).
 
@@ -84,6 +84,7 @@ erDiagram
         string ref
         string description "Copied or edited description"
         int qty
+        boolean qty_is_each "Display quantity as each"
         decimal unit_price
         decimal cover_1 "Nullable override"
         decimal cover_2 "Nullable override"
@@ -347,7 +348,8 @@ Activity History is retained for three months by default. Reporting keeps indepe
 | Table | Purpose and relationship notes |
 |---|---|
 | `special_order_codes` | Standalone rules for codes such as NO OFFER. Matched by normalized code in application logic; no FK to project lines. |
-| `app_settings` | Standalone key/JSON-value settings, including the Salesforce push switch and last catalogue import time. |
+| `app_settings` | Standalone key/JSON-value settings, including the Salesforce push switch, scheduled maintenance and last catalogue import time. |
+| `salesforce_customer_defaults` | Local Cover 1–3 and direction defaults keyed uniquely by the case-sensitive Salesforce Account ID. It has no local customer FK; the Salesforce Account remains external. Defaults are 5% for each Cover and `added` for the direction when no stored override exists. |
 | `activity_log_archives` | Legacy compatibility storage. Its original-log, user and project IDs are not constrained FKs. No ongoing archive flow. |
 | `sessions` | Laravel sessions; nullable indexed `user_id` is not a constrained FK. |
 | `password_reset_tokens` | Reset tokens keyed by email; no constrained FK to users. |

@@ -1,5 +1,7 @@
 # Customer pricing, project prices and Cover — proposal
 
+This is a proposal, not a description of implemented pricing features. It predates the Salesforce Account Cover defaults added in November 2026: those defaults are stored by Salesforce Account ID and can prefill project Cover values, but they are not customer price lists or per-revision negotiated price sets.
+
 Design for review, 25 September 2026. No application code or database changes have been made. All customers, prices and limits in the mockups are illustrative.
 
 Open [the interactive mockups](PRICING_MOCKUPS.html) in a browser. The proposed schema image and screen captures are in `storage/app/pricing-proposal-*`.

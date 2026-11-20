@@ -1,3 +1,7 @@
+# Salesforce file upload reference
+
+This is a generic REST API cheat sheet, not the authoritative description of LuxQuote's current upload implementation. For current Quote and Schedule versioning, push controls and permissions, see [PROJECT_STATUS.md](PROJECT_STATUS.md) and [PERMISSIONS.md](PERMISSIONS.md), and check `SalesforceService` and `SalesforcePdfUploadTracker` for implementation details. The API version shown below is illustrative.
+
 ===========================================================================
 SALESFORCE FILE UPLOAD VIA REST API & PHP CHEATSHEET
 ===========================================================================

@@ -1,12 +1,25 @@
 # Company App — Project Status
 
-_Last updated: 10 September 2026_
+_Last updated: 20 November 2026_
 
 ---
 
-## Deployment Candidate Review — 10 September 2026
+## Week of 16–20 November 2026
 
-Production remains on `0.2.17`. The next deployment candidate consists of commits `7991982` and `e8303b9`: protected Admin-group membership and permissions, read-only Salesforce project-detail refresh, and separately assignable permanent Project deletion. The reviewed tree passes **419 tests / 2,517 assertions**, the production Vite build, strict Composer validation/platform checks, and both production dependency audits with no reported vulnerabilities.
+Production was verified on 20 November at `0.2.24` (`cfd9d9a`), with the application, database and queue containers running and the eight migrations added since the `0.2.20` baseline recorded as applied. GitHub's production workflow reported success for `0.2.24`. These are point-in-time observations, not a substitute for checking the current installation before a later deployment.
+
+- **Navigation and history:** the sidebar now groups Salesforce, Catalogue, Resources, Reporting and Administration pages; section menus respect each page's permissions. Global history gained combined action, user, reference, date and text filters. Project references link to their project only when the viewer can access it.
+- **Salesforce customers and projects:** Customers lists Salesforce Accounts, with account-specific Cover defaults, a customer project history view and an opportunity search. Project Details refresh presents a selectable preview before applying authorised fields. Schedule and Quote Salesforce uploads retain stable per-revision filenames and produce new versions. Salesforce push control is in administrator-only Tools.
+- **Output and PDF:** schedules gained an optional two-page Cover Page, also available in Document Packs, and updated branded headers. Output controls use the two-column layout, orange Select areas buttons and a single approval status at the top. PDF options, filenames, permissions, queueing and project/revision scoping remain enforced server-side.
+- **Administrator Tools:** admins can schedule maintenance, control Salesforce push and export or import a complete MySQL database dump. A warning appears before maintenance; sessions are invalidated at the start. Scheduled maintenance clears on successful deployment or at the return time, while Laravel's separate deployment lock may remain on after a failure. Database imports replace data and have explicit confirmation and backup/locking safeguards; dumps do not include uploaded files. See [DEPLOYMENT.md](DEPLOYMENT.md) before using these tools.
+- **Deployment and checks:** the release uses an isolated Ubuntu 24.04 verification runner with Ghostscript, qpdf, MySQL client and Puppeteer; failures in the earlier runner setup were fixed before the successful `0.2.23` and `0.2.24` deploys. The successful `0.2.24` GitHub test step reported 579 warnings and one passed test (4,027 assertions); the compact log did not include warning details, so their cause remains to be investigated. Normal deployments take and verify database backups, run forward migrations and check protected-table row counts. A gzip check and row counts do not prove a backup can be restored. Continue separate off-server backups of uploaded files and perform controlled restore tests.
+- **Earlier release changes included in this rollout:** permission-controlled non-Salesforce project creation and creator/date edits, the `each` quantity option, keyboard navigation, project Cover and Salesforce refresh controls, and permission-controlled archived-project deletion. See [CHANGELOG.md](CHANGELOG.md) and [PERMISSIONS.md](PERMISSIONS.md) for the release and access details.
+
+The sections below are dated historical notes. Where they describe a then-current release or planned work, use this week's summary and the current code and deployment guide for present behaviour.
+
+## Historical Deployment Candidate Review — 10 September 2026
+
+At the time, production was on `0.2.17` and the next candidate consisted of commits `7991982` and `e8303b9`: protected Admin-group membership and permissions, read-only Salesforce project-detail refresh, and separately assignable permanent Project deletion. The reviewed tree then passed **419 tests / 2,517 assertions**, the production Vite build, strict Composer validation/platform checks, and both production dependency audits with no reported vulnerabilities.
 
 - **Protected Admin permissions**: the Admin group always authorizes every registered capability, its permission checklist is read-only, saving repairs missing assignments, and future Permission records are automatically attached. The rollout migration only inserts missing Admin permission pivots.
 - **Protected Admin membership**: only an existing Admin-group member can add or remove another Admin-group member through the application. Non-members cannot promote, demote, or delete Admin users even if their own group has user-management capabilities. The final Admin-group member cannot be demoted or deleted.
@@ -468,11 +481,11 @@ Known app setting keys:
 | Enum | Values |
 |---|---|
 | `UserRole` | `Admin`, `Users` |
-| `ProjectStatus` | `Draft`, `InProgress`, `Complete`, `Cancelled`, `Archived` |
+| `ProjectStatus` | `Draft`, `InProgress`, `ApprovalRequested`, `Approved`, `Quoted`, `DesignComplete`, `Archived` |
 | `ProjectRevisionStatus` | `Draft`, `Approved` |
-| `ProjectVisibility` | `Open`, `Private` |
+| `ProjectVisibility` | `Open`, `Private`, `Team` |
 | `ProjectLineType` | `Standard`, `Modified`, `Custom` |
-| `DocumentPackItemRole` | `Cover`, `Legal`, `CustomPdf`, `StandardLegalPage`, `Quote`, `UnpricedSchedule` |
+| `DocumentPackItemRole` | `Cover`, `Legal`, `CustomPdf`, `DesignCover`, `StandardLegalPage`, `Quote`, `UnpricedSchedule` |
 | `DocumentPackItemSource` | `Uploaded`, `Generated`, `Template` |
 
 ---
@@ -484,19 +497,21 @@ Known app setting keys:
 | `/products` | `ProductResource` | List only — no create/edit pages (data comes from API) |
 | `/projects` | `ProjectResource` | List + custom View page |
 | `/projects/{project}` | `ViewProject` (custom) | Main working page — project URLs use `reference_number`; legacy numeric IDs still resolve as a fallback |
-| `/projects/{project}/validation` | `ValidationProject` | Admin-only validation, warning approval, and duplicate merge |
+| `/projects/{project}/validation` | `ValidationProject` | Permission-controlled validation, warning approval, and duplicate merge |
 | `/projects/{project}/output` | `OutputProject` | Quote approval summary, quick PDF/CSV outputs, and document-pack builder |
 | `/pdf-progress/{token}` | `ProjectPdfController::progress` | Authenticated polling endpoint for PDF-generation progress messages |
 | `/pdf-downloads/{token}/{filename?}` | `ProjectPdfController::download` | Authenticated, user-scoped prepared PDF download/open URL for browser-generated outputs |
 | `/projects/{project}/document-packs/{documentPack}` | `DocumentPackController` | Authenticated combined-PDF download for a selected revision |
-| `/users` | `UserResource` | Admin-only create/edit/list |
+| `/users` | `UserResource` | Permission-controlled create/edit/list, with extra Admin membership protections |
 | `/activity-logs` | `ActivityLogResource` | Permission-controlled global history table |
 | `/salesforce` | `Salesforce` page | Permission-controlled Salesforce Opportunities table; labelled **Projects** inside the Salesforce navigation group |
+| `/salesforce/customers` | `SalesforceCustomers` page | Permission-controlled Salesforce Accounts, customer defaults and linked project history |
+| `/tools` | `Tools` page | Administrator-only maintenance, Salesforce push control and database backup/import |
 | `/calendar` | `Calendar` page | Permission-controlled Salesforce Visits public-calendar interface |
 | `/resources` | `ResourceFileResource` | Authenticated private resource library with upload, display-name edit, view, and delete actions |
 | `/resources/{resourceFile}/file` | `ResourceFileController` | Authenticated inline stream for a managed private resource file |
 
-**Project visibility scoping** — `ProjectResource::getEloquentQuery()` restricts non-admin users to projects where `visibility = open` OR `user_id = auth user`.
+**Project visibility scoping** — `ProjectResource::getEloquentQuery()` restricts non-admin users to open projects, projects they own, and team-visible projects for teams they belong to.
 
 Each Resource follows the **split-file pattern**: `Resource.php` → delegates to `Schemas/XForm.php`, `Tables/XTable.php`, and `Pages/`.
 
@@ -733,7 +748,7 @@ Rules:
 
 ## Output Page & Document Packs
 
-The project output page is available at `/projects/{id}/output`. It starts with a three-part status panel and then a two-tab output selector:
+The project output page is available at `/projects/{project}/output`. It starts with a status panel and an output selector:
 
 - **Quote status** — shows `Approval Required`, `Requested`, or `Approved`, and includes **Request Approval** when the active revision is not approved.
 - **Validation** — shows `Passed` or `Not passed`, plus **View Validation**. This entire section is hidden from users without `validation.view`.
@@ -743,6 +758,7 @@ The output selector tabs are:
 
 - **Quick Output** — Quote PDF, quote CSV, schedule PDF, and schedule CSV. Visible labels avoid `Priced` / `Unpriced` wording; permissions still enforce the underlying priced/unpriced capabilities.
 - **Document Packs** — named, reusable project-level definitions that combine uploaded and generated PDFs into one download.
+- **History** — previously generated outputs, subject to output-history permission.
 
 Primary generation and request actions use Filament's orange primary button convention. The active Output tab uses an orange underline that works in light and dark mode.
 
@@ -770,7 +786,7 @@ Primary generation and request actions use Filament's orange primary button conv
 
 - Users may save multiple uniquely named packs against a project. Packs carry across revisions.
 - Pack items are compact six-across cards. Items are draggable and may be added at the end, removed, or reordered. Stable UUID/item keys keep each role, upload, preview, and filename attached to the correct card after a drag.
-- New pack items can be **Custom PDF** (uploaded), **Standard Legal Page** (app-owned template), **Quote**, or **Schedule**. Existing saved **Cover** and uploaded **Legal** items remain supported for legacy packs, but are no longer offered in the new-document dropdown.
+- New pack items can be **Custom PDF** (uploaded), **Cover Page**, **Standard Legal Page**, **Quote**, or **Schedule**. Existing saved **Cover** and uploaded **Legal** items remain supported for legacy packs, but are no longer offered in the new-document dropdown.
 - Uploaded PDFs remain project-level. Generated items always use the revision selected when the pack is generated, not the revision that was active when the pack was saved.
 - Uploaded roles require a PDF before a selected item can be saved. Blank newly-added upload cards with no role/file may still be discarded as incomplete.
 - Uploaded-file cards accept click-to-select and drag/drop. Client-side guards reject non-PDF files before upload, and server-side validation still enforces `mimes:pdf`.
@@ -855,7 +871,7 @@ Line update history includes validation flags and validation notes, so manual va
 
 ## Activity Logs
 
-The admin-only history table is available at `/activity-logs` via `ActivityLogResource`.
+The global history table is available at `/activity-logs` via `ActivityLogResource` to users with `activity-log.view`. Reference links additionally require `projects.view` and normal project visibility; deleted or inaccessible projects remain plain text.
 
 Columns:
 - **Who** — current user name when available, falling back to `user_email_snapshot`
@@ -919,7 +935,7 @@ SALESFORCE_JWT_PRIVATE_KEY_PATH= # Optional path to PEM key; preferred for produ
 |---|---|
 | `app/Services/SalesforceService.php` | Auth + data methods (singleton) |
 | `app/Services/SalesforcePdfUploadTracker.php` | Fingerprints generated PDF output and records the last successful Salesforce upload |
-| `app/Filament/Pages/Salesforce.php` | Admin-only Filament page showing Opportunities table |
+| `app/Filament/Pages/Salesforce.php` | Permission-controlled Filament page showing Opportunities table |
 | `resources/views/filament/pages/salesforce.blade.php` | Blade template for the page |
 | `config/services.php` | `salesforce` key: auth mode, credentials, JWT subject/audience/private key config, base URL |
 | `app/Providers/AppServiceProvider.php` | Singleton binding + gate definition |
@@ -1029,13 +1045,13 @@ Use `--format=ndjson` for one JSON object per line when grepping or importing in
 
 ### Salesforce Opportunities page
 
-- Admin-only page at `/salesforce` (navigation icon: cloud, group: Salesforce)
+- Permission-controlled page at `/salesforce` (navigation icon: cloud, group: Salesforce)
 - Displays a Filament `->records()` external-data table of Opportunities
 - Columns: Reference, Project Name, Stage, Amount, Created Date, Owner
 - Default sort: **Created Date descending** (both `->defaultSort()` on the table and the service fallback)
 - Searchable, sortable, paginated (`10`, `25`, or `50` rows per page)
 - Opportunity stage labels display the exact value returned by Salesforce. Styling may vary by label, but the app must not rename API values such as `Details`, `Design`, or `Quotation`.
-- The page title includes a permission-gated Salesforce push switch for users with `salesforce.manage-push`. The switch is global and persistent in `app_settings`.
+- The global persistent Salesforce push switch is in the administrator-only Tools page, backed by `app_settings`.
 
 ### "Salesforce Project" toggle on the New Project form
 
@@ -1104,8 +1120,8 @@ These edit-mode rules apply everywhere the `ProjectForm` is used: the list page 
 
 ## Features completed — 6 July 2026
 
-- **Salesforce push pause switch**: The Salesforce page includes a permission-gated push switch backed by `app_settings`. Pull/search remains available, but when pushes are paused the app skips outbound Salesforce PDF uploads and Opportunity Amount updates.
-- **Salesforce push switch persistence**: The push switch now reads/writes the persisted app setting directly, remains in the page heading action area, and stays in its chosen state across logout/login.
+- **Salesforce push pause switch**: The persistent switch is now in administrator-only Tools. Pull/search remains available, but when pushes are paused the app skips outbound Salesforce PDF uploads and Opportunity Amount updates.
+- **Salesforce push switch persistence**: The switch reads/writes the persisted app setting and stays in its chosen state across logout/login.
 - **Project details access**: The projects table now has a pencil/details action beside the copy action, and locked projects still expose Details in read-only mode rather than hiding the panel completely.
 - **Projects table laptop layout**: Project-list columns were tightened again to prioritise the project name and avoid horizontal scrollbars on laptop-width screens.
 - **Shared badge styling**: Reusable badge styling now keeps labels compact, standardises identical app labels, applies Tamlite/Xcite brand colours where applicable, and gives unknown labels deterministic colours without changing the displayed words.

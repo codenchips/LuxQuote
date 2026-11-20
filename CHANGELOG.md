@@ -8,6 +8,8 @@ Changes included:
 
 - `f0b9f61` UI tweaks
 
+The output screen aligns its orange Select areas actions with the option columns, removes the duplicate approval badge and calls the optional design cover **Cover Page**. History references link to accessible project pages.
+
 ## 0.2.23 - 2026-11-20
 
 Version: `0.2.22` -> `0.2.23`
@@ -43,6 +45,8 @@ Changes included:
 - `9021bd1` New schedule cover sheets.  Salesforce accounts and projects improved and  tables linking.  Cant list projects  by customer
 - `d6faf35` security and safeguaring updates
 - `b167eec` maintenance mode
+
+This rollout also reorganised navigation; added Salesforce Customers, customer Cover defaults and customer project history; refined project refresh and PDF cover output; and introduced administrator Tools for maintenance, Salesforce push control, database export and guarded import. See [PROJECT_STATUS.md](PROJECT_STATUS.md) for the week-by-week operational and feature summary.
 
 ## 0.2.20 - 2026-10-23
 

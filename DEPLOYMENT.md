@@ -132,21 +132,22 @@ The existing hourly `app:prune-generated-pdfs` task removes expired transient ge
 
 ## Current Production Release Baseline
 
-Version `0.2.17` is the 8 September 2026 production release. It builds on the deployed `0.2.16` CI/security baseline with transactional Product imports, bounded external-API retries/timeouts, durable queued PDF generation, configured and Tender-aware Document Packs, complete pack Output History, validation-state hardening, and read-only revision comparison. Its local release gate passes **405 tests / 2,397 assertions**, the production Vite build, Composer validation, and both Composer and production npm audits.
+On 20 November 2026, the VPS was checked at version `0.2.24`, commit `cfd9d9a`, and the GitHub deployment had succeeded. All eight November migrations present in that release were recorded as applied. These are point-in-time observations: check the live version, workflow, backups and migration status again before a subsequent release.
 
-This release deploys one forward-only migration:
+The successful `0.2.24` verification test step reported 579 warnings and one passed test (4,027 assertions). The compact workflow log did not include the warning details; investigate them in a suitable verification environment rather than treating the test run as warning-free.
 
-- `2026_09_07_143616_create_pdf_generations_table`
+The November release adds permission metadata, a quantity flag and the Salesforce customer defaults table and Cover direction; its forward migration paths do not delete business records. Normal deployment uses the configured MySQL database, takes the pre-deploy backups and runs forward migrations with `php artisan migrate --force --no-interaction`.
 
-The migration creates the transient `pdf_generations` table used for owner-scoped progress and prepared-download state. Its `up()` path does not update or delete existing business records, does not rewrite Projects or revisions, and does not touch Activity History or persistent uploaded PDFs. Normal deployment still takes the pre-deploy backup and runs only `php artisan migrate --force --no-interaction`.
+For current feature and access details see [PROJECT_STATUS.md](PROJECT_STATUS.md) and [PERMISSIONS.md](PERMISSIONS.md). The dated release reviews below describe their historical baselines, not the currently deployed version.
+
 
 The first Docker image build after an older build cache has expired can spend several minutes printing package installation output from `docker/8.5/Dockerfile`. That output is expected during `docker compose up -d --build` and is not, by itself, a runner loop. Do not start a second deployment while the first workflow is still running. The existing persistent `luxquote-production` runner does not need to be recreated when it remains online and its logs end with `Listening for Jobs`.
 
-## Next Release Candidate — Admin Protection and Project Integration Controls
+## Historical Release Candidate — Admin Protection and Project Integration Controls (10 September 2026)
 
 The 10 September 2026 candidate after production `0.2.17` contains commits `7991982` and `e8303b9`. It adds protected Admin-group permissions and membership, a read-only Salesforce Project Details refresh, and the separately assignable `projects.delete-permanently` capability. Its reviewed local gate passes **419 tests / 2,517 assertions**, the production Vite build, strict Composer validation, production PHP platform checks, and Composer/npm audits with no reported vulnerabilities.
 
-Exactly two forward migrations are pending from the `0.2.17` production baseline:
+At that time, two forward migrations were pending from the `0.2.17` production baseline:
 
 - `2026_09_09_121403_ensure_admin_group_has_all_permissions`
 - `2026_09_10_095823_add_project_permanent_delete_permission`
@@ -186,7 +187,7 @@ The Salesforce refresh performs read queries only. It does not call the Opportun
 
 The 7–8 September dependency-security and PDF-output refresh updates Filament `5.6.5 → 5.7.8`, Laravel `13.11.2 → 13.30.1`, Livewire `4.3.0 → 4.4.3`, Guzzle `7.10.3 → 7.15.5`, PSR-7 `2.10.1 → 2.13.1`, CommonMark `2.8.2 → 2.10.0`, and compatible transitive packages. With the response-header, deployment, external API, queued-PDF, Document Pack, validation, and revision-comparison hardening, the reviewed tree passes **405 tests / 2,397 assertions**, the production Vite build, and Composer validation/platform checks. Both `composer audit --locked` and `npm audit --omit=dev` report no vulnerabilities locally.
 
-Production `0.2.17` installs this exact reviewed lock and the matching published Filament assets. Do **not** run `composer update` on the VPS: normal workflows use `composer install` and must retain the reviewed versions. This release performs no database rewrite; deployment uses the standard forward-only migration step for the one additive PDF queue table.
+That historical `0.2.17` release installed its reviewed lock and matching published Filament assets. Do **not** run `composer update` on the VPS: normal workflows use `composer install` and must retain the release's reviewed versions. Its migration created the additive PDF queue table.
 
 Run this non-destructive gate locally before pushing `production`:
 
@@ -986,37 +987,17 @@ Override with `EXPECTED_SERVICES` if production service names change. The Docker
 
 ## Database Restore Workflow
 
-When restoring a raw SQL backup into the containerized MySQL service, use this exact sequence to avoid duplicate or stray table errors:
+Restoring over an existing database is destructive and requires explicit approval for the exact target database. Never use `db:wipe` or a reset as part of a normal deployment. Confirm the Docker MySQL database name and selected backup, preserve a fresh independent backup, and follow the recovery procedure and safeguards for the selected restore method in the Emergency Reset CGI section above. Do not assume a hard-coded database name or password.
 
-```bash
-docker compose exec laravel.test php artisan db:wipe
-docker compose exec -T mysql mysql -u sail -ppassword laravel < backup.sql
-docker compose exec laravel.test php artisan migrate --force
-```
-
-For a gzipped SQL backup already placed in the app root as `backup.gz`, use:
-
-```bash
-cd /home/tamliteco/luxquote.app
-docker compose exec laravel.test sh -lc 'ls -lh /var/www/html/backup.gz && gzip -t /var/www/html/backup.gz'
-docker compose exec laravel.test php artisan optimize:clear
-docker compose exec laravel.test php artisan db:wipe --force
-docker compose exec -T laravel.test sh -lc 'gzip -dc /var/www/html/backup.gz' | docker compose exec -T mysql mysql -u sail -ppassword laravel
-docker compose exec laravel.test php artisan migrate --force
-docker compose exec laravel.test php artisan optimize:clear
-```
-
-If restoring locally with Sail from `/home/tqdeanp/development/company-app`, the equivalent import command is:
-
-```bash
-vendor/bin/sail exec -T laravel.test sh -lc 'gzip -dc /var/www/html/backup.gz' | vendor/bin/sail mysql laravel
-```
+The administrator-only Tools import described below is a separate, deliberate replacement of the configured MySQL database using a trusted complete `.sql` dump. It checks the current table set and creates a pre-import backup; it does not restore uploaded files. Before attempting production recovery, assess the restore point and any data created after it, and arrange a controlled restore test. A gzip integrity check alone does not verify SQL completeness or recoverability.
 
 ## Deployment Method
 
 Code can be deployed automatically from GitHub by pushing the `production` branch. The workflow in `.github/workflows/deploy-production.yml` runs on the `luxquote-production` self-hosted GitHub Actions runner on the VPS and executes `scripts/deploy-production.sh` against the production checkout.
 
 The local `./deploy-production` helper bumps the tracked app version in `VERSION`, commits that bump on `main`, pushes `main`, fast-forwards `production`, and pushes `production`. By default it increments the patch version, for example `0.2.1` to `0.2.2`. Use `VERSION_BUMP=minor`, `VERSION_BUMP=major`, `VERSION_BUMP=beta`, or `VERSION_BUMP=none` when a deploy needs a different version bump.
+
+Run this helper from the local clean `main` checkout, not the VPS `production` checkout. A successful push starts a deployment; it does not itself prove the workflow succeeded. Check GitHub Actions and the live health endpoint afterwards. Verification uses the pinned Ubuntu 24.04 GitHub-hosted runner, qpdf, Ghostscript, an available MySQL client and Puppeteer. The VPS deployment job is skipped if verification fails.
 
 The deploy script:
 
@@ -1038,7 +1019,7 @@ The deploy script:
 - runs all pending migrations with `php artisan migrate --force --no-interaction`, then prints `migrate:status` in the deploy log
 - checks protected business table row counts after migrations and fails the deploy if a previously populated table is missing or its count decreases
 - clears/rebuilds Laravel caches
-- disables Laravel maintenance mode before the public smoke check, while a scheduled maintenance notice continues to block access until the deploy succeeds; if a deploy fails while Laravel maintenance is active, it is left active for investigation
+- disables Laravel maintenance mode before the public smoke check; scheduled maintenance continues to block access until a successful deploy clears it or its return time arrives. If a deploy fails while Laravel maintenance is active, that separate lock is left active for investigation
 - smoke-checks `https://quote.tamlite.co.uk`
 - writes `backups/deploy-manifest-latest.env` after a successful smoke check, then removes the pending manifest
 - prunes Docker build cache older than 24 hours
